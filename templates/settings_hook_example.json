@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /ABSOLUTE/PATH/TO/YOUR/PROJECT/tools/ai_docs/run_hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

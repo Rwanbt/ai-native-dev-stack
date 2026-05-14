@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# config.sh — Machine-specific paths for the AI docs stack.
+#
+# SETUP: Copy this file to config.sh (same directory) and fill in your paths.
+# config.sh is git-ignored — it never goes into version control.
+#
+# Sourced by: run_hook.sh, verify-ai-docs skill, generate_all.py
+
+# ── graphify ──────────────────────────────────────────────────────────────────
+# Path to the graphify binary if it's not in PATH.
+# Find your install: which graphify   OR   find ~ -name graphify -type f
+GRAPHIFY_BIN="${GRAPHIFY_BIN:-graphify}"
+
+# ── Obsidian Vault ────────────────────────────────────────────────────────────
+# Root directory of your Obsidian vault.
+# macOS example:  /Users/you/Documents/Obsidian/MyBrain
+# Windows example: /d/Documents/Obsidian/IA_Dev_Brain
+OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-$HOME/Documents/Obsidian}"
+
+# Name of the project subfolder inside the vault (e.g. "MyProject", "Seno")
+OBSIDIAN_PROJECT_DIR="${OBSIDIAN_PROJECT_DIR:-MyProject}"
+
+# Path to the project memory note (relative to vault root)
+OBSIDIAN_MEMORY_FILE="${OBSIDIAN_MEMORY_FILE:-$OBSIDIAN_PROJECT_DIR/_memory/memory.md}"
+
+# Name of the global chronological log file (at vault root)
+OBSIDIAN_LOG_FILE="${OBSIDIAN_LOG_FILE:-LOG.md}"
+
+# ── Claude Code Memory ────────────────────────────────────────────────────────
+# Root directory of Claude Code's per-project memory.
+# Usually: ~/.claude/projects/
+CLAUDE_MEMORY_ROOT="${CLAUDE_MEMORY_ROOT:-$HOME/.claude/projects}"
+
+# The folder key Claude Code uses for this project.
+# Run: ls ~/.claude/projects/  and find the one matching your project path.
+# Example: "d--App-Seno" for D:\App\Seno on Windows
+CLAUDE_MEMORY_KEY="${CLAUDE_MEMORY_KEY:-}"
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+# Project-local skills directory (relative to project root)
+SKILLS_DIR="${SKILLS_DIR:-.claude/skills}"
+
+# Space-separated list of skills that must be present
+EXPECTED_SKILLS="${EXPECTED_SKILLS:-verify-ai-docs realtime-audio cpp-coding-standards}"

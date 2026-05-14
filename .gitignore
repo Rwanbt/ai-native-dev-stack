@@ -1,0 +1,10 @@
+# Machine-specific config — never commit
+tools/ai_docs/config.sh
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
