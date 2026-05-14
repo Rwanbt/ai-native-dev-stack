@@ -76,6 +76,20 @@ process(result);
 - `MyServiceConfig` — configuration passed at construction
 - `MyServiceResult` — returned by all operations; contains status + data
 
+## Common failure modes
+<!-- The 3-5 most dangerous bugs introduced when misusing this module.
+     These are the patterns that are hard to debug — each entry should answer:
+     WHAT goes wrong (symptom), WHY it happens (root cause), HOW to detect it.
+     Delete this instruction block. -->
+- **[Short label]**: [symptom — what the developer observes] → [root cause] / [how to detect or fix]
+- **[Short label]**: [symptom] → [root cause] / [how to detect or fix]
+
+## Hot files
+<!-- The 2-4 files that change most often or contain the most dangerous invariants.
+     These are the files where a reviewer should spend extra attention.
+     Delete this instruction block. -->
+- `FileName.ext` — [why it's hot: complex invariants / RT path / frequently modified / single point of failure]
+
 ## See also
 <!-- Link to related modules, ADRs, or docs that provide more context. -->
 - [Related module: `../OtherModule/AI_CONTEXT.md`]

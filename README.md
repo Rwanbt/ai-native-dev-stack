@@ -51,6 +51,8 @@ app/Source/Core/Audio/
 - Module purpose (2-3 sentences)
 - Thread model table (which function runs on which thread)
 - Constraints (what is allowed/forbidden)
+- **Common failure modes** — the 3-5 most dangerous bugs when misusing this module
+- **Hot files** — the 2-4 files with the most dangerous invariants or highest change rate
 - Common usage patterns with code examples
 - Cross-references to ADRs and related modules
 
@@ -151,13 +153,47 @@ Extractions target methods called FROM these functions, not the functions themse
 
 The code references ADRs directly: `// See ADR-0002: Frozen Core`. This connects the why to the where.
 
-### 8. Skills Ecosystem
+### 8. Known Failure Patterns (`docs/KNOWN_FAILURE_PATTERNS.md`)
+
+A hand-written, append-only catalogue of the most dangerous bugs in the codebase — organized by category (threading, FFI, serialization, UI, etc.). Each entry has: symptom, root cause, detection method, prevention.
+
+This is the **institutional memory of pain**: every post-mortem that identified a systemic problem gets an entry here. New contributors read it before touching sensitive areas.
+
+```markdown
+## 1. Real-Time Audio Thread Violations
+
+### 1.1 Heap allocation in audio callback
+**Symptom**: Random crackles under load.
+**Root cause**: std::vector::push_back resize inside processAudio callback.
+**Detection**: Wrap malloc with _CrtSetAllocHook in debug builds.
+**Prevention**: Pre-allocate all buffers at startup.
+```
+
+### 9. Context Assembler (`tools/ai_docs/assemble_context.py`)
+
+The **Context Assembler** generates a single focused briefing document for any source file:
+
+```bash
+python tools/ai_docs/assemble_context.py src/audio/mixer.cpp
+# Output includes:
+# - AI_CONTEXT.md for the module (purpose, thread model, constraints, failure modes)
+# - AI_SUMMARY.md (public API snapshot)
+# - docs/REALTIME_RULES.md (if RT constraints detected)
+# - Referenced ADRs (from ## See also section)
+# - KNOWN_FAILURE_PATTERNS.md (if exists)
+# - graphify dependency path (if binary available)
+# - Claude Code MEMORY.md excerpt (first 50 lines)
+```
+
+This replaces the need to manually collect context before starting work on a module. The AI receives all relevant information in one assembled document instead of requiring multiple context injections.
+
+### 10. Skills Ecosystem
 
 Claude Code skills extend the assistant with domain-specific, project-aware commands:
 
 | Skill | Purpose |
 |---|---|
-| `/verify-ai-docs` | Full 9-tier health check of this entire stack |
+| `/verify-ai-docs` | Full 10-tier health check of this entire stack |
 | `/verify-standards` | Quality governance scorecard (CI, docs, conventions) |
 | `/audio-validate` | Real-time audio thread safety validator |
 | `/realtime-audio` | Load RT constraints as context before audio work |
@@ -166,26 +202,27 @@ Claude Code skills extend the assistant with domain-specific, project-aware comm
 
 Skills are `.md` files in `.claude/skills/<name>/SKILL.md` — version-controlled with the project, available to every contributor.
 
-### 9. The `verify-ai-docs` Skill
+### 11. The `verify-ai-docs` Skill
 
-A 9-tier health check that verifies, auto-fixes, and reports the entire stack:
+A 10-tier health check that verifies, auto-fixes, and reports the entire stack:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   AI OPTIMIZATION STACK — HEALTH SCORECARD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Tier 1 — Core Scripts           5/5  ✅
-Tier 2 — AI Documentation      15/15 ✅
-Tier 3 — AI_SUMMARY Freshness  14/14 ✅
-Tier 4 — Automation Chain       3/3  ✅
-Tier 5 — graphify Graph         3/3  ✅
-Tier 6 — Obsidian Memory Vault  5/5  ✅
-Tier 7 — Claude Code Memory     3/3  ✅
-Tier 8 — Project Quality Gates  5/5  ✅
-Tier 9 — Skills Ecosystem       7/7  ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SCORE: 60/60 | Status: OPERATIONAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tier 1  — Core Scripts            6/6   ✅
+Tier 2  — AI Documentation       16/16  ✅  ← includes coverage check
+Tier 3  — AI_SUMMARY Freshness   14/14  ✅
+Tier 4  — Automation Chain        3/3   ✅
+Tier 5  — graphify Graph          3/3   ✅
+Tier 6  — Obsidian Memory Vault   5/5   ✅
+Tier 7  — Claude Code Memory      3/3   ✅
+Tier 8  — Project Quality Gates   6/6   ✅  ← includes KFP
+Tier 9  — Skills Ecosystem        7/7   ✅
+Tier 10 — Cognitive Contract      3/3   ✅  ← failure modes · KFP · assembler
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SCORE: 66/66 | Status: OPERATIONAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Auto-fixes: stale `AI_SUMMARY.md`, stale graphify graph, missing PostToolUse hook.  

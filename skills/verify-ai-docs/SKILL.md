@@ -67,13 +67,14 @@ for F in \
   tools/ai_docs/update_on_edit.py \
   tools/ai_docs/generate_all.py \
   tools/ai_docs/run_hook.sh \
-  tools/ai_docs/find_python.sh; do
+  tools/ai_docs/find_python.sh \
+  tools/ai_docs/assemble_context.py; do
   [ -f "$F" ] && echo "EXISTS $(wc -l < $F) $F" || echo "MISSING $F"
 done
 ```
 
 Thresholds: `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
-`generate_all.py` ≥ 35 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20
+`generate_all.py` ≥ 35 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20 · `assemble_context.py` ≥ 80
 
 ❌ FAIL on any missing file → skip remaining tiers and print install guide (Step 9).
 
@@ -116,7 +117,30 @@ find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
   done
 ```
 
-### 2c — Orphan detection
+### 2c — Cognitive contract coverage (failure modes + hot files)
+```bash
+COVERED=0; TOTAL=0
+find . -name "AI_CONTEXT.md" \
+  -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/vendor/*" \
+  | sort | while read CTX; do
+  TOTAL=$((TOTAL+1))
+  HAS_FAIL=$(grep -c "^## Common failure modes" "$CTX" 2>/dev/null || echo 0)
+  HAS_HOT=$(grep -c "^## Hot files" "$CTX" 2>/dev/null || echo 0)
+  DIR="${CTX%/AI_CONTEXT.md}"
+  if [ "$HAS_FAIL" -gt 0 ] && [ "$HAS_HOT" -gt 0 ]; then
+    echo "OK ${DIR#./}"
+    COVERED=$((COVERED+1))
+  else
+    MISS=""
+    [ "$HAS_FAIL" -eq 0 ] && MISS="${MISS}failure-modes "
+    [ "$HAS_HOT" -eq 0 ] && MISS="${MISS}hot-files"
+    echo "INCOMPLETE ${DIR#./} (missing: $MISS)"
+  fi
+done
+```
+Each INCOMPLETE = ⚠️ WARN. Template for new sections is in Step 8.
+
+### 2d — Orphan detection
 Source directories with files but no `AI_CONTEXT.md`:
 ```bash
 find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
@@ -317,6 +341,13 @@ ADR_COUNT=$(find docs/adr docs/decisions -name "*.md" 2>/dev/null \
 for F in CONTRIBUTING.md docs/CONTRIBUTING.md; do
   [ -f "$F" ] && echo "CONTRIBUTING OK: $F" && break
 done
+
+# Failure patterns knowledge base
+for F in docs/KNOWN_FAILURE_PATTERNS.md KNOWN_FAILURE_PATTERNS.md; do
+  [ -f "$F" ] \
+    && echo "KNOWN_FAILURE_PATTERNS OK: $F ($(wc -l < $F) lines)" \
+    && break
+done || echo "KNOWN_FAILURE_PATTERNS MISSING — consider creating docs/KNOWN_FAILURE_PATTERNS.md"
 ```
 
 ---
@@ -343,9 +374,47 @@ echo "Total: $COUNT local skill(s)"
 
 ---
 
+## TIER 10 — Cognitive Contract (Failure Modes + Context Assembler)
+
+### 10a — Failure modes coverage summary
+```bash
+OK=0; TOTAL=0
+find . -name "AI_CONTEXT.md" -not -path "*/.git/*" -not -path "*/node_modules/*" \
+  | while read CTX; do
+  TOTAL=$((TOTAL+1))
+  grep -q "^## Common failure modes" "$CTX" && grep -q "^## Hot files" "$CTX" \
+    && OK=$((OK+1))
+done
+echo "Cognitive contract: $OK/$TOTAL modules fully annotated"
+```
+
+### 10b — KNOWN_FAILURE_PATTERNS.md
+```bash
+for F in docs/KNOWN_FAILURE_PATTERNS.md KNOWN_FAILURE_PATTERNS.md; do
+  [ -f "$F" ] && echo "OK ($(wc -l < $F) lines, $(grep -c "^### " $F) patterns)" && break
+done || echo "MISSING"
+```
+PASS if ≥ 30 lines.
+
+### 10c — Context assembler functional test
+```bash
+PY=$(bash tools/ai_docs/find_python.sh)
+TEST_FILE=$(find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
+  | head -1 | xargs dirname | xargs -I{} find {} -maxdepth 1 \
+  \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+     -o -name "*.py" -o -name "*.go" \) 2>/dev/null | head -1)
+[ -n "$TEST_FILE" ] \
+  && PYTHONIOENCODING=utf-8 "$PY" tools/ai_docs/assemble_context.py "$TEST_FILE" \
+       --no-memory --output /tmp/ctx_test_pub.md 2>/dev/null \
+  && echo "ASSEMBLER OK ($(wc -l < /tmp/ctx_test_pub.md) lines)" \
+  || echo "ASSEMBLER FAIL or no source file found"
+```
+
+---
+
 ## STEP 6 — Scorecard
 
-Print the full scorecard using results from Tiers 1-9:
+Print the full scorecard using results from Tiers 1-10:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -353,15 +422,16 @@ Print the full scorecard using results from Tiers 1-9:
   Project: <ProjectName> · <date>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Tier 1 — Core Scripts          [N/5]  results
-Tier 2 — AI Documentation      [N/M]  results
-Tier 3 — AI_SUMMARY Freshness  [N/M]  results
-Tier 4 — Automation Chain      [N/3]  results
-Tier 5 — Dependency Graph      [N/3]  results
-Tier 6 — Obsidian Vault        [N/5]  results
-Tier 7 — Claude Code Memory    [N/3]  results
-Tier 8 — Project Quality       [N/4]  results
-Tier 9 — Skills Ecosystem      [N/M]  results
+Tier 1  — Core Scripts          [N/6]  results
+Tier 2  — AI Documentation      [N/M]  results  ← includes coverage check
+Tier 3  — AI_SUMMARY Freshness  [N/M]  results
+Tier 4  — Automation Chain      [N/3]  results
+Tier 5  — Dependency Graph      [N/3]  results
+Tier 6  — Obsidian Vault        [N/5]  results
+Tier 7  — Claude Code Memory    [N/3]  results
+Tier 8  — Project Quality       [N/5]  results  ← includes KFP
+Tier 9  — Skills Ecosystem      [N/M]  results
+Tier 10 — Cognitive Contract    [N/3]  results  ← failure modes · KFP · assembler
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SCORE: X/Y  |  PASS: A  WARN: B  FAIL: C
