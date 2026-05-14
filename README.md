@@ -214,7 +214,7 @@ Skills are `.md` files in `.claude/skills/<name>/SKILL.md` — versioned with th
 
 #### gstack — Global Engineering Skills
 
-[gstack](<!-- gstack GitHub URL -->) is a community collection of Claude Code skills created by Gary Tan (President of YC). It provides generic engineering skills available across **all** your projects, regardless of codebase:
+[gstack](https://github.com/garrytan/gstack) is a community collection of Claude Code skills created by Gary Tan (President of YC). It provides generic engineering skills available across **all** your projects, regardless of codebase:
 
 | Skill | Purpose |
 |---|---|
