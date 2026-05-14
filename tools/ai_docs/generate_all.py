@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_all.py — Regenerate AI_SUMMARY.md for every Seno DAW module.
+generate_all.py — Regenerate AI_SUMMARY.md for every project module.
 
 Run this after adding new files or when AI_SUMMARY.md files are stale.
 
@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SENO_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 MODULE_DIRS = [
     "app/Source/Core/Audio",
@@ -40,7 +40,7 @@ def main() -> int:
     failed = 0
 
     for rel in MODULE_DIRS:
-        module_abs = SENO_ROOT / rel
+        module_abs = PROJECT_ROOT / rel
         if not module_abs.exists():
             print(f"  skip  {rel}  (directory not found)")
             skipped += 1
@@ -57,7 +57,7 @@ def main() -> int:
             text=True,
         )
         if result.returncode == 0:
-            short = result.stdout.strip().replace(str(SENO_ROOT), "")
+            short = result.stdout.strip().replace(str(PROJECT_ROOT), "")
             print(f"  OK  {short}")
             ok += 1
         else:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_ai_summary.py — Auto-generate AI_SUMMARY.md for a Seno DAW module directory.
+generate_ai_summary.py — Auto-generate AI_SUMMARY.md for a project module directory.
 
 Extracts public types, Host structs, free functions, namespaces, and LOC counts
 from C++ headers (.h) and Rust source files (.rs), then writes AI_SUMMARY.md.

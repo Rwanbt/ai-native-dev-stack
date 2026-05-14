@@ -7,15 +7,11 @@ INPUT=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/update_on_edit.py"
 
-# Find a working Python interpreter (skips MS Store stubs)
-CANDIDATES=(
-    "/c/Users/barat/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/python3/python.exe"
-    "/c/Users/barat/.lmstudio/extensions/backends/vendor/_amphibian/cpython3.11-win-x86@7/python.exe"
-    "/c/Users/barat/.lmstudio/extensions/backends/vendor/_amphibian/cpython3.11-win-x86@6/python.exe"
-    "/c/Users/barat/.lmstudio/extensions/backends/vendor/_amphibian/cpython3.11-win-x86@5/python.exe"
-    "python3"
-    "python"
-)
+# Delegate Python detection to find_python.sh (no hardcoded personal paths here)
+CANDIDATES=()
+DETECTED=$(bash "$SCRIPT_DIR/find_python.sh" 2>/dev/null)
+[ -n "$DETECTED" ] && CANDIDATES+=("$DETECTED")
+CANDIDATES+=("python3" "python" "py")
 
 for PY in "${CANDIDATES[@]}"; do
     if "$PY" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then

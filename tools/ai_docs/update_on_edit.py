@@ -3,7 +3,7 @@
 update_on_edit.py — Claude Code PostToolUse hook.
 
 Triggered after every Edit/Write tool call. Reads the tool input JSON
-from stdin, determines which Seno module was affected, and regenerates
+from stdin, determines which module was affected, and regenerates
 that module's AI_SUMMARY.md.
 
 Registered in .claude/settings.json:
@@ -21,7 +21,7 @@ from pathlib import Path
 # Project root detection
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).parent.resolve()
-SENO_ROOT = _SCRIPT_DIR.parent.parent  # tools/ai_docs/../../
+PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # <project_root>/tools/ai_docs/
 
 # Ordered from most-specific to least-specific so the first match wins.
 MODULE_DIRS = [
@@ -50,7 +50,7 @@ def find_module(file_path: str) -> Path | None:
         return None
 
     for rel in MODULE_DIRS:
-        candidate = (SENO_ROOT / rel).resolve()
+        candidate = (PROJECT_ROOT / rel).resolve()
         try:
             resolved.relative_to(candidate)
             return candidate

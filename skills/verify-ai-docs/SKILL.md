@@ -1,7 +1,7 @@
 ---
 name: verify-ai-docs
 description: |
-  Full AI optimization stack health check for Seno DAW (and any large codebase).
+  Full AI optimization stack health check for large codebases (C++, Rust, or any language).
   9-tier scorecard: AI docs, graphify dependency graph, Obsidian memory vault,
   Claude Code memory, project quality gates, and skills ecosystem.
   Auto-fixes stale summaries, stale graphify graph, missing hooks.
@@ -10,26 +10,26 @@ description: |
   "tout est à jour ?", "vérifier l'optimisation IA", "ai health check".
   Proactively suggest: after Track B extractions, before a major push,
   when a new contributor joins, or at the start of a long session.
-origin: seno
+origin: generic
 ---
 
 # AI Optimization Stack — Full Health Check
 
 Follow every step in order. Use real tool calls — never assume file state.
-Project root: `d:/App/Seno`. Source `tools/ai_docs/config.sh` for machine paths.
+Project root is detected via `git rev-parse --show-toplevel`. Source `tools/ai_docs/config.sh` for machine paths.
 
 ---
 
 ## STEP 0 — Load config
 
 ```bash
-SENO_ROOT=$(git rev-parse --show-toplevel)
-[ -f "$SENO_ROOT/tools/ai_docs/config.sh" ] && source "$SENO_ROOT/tools/ai_docs/config.sh"
+PROJECT_ROOT=$(git rev-parse --show-toplevel)
+[ -f "$PROJECT_ROOT/tools/ai_docs/config.sh" ] && source "$PROJECT_ROOT/tools/ai_docs/config.sh"
 
 # Defaults if config missing
 GRAPHIFY_BIN="${GRAPHIFY_BIN:-graphify}"
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-$HOME/Documents/Obsidian}"
-OBSIDIAN_PROJECT_DIR="${OBSIDIAN_PROJECT_DIR:-Seno}"
+OBSIDIAN_PROJECT_DIR="${OBSIDIAN_PROJECT_DIR:-MyProject}"
 OBSIDIAN_MEMORY_FILE="${OBSIDIAN_MEMORY_FILE:-$OBSIDIAN_PROJECT_DIR/_memory/memory.md}"
 OBSIDIAN_LOG_FILE="${OBSIDIAN_LOG_FILE:-LOG.md}"
 CLAUDE_MEMORY_ROOT="${CLAUDE_MEMORY_ROOT:-$HOME/.claude/projects}"
@@ -37,7 +37,9 @@ CLAUDE_MEMORY_KEY="${CLAUDE_MEMORY_KEY:-}"
 SKILLS_DIR="${SKILLS_DIR:-.claude/skills}"
 ```
 
-Tracked modules (canonical — add when new Core/ modules are created):
+**Tracked modules** — customize this list for your project structure.
+Read `tools/ai_docs/config.sh` or `generate_all.py` to find the canonical list.
+Example (Seno DAW):
 ```
 app/Source/Core/Audio    app/Source/Core/IO      app/Source/Core/Edit
 app/Source/Core/Export   app/Source/Core/Streaming  app/Source/Core/Midi
@@ -134,7 +136,7 @@ PY=$(bash tools/ai_docs/find_python.sh)
 [ -n "$PY" ] && "$PY" --version && echo "PYTHON_OK: $PY" || echo "PYTHON_MISSING"
 
 # 4c — Functional end-to-end test
-echo "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$SENO_ROOT/app/Source/Core/Edit/TrackOps.cpp\"}}" \
+echo "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$PROJECT_ROOT/path/to/any/source/file.cpp\"}}" \
   | bash tools/ai_docs/run_hook.sh
 ```
 
@@ -158,7 +160,7 @@ PASS 4c if output contains "Updated".
 
 ### 5c — Graph freshness
 ```bash
-NEWEST=$(find app/Source rust_dsp/src -name "*.cpp" -o -name "*.h" -o -name "*.rs" 2>/dev/null \
+NEWEST=$(find src -name "*.cpp" -o -name "*.h" -o -name "*.rs" 2>/dev/null \
   | xargs ls -t 2>/dev/null | head -1)
 [ -n "$NEWEST" ] && [ graphify-out/graph.json -nt "$NEWEST" ] \
   && echo "GRAPH FRESH" || echo "GRAPH STALE ($(basename $NEWEST) is newer)"
@@ -276,7 +278,7 @@ Print the full scorecard:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   AI OPTIMIZATION STACK — FULL HEALTH SCORECARD
-  Project: Seno DAW · Date: YYYY-MM-DD
+  Project: <YourProject> · Date: YYYY-MM-DD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Tier 1 — Core Scripts           (5/5)   [results]
@@ -294,6 +296,8 @@ Tier 9 — Skills Ecosystem       (N/7)   [results]
   Status: [OPERATIONAL / DEGRADED / BROKEN]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+Replace "MyProject" in the header with your actual project name.
 
 Status:
 - **OPERATIONAL** — 0 FAILs
@@ -318,7 +322,7 @@ PYTHONIOENCODING=utf-8 "$PY" tools/ai_docs/generate_all.py
 ### Fix missing PostToolUse hook
 If Tier 4a failed: edit `.claude/settings.json` to add:
 ```json
-{ "type": "command", "command": "bash <SENO_ROOT>/tools/ai_docs/run_hook.sh" }
+{ "type": "command", "command": "bash <PROJECT_ROOT>/tools/ai_docs/run_hook.sh" }
 ```
 Into the `PostToolUse → Edit|Write → hooks` array.
 
@@ -357,13 +361,13 @@ Into the `PostToolUse → Edit|Write → hooks` array.
 ### Missing Obsidian memory.md → print frontmatter template
 ```yaml
 ---
-project: seno
+project: myproject
 type: architecture
-tags: [seno, memory, track-b]
-summary: "AI session memory for Seno DAW Track B refactor."
+tags: [myproject, memory]
+summary: "AI session memory for MyProject — one sentence, 15-25 words."
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-related: [[INDEX]], [[Seno/CLAUDE]]
+related: [[INDEX]], [[MyProject/CLAUDE]]
 ---
 ```
 
