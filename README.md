@@ -1,6 +1,6 @@
 # AI-Native Dev Stack
 
-> A complete methodology and toolkit for making any large codebase immediately understandable by AI assistants — with automatic maintenance so context never goes stale.
+> Une méthodologie complète et une boîte à outils pour rendre tout large codebase immédiatement compréhensible par les assistants IA — avec une maintenance automatique pour que le contexte ne devienne jamais obsolète.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-green)](https://claude.ai/code)
@@ -8,428 +8,563 @@
 
 ---
 
-## The Problem
+## Le problème
 
-Large codebases (60k+ lines, multi-language, multi-thread) overwhelm AI context windows. Without structure, every session starts from zero: the AI hallucinates architecture, misses real-time constraints, and proposes solutions that break the threading model.
+Les grands codebases (60k+ lignes, multi-langage, multi-thread) saturent les fenêtres de contexte des IA. Sans structure, chaque session repart de zéro : l'IA hallucine l'architecture, ignore les contraintes temps-réel et propose des solutions qui cassent le modèle de threading.
 
-The usual workarounds (dumping files into context, writing long prompts) don't scale. They're manual, they go stale, and they consume tokens on noise instead of signal.
+Les palliatifs habituels (coller des fichiers dans le contexte, écrire de longs prompts) ne scalent pas. Ils sont manuels, ils deviennent obsolètes, et ils consomment des tokens sur du bruit plutôt que sur du signal.
 
-## The Solution
+## La solution
 
-A self-maintaining **AI optimization stack** — a set of structured documents, scripts, and hooks that keeps the AI permanently oriented without human intervention:
+Un **stack d'optimisation IA auto-maintenu** — un ensemble de documents structurés, scripts et hooks qui garde l'IA perpétuellement orientée sans intervention humaine :
 
 ```
-AI Context Files (per module)   ←  auto-updated on every file edit
-Dependency Graph (graphify)     ←  re-indexed on demand or after big refactors
-Real-time Rules (standalone)    ←  single file injected for RT-adjacent work
-Memory Vault (Obsidian)         ←  persistent cross-session second brain
-Claude Code Memory              ←  auto-generated session summaries
-Skills Ecosystem                ←  domain-specific verification commands
-PostToolUse Hook                ←  keeps everything in sync automatically
+Fichiers de contexte IA (par module)   ←  mis à jour à chaque édition de fichier
+Graphe de dépendances (graphify)       ←  réindexé à la demande
+Règles temps-réel (standalone)         ←  fichier unique injecté pour le code RT
+Coffre-fort mémoire (Obsidian)         ←  second cerveau persistant inter-sessions
+Mémoire Claude Code                    ←  résumés de session auto-générés
+Écosystème de skills                   ←  commandes de vérification domaine-spécifiques
+Hook PostToolUse                       ←  garde tout en sync automatiquement
 ```
 
-One command checks the health of the entire stack: `/verify-ai-docs`
+Une seule commande vérifie la santé du stack entier : `/verify-ai-docs`
 
 ---
 
-## Stack Components
+## Composants du stack
 
-### 1. Module-Level AI Context (`AI_CONTEXT.md`)
+### 1. Contexte IA par module (`AI_CONTEXT.md`)
 
-Each source module gets a hand-written `AI_CONTEXT.md` that captures what no README does: **thread model, forbidden patterns, non-obvious constraints, and common call patterns**.
+Chaque module source reçoit un `AI_CONTEXT.md` écrit à la main qui capture ce qu'aucun README ne documente : **modèle de threading, patterns interdits, contraintes non-évidentes, patterns d'appel courants**.
 
 ```
-app/Source/Core/Audio/
-├── AI_CONTEXT.md      ← hand-written: purpose, thread model, constraints
-├── AI_SUMMARY.md      ← auto-generated: public types, functions, LOC table
-├── PluginMgr.h
-├── TrackFreezer.h
+src/modules/auth/
+├── AI_CONTEXT.md      ← manuel : purpose, thread model, contraintes
+├── AI_SUMMARY.md      ← auto-généré : types publics, fonctions, table LOC
+├── AuthService.ts
+├── TokenManager.ts
 └── ...
 ```
 
-**`AI_CONTEXT.md` covers:**
-- Module purpose (2-3 sentences)
-- Thread model table (which function runs on which thread)
-- Constraints (what is allowed/forbidden)
-- **Common failure modes** — the 3-5 most dangerous bugs when misusing this module
-- **Hot files** — the 2-4 files with the most dangerous invariants or highest change rate
-- Common usage patterns with code examples
-- Cross-references to ADRs and related modules
+**`AI_CONTEXT.md` couvre :**
+- But du module (2-3 phrases)
+- Table du modèle de threading (quelle fonction s'exécute sur quel thread)
+- Contraintes (ce qui est autorisé/interdit)
+- **Modes de défaillance courants** — les 3-5 bugs les plus dangereux lors d'une mauvaise utilisation
+- **Fichiers chauds** — les 2-4 fichiers avec les invariants les plus dangereux ou le plus fort taux de changement
+- Patterns d'usage courants avec exemples de code
+- Références croisées vers les ADRs et modules liés
 
-**`AI_SUMMARY.md` is auto-generated** from the source headers on every file edit via a PostToolUse hook. It always reflects the current public API: Host structs, free functions, LOC counts with size warnings.
+**`AI_SUMMARY.md` est auto-généré** depuis les headers sources à chaque édition via un hook PostToolUse. Il reflète toujours l'API publique courante : types, fonctions, comptages LOC avec alertes de taille.
 
-### 2. Real-Time Rules (`docs/REALTIME_RULES.md`)
+### 2. Règles domaine (`docs/REALTIME_RULES.md` ou équivalent)
 
-A standalone document covering all constraints for real-time (audio/video) thread code. Injected as context whenever working on RT-adjacent code, without loading the entire project documentation.
+Un document standalone couvrant toutes les contraintes pour le code critique : thread temps-réel, sécurité, performance, protocoles réseau, etc. Injecté comme contexte quand on travaille sur du code adjacent à ces contraintes.
 
-Key sections:
-- Thread model diagram
-- Audio callback absolute constraints (zero alloc, zero blocking, zero exceptions)
-- Lock-free data handoff patterns
-- Frozen Core zones (functions never refactored without review)
-- Rust DSP rules (`unwrap()` forbidden in hot path, etc.)
+Sections types :
+- Diagramme du modèle de threading
+- Contraintes absolues du callback (zéro alloc, zéro blocage, zéro exception)
+- Patterns de transfert de données lock-free
+- Zones gelées (fonctions jamais refactorisées sans revue)
+- Règles DSP / règles domaine spécifiques
 
-### 3. Automatic Maintenance (PostToolUse Hook)
+### 3. Maintenance automatique (hook PostToolUse)
 
-A Claude Code `PostToolUse` hook fires after every `Edit` or `Write` on a `.cpp`, `.h`, or `.rs` file. It detects which module was modified and regenerates that module's `AI_SUMMARY.md` in under a second.
+Un hook Claude Code `PostToolUse` se déclenche après chaque `Edit` ou `Write` sur un fichier source. Il détecte quel module a été modifié et régénère le `AI_SUMMARY.md` de ce module en moins d'une seconde.
 
 ```
-Edit TrackFreezer.cpp
-    → hook fires → update_on_edit.py → generate_ai_summary.py
-    → AI_SUMMARY.md updated with new types/functions/LOC
+Édition de SessionManager.cpp
+    → hook se déclenche → update_on_edit.py → generate_ai_summary.py
+    → AI_SUMMARY.md mis à jour avec les nouveaux types/fonctions/LOC
 ```
 
-No manual steps. The AI context is always current.
+Zéro étape manuelle. Le contexte IA est toujours à jour.
 
-### 4. Dependency Graph (graphify)
+### 4. Graphe de dépendances (graphify)
 
-[graphify](https://github.com/graphify/graphify) builds an AST-level dependency graph of the entire codebase. Instead of grepping for "where is X used?", you query:
+[graphify](https://github.com/graphify/graphify) construit un graphe de dépendances au niveau AST pour tout le codebase. Au lieu de grepper "où est utilisé X ?", on interroge :
 
 ```bash
-graphify query "who calls processAudio"
-graphify path "SenoApp" "TrackFreezer"
-graphify update .    # re-index after changes (seconds, not minutes)
+graphify query "qui appelle processRequest"
+graphify path "ModuleA" "ServiceB"
+graphify update .    # ré-indexation après modifications (secondes, pas minutes)
 ```
 
-The graph is stored in `graphify-out/graph.json` and `GRAPH_REPORT.md`. Both the AI and the developer can query it without re-reading thousands of files.
+Le graphe est stocké dans `graphify-out/graph.json` et `GRAPH_REPORT.md`. L'IA et le développeur peuvent l'interroger sans relire des milliers de fichiers.
 
-### 5. Obsidian Memory Vault (Second Brain)
+### 5. Coffre-fort mémoire Obsidian (Second cerveau)
 
-An Obsidian vault acts as the **persistent cross-session memory**. The vault has a dedicated project folder:
+Un coffre-fort Obsidian sert de **mémoire persistante inter-sessions**. Le coffre a un dossier dédié par projet :
 
 ```
-Obsidian/IA_Dev_Brain/
-├── INDEX.md              ← navigation hub across all projects
-├── LOG.md                ← chronological session journal (append-only)
-├── SCHEMA.md             ← vault conventions
-└── Seno/
-    ├── _memory/
-    │   └── memory.md     ← AI session memory (decisions, patterns, context)
-    ├── decisions-log.md  ← architectural decisions with wikilinks
-    └── standards-governance.md
+Obsidian/MonCoffre/
+├── INDEX.md                  ← hub de navigation central
+├── LOG.md                    ← journal chronologique de sessions (append-only)
+├── SCHEMA.md                 ← conventions de frontmatter et de wikilinks
+│
+├── ProjetA/                  ← un dossier par projet
+│   ├── _memory/
+│   │   └── memory.md         ← mémoire IA des sessions (décisions, patterns)
+│   ├── decisions-log.md      ← décisions notables avec [[wikilinks]] ADR
+│   └── architecture/
+│       └── module-notes.md
+│
+├── ProjetB/                  ← autre projet
+│   └── _memory/memory.md
+│
+└── _global/                  ← notes transversales à tous les projets
+    ├── professional-code-standards.md
+    └── handoff/
 ```
 
-**Session end protocol (mandatory):**
-1. Update `Seno/_memory/memory.md` with session highlights
-2. Append entry to `LOG.md`: `## YYYY-MM-DD — [Project] — 3-5 bullet summary`
+**Protocole de fin de session (obligatoire) :**
+1. Mettre à jour `ProjetA/_memory/memory.md` avec les faits saillants de la session
+2. Appender une entrée dans `LOG.md` : `## YYYY-MM-DD — [Projet] — résumé 3-5 bullets`
 
-This means the next session starts with full context — even weeks later, even on a different machine.
+La prochaine session démarrera avec le contexte complet — même des semaines plus tard, même sur une autre machine.
 
-**Wikilink conventions:**
-- Every note links to related notes via `[[wikilinks]]`
-- Architectural decisions link to their ADR: `[[ADR-0002 Frozen Core]]`
-- The `related:` frontmatter field is always populated
+**Conventions wikilinks :**
+- Chaque note lie vers les notes connexes via `[[wikilinks]]`
+- Les décisions architecturales lient vers leur ADR : `[[ADR-0004 Extract Service Pattern]]`
+- Le champ `related:` du frontmatter est toujours renseigné
 
-### 6. Claude Code Memory System
+### 6. Mémoire Claude Code
 
-Claude Code persists cross-session memory in `~/.claude/projects/<project-key>/memory/`. The memory system has four types:
+Claude Code persiste une mémoire inter-sessions dans `~/.claude/projects/<clé-projet>/memory/`. Quatre types de mémoire :
 
-| Type | Content | When to save |
+| Type | Contenu | Quand enregistrer |
 |---|---|---|
-| `user` | Developer profile, expertise, preferences | When learning about the developer |
-| `feedback` | Corrections and confirmations about approach | When the dev corrects or validates a pattern |
-| `project` | Goals, deadlines, active work items | When learning about project state |
-| `reference` | Pointers to external systems (Linear, Grafana) | When learning about external resources |
+| `user` | Profil du développeur, expertise, préférences | En apprenant sur le développeur |
+| `feedback` | Corrections et confirmations d'approche | Quand le dev corrige ou valide un pattern |
+| `project` | Objectifs, deadlines, travaux en cours | En apprenant l'état du projet |
+| `reference` | Pointeurs vers systèmes externes (Linear, Grafana, Notion) | En découvrant des ressources externes |
 
-`MEMORY.md` is an index (≤ 200 lines) pointing to individual topic files. It's loaded automatically at session start.
+`MEMORY.md` est un index (≤ 200 lignes) pointant vers des fichiers de topic individuels. Il est chargé automatiquement au démarrage de session.
 
-### 7. Architecture Decision Records (ADRs)
+### 7. ADRs — Décisions d'architecture (`docs/adr/`)
 
-Every non-obvious architectural decision gets an ADR in `docs/adr/NNNN-title.md`:
-
-```markdown
-# ADR-0002: Frozen Core — processAudio and run()
-**Date**: 2026-05-07 | **Status**: Accepted
-
-## Context
-processAudio() is 2,133 LOC with CC ~100+. Any refactor risks audio dropouts.
-
-## Decision
-These two functions are never refactored without explicit architectural review.
-
-## Consequences
-Extractions target methods called FROM these functions, not the functions themselves.
-```
-
-The code references ADRs directly: `// See ADR-0002: Frozen Core`. This connects the why to the where.
-
-### 8. Known Failure Patterns (`docs/KNOWN_FAILURE_PATTERNS.md`)
-
-A hand-written, append-only catalogue of the most dangerous bugs in the codebase — organized by category (threading, FFI, serialization, UI, etc.). Each entry has: symptom, root cause, detection method, prevention.
-
-This is the **institutional memory of pain**: every post-mortem that identified a systemic problem gets an entry here. New contributors read it before touching sensitive areas.
+Toute décision architecturale non triviale reçoit un ADR dans `docs/adr/NNNN-titre.md` :
 
 ```markdown
-## 1. Real-Time Audio Thread Violations
+# ADR-0004 : Pattern Host struct — extraction de services
+**Date** : 2026-05-07 | **Statut** : Accepté
 
-### 1.1 Heap allocation in audio callback
-**Symptom**: Random crackles under load.
-**Root cause**: std::vector::push_back resize inside processAudio callback.
-**Detection**: Wrap malloc with _CrtSetAllocHook in debug builds.
-**Prevention**: Pre-allocate all buffers at startup.
+## Contexte
+Le fichier principal (18 000 LOC) concentre trop de responsabilités.
+
+## Décision
+Extraire chaque domaine dans un service dédié avec un Host struct
+passé par paramètre (pas de singleton, injection explicite).
+
+## Conséquences
+Services testables en isolation. Zéro état global. Ownership traçable.
 ```
 
-### 9. Context Assembler (`tools/ai_docs/assemble_context.py`)
+Le code référence les ADRs directement : `// See ADR-0004: Host struct pattern`. Cela connecte le *pourquoi* au *où*.
 
-The **Context Assembler** generates a single focused briefing document for any source file:
+### 8. Catalogue des défaillances connues (`docs/KNOWN_FAILURE_PATTERNS.md`)
+
+Un catalogue écrit à la main, append-only, des bugs les plus dangereux du codebase — organisé par catégorie (threading, FFI, sérialisation, UI, etc.). Chaque entrée : symptôme, cause racine, méthode de détection, prévention.
+
+C'est la **mémoire institutionnelle de la douleur** : chaque post-mortem qui identifie un problème systémique y ajoute une entrée. Les nouveaux contributeurs le lisent avant de toucher des zones sensibles.
+
+```markdown
+## 1. Violations thread temps-réel
+
+### 1.1 Allocation mémoire dans le callback audio
+**Symptôme** : Craquements aléatoires sous charge.
+**Cause** : std::vector::push_back (resize) à l'intérieur du callback.
+**Détection** : Wrapper malloc avec _CrtSetAllocHook en builds debug.
+**Prévention** : Pré-allouer tous les buffers au démarrage.
+```
+
+### 9. Assembleur de contexte (`tools/ai_docs/assemble_context.py`)
+
+L'**Assembleur de contexte** génère un document de briefing unique et focalisé pour n'importe quel fichier source :
 
 ```bash
-python tools/ai_docs/assemble_context.py src/audio/mixer.cpp
-# Output includes:
-# - AI_CONTEXT.md for the module (purpose, thread model, constraints, failure modes)
-# - AI_SUMMARY.md (public API snapshot)
-# - docs/REALTIME_RULES.md (if RT constraints detected)
-# - Referenced ADRs (from ## See also section)
-# - KNOWN_FAILURE_PATTERNS.md (if exists)
-# - graphify dependency path (if binary available)
-# - Claude Code MEMORY.md excerpt (first 50 lines)
+python tools/ai_docs/assemble_context.py src/services/payment/PaymentGateway.cpp
+# La sortie inclut :
+# - AI_CONTEXT.md du module (purpose, thread model, contraintes, modes de défaillance)
+# - AI_SUMMARY.md (snapshot API publique)
+# - docs/REALTIME_RULES.md (si contraintes RT détectées)
+# - ADRs référencés (depuis la section ## See also)
+# - KNOWN_FAILURE_PATTERNS.md (si existant)
+# - Chemin de dépendance graphify (si binaire disponible)
+# - Extrait MEMORY.md Claude Code (50 premières lignes)
 ```
 
-This replaces the need to manually collect context before starting work on a module. The AI receives all relevant information in one assembled document instead of requiring multiple context injections.
+Remplace le besoin de collecter manuellement le contexte avant de travailler sur un module. L'IA reçoit toutes les informations pertinentes en un seul document assemblé.
 
-### 10. Skills Ecosystem
+### 10. Écosystème de skills
 
-Claude Code skills extend the assistant with domain-specific, project-aware commands:
+Les skills Claude Code étendent l'assistant avec des commandes domaine-spécifiques et conscientes du projet :
 
-| Skill | Purpose |
+| Skill | But |
 |---|---|
-| `/verify-ai-docs` | Full 10-tier health check of this entire stack |
-| `/verify-standards` | Quality governance scorecard (CI, docs, conventions) |
-| `/audio-validate` | Real-time audio thread safety validator |
-| `/realtime-audio` | Load RT constraints as context before audio work |
-| `/cpp-coding-standards` | C++ Core Guidelines reference |
-| `/clap-release` | Build and deploy CLAP audio plugin |
+| `/verify-ai-docs` | Bilan de santé complet du stack (10 tiers) |
+| `/verify-standards` | Scorecard qualité — CI, docs, conventions, métriques |
+| `/investigate` | Debug root-cause guidé |
+| `/review` | Revue de code avec auto-fixes |
+| `/health` | Dashboard santé rapide (tests, lint, build) |
 
-Skills are `.md` files in `.claude/skills/<name>/SKILL.md` — version-controlled with the project, available to every contributor.
+Les skills sont des fichiers `.md` dans `.claude/skills/<nom>/SKILL.md` — versionnés avec le projet, disponibles pour chaque contributeur.
 
-### 11. The `verify-ai-docs` Skill
+### 11. Le skill `/verify-ai-docs`
 
-A 10-tier health check that verifies, auto-fixes, and reports the entire stack:
+Un bilan de santé en 10 tiers qui vérifie, auto-corrige et rapporte l'état de tout le stack :
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   AI OPTIMIZATION STACK — HEALTH SCORECARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Tier 1  — Core Scripts            6/6   ✅
-Tier 2  — AI Documentation       16/16  ✅  ← includes coverage check
+Tier 2  — AI Documentation       16/16  ✅  ← inclut vérification couverture
 Tier 3  — AI_SUMMARY Freshness   14/14  ✅
 Tier 4  — Automation Chain        3/3   ✅
 Tier 5  — graphify Graph          3/3   ✅
 Tier 6  — Obsidian Memory Vault   5/5   ✅
 Tier 7  — Claude Code Memory      3/3   ✅
-Tier 8  — Project Quality Gates   6/6   ✅  ← includes KFP
+Tier 8  — Project Quality Gates   6/6   ✅  ← inclut KFP
 Tier 9  — Skills Ecosystem        7/7   ✅
-Tier 10 — Cognitive Contract      3/3   ✅  ← failure modes · KFP · assembler
+Tier 10 — Cognitive Contract      3/3   ✅  ← modes défaillance · KFP · assembleur
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SCORE: 66/66 | Status: OPERATIONAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Auto-fixes: stale `AI_SUMMARY.md`, stale graphify graph, missing PostToolUse hook.  
-Reports: missing `AI_CONTEXT.md` with ready-to-fill templates.  
-Installs: prints step-by-step setup guide for new contributors.
+Auto-corrige : `AI_SUMMARY.md` obsolètes, graphe graphify périmé, hook PostToolUse manquant.  
+Signale : `AI_CONTEXT.md` manquants avec templates prêts à remplir.  
+Installe : guide d'installation pas-à-pas pour les nouveaux contributeurs.
 
 ---
 
-## Quick Start
+## Démarrage rapide
 
-### For an existing project
+### Pour un projet existant
 
 ```bash
-# 1. Copy scripts into your project
-cp -r tools/ai_docs/ your-project/tools/
-cp -r skills/ your-project/.claude/
+# 1. Copier les scripts dans votre projet
+cp -r tools/ai_docs/ votre-projet/tools/
+cp -r skills/ votre-projet/.claude/
 
-# 2. Configure machine-specific paths
-cp tools/ai_docs/config.sh.example your-project/tools/ai_docs/config.sh
-# Edit config.sh: set OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
+# 2. Configurer les chemins machine-spécifiques
+cp tools/ai_docs/config.sh.example votre-projet/tools/ai_docs/config.sh
+# Éditer config.sh : renseigner OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
 
-# 3. Register the PostToolUse hook in .claude/settings.json
-# (see templates/settings_hook_example.json)
+# 3. Enregistrer le hook PostToolUse dans .claude/settings.json
+# (voir templates/settings_hook_example.json)
 
-# 4. Write AI_CONTEXT.md for each major module
-# (see templates/AI_CONTEXT_template.md)
+# 4. Écrire AI_CONTEXT.md pour chaque module majeur
+# (voir templates/AI_CONTEXT_template.md)
 
-# 5. Generate all AI_SUMMARY.md files
+# 5. Générer tous les AI_SUMMARY.md
 python tools/ai_docs/generate_all.py
 
-# 6. Verify the full stack
-# In Claude Code: /verify-ai-docs
+# 6. Vérifier le stack complet
+# Dans Claude Code : /verify-ai-docs
 ```
 
-### For a new machine / contributor
+### Pour une nouvelle machine / un nouveau contributeur
 
 ```bash
-# 1. Clone the project (scripts are already committed)
-git clone <your-project-repo>
+# 1. Cloner le projet (les scripts sont déjà commités)
+git clone <repo-du-projet>
 
-# 2. Detect Python
+# 2. Détecter Python
 bash tools/ai_docs/find_python.sh
 
-# 3. Copy and edit the machine config
+# 3. Copier et éditer la config machine
 cp tools/ai_docs/config.sh.example tools/ai_docs/config.sh
-# Set your Obsidian vault path, Python path, graphify binary
+# Renseigner le chemin du coffre Obsidian, Python, binaire graphify
 
-# 4. Register the hook (one-time)
-# Add to .claude/settings.json → hooks.PostToolUse → Edit|Write:
-# { "type": "command", "command": "bash /path/to/tools/ai_docs/run_hook.sh" }
+# 4. Enregistrer le hook (une fois)
+# Ajouter dans .claude/settings.json → hooks.PostToolUse → Edit|Write :
+# { "type": "command", "command": "bash /chemin-absolu/tools/ai_docs/run_hook.sh" }
 
-# 5. Generate summaries
+# 5. Générer les summaries
 python tools/ai_docs/generate_all.py
 
-# 6. Verify
-# /verify-ai-docs → should show OPERATIONAL
+# 6. Vérifier → /verify-ai-docs doit afficher OPERATIONAL
 ```
 
 ---
 
-## File Reference
+## Standards de qualité — optimisation IA et lisibilité humaine
 
-### Auto-maintained (never edit manually)
-| File | Updated by |
-|---|---|
-| `*/AI_SUMMARY.md` | PostToolUse hook on every `.cpp/.h/.rs` edit |
-| `graphify-out/graph.json` | `graphify update .` (run manually or after big refactors) |
+Cette méthodologie optimise simultanément pour **deux audiences** : l'IA (fenêtre de contexte, signal/bruit, précision) et les humains (maintenabilité, revue de code, onboarding). Les mêmes règles servent les deux.
 
-### Hand-written (stable, version-controlled)
-| File | Content |
-|---|---|
-| `*/AI_CONTEXT.md` | Module purpose, thread model, constraints |
-| `docs/REALTIME_RULES.md` | All RT thread constraints |
-| `docs/adr/NNNN-*.md` | Architectural decision records |
-| `CLAUDE.md` | Project-level AI instructions and conventions |
+### Taille des fichiers
 
-### Machine-specific (git-ignored)
-| File | Content |
+| Seuil | Action |
 |---|---|
-| `tools/ai_docs/config.sh` | Local paths: vault, Python, graphify, Claude memory |
+| ≤ 500 LOC | Zone verte — fichier sain |
+| > 500 LOC (nouveau fichier) | Signaler, proposer décomposition |
+| > 800 LOC (fichier modifié) | Proposer extraction des responsabilités secondaires |
+| > 1 500 LOC | **Refactoring obligatoire avant tout ajout** |
+
+**Pourquoi ça aide l'IA :** Un fichier de 300 LOC rentre dans le contexte d'un seul appel. Un fichier de 2 000 LOC nécessite des allers-retours ou du tronquage — avec risque d'hallucination sur les parties non vues.
+
+**Pourquoi ça aide les humains :** Règle SonarQube industrielle. Un fichier qu'on ne peut pas lire en entier en 5 minutes ne peut pas être relu correctement.
+
+### Taille des fonctions et complexité
+
+| Métrique | Cible | Alerte | Bloquant |
+|---|---|---|---|
+| LOC par fonction | ≤ 50 | > 100 | > 200 |
+| Complexité cyclomatique | ≤ 10 | > 15 | > 25 |
+| Profondeur d'imbrication | ≤ 3 | 4 | > 4 |
+
+**Pourquoi ça aide l'IA :** Une fonction de 50 LOC peut être comprise dans un seul bloc de contexte. Une fonction de 500 LOC génère de l'incertitude : l'IA ne peut pas garder en tête toutes les branches en même temps.
+
+### Politique de commentaires — WHY, jamais WHAT
+
+```cpp
+// ❌ Décrit CE QUE fait le code (le code se lit déjà)
+// Iterate over all tracks and mute them
+for (auto& track : tracks) { track.muted = true; }
+
+// ✅ Documente POURQUOI cette contrainte existe
+// Must process in reverse order — forward pass causes PDC drift (ADR-0007)
+for (auto it = tracks.rbegin(); it != tracks.rend(); ++it) { ... }
+```
+
+**Pourquoi ça aide l'IA :** Les commentaires WHY sont de l'information à haute densité — ils expliquent des contraintes non inférables du code. Les commentaires WHAT sont du bruit pur pour l'IA (qui peut lire le code elle-même).
+
+### Nommage explicite
+
+- `processAudioFrame()` > `process()` — sans ambiguïté sur le domaine
+- `userEmailAddress` > `email` — sans ambiguïté sur le type et la portée
+- `MAX_RETRY_COUNT` > `MAX` — sans ambiguïté sur l'usage
+- Pas d'abréviations cryptiques : `idx` → `index`, `cnt` → `count`, `mgr` → `manager`
+
+**Pourquoi ça aide l'IA :** Les noms explicites éliminent l'ambiguïté à résolution coûteuse. L'IA n'a pas à inférer ce que fait `process()` dans un contexte audio/réseau/données.
+
+### Zéro dead code
+
+Supprimer immédiatement, ne jamais commenter. Un bloc commenté est plus dangereux que supprimé : il pollue le contexte de l'IA avec du code qui n'est plus exécuté.
+
+```bash
+# Détection
+grep -r "TODO\|FIXME\|HACK\|XXX" src/   # chaque occurrence = ticket ou suppression
+```
+
+**Pourquoi ça aide l'IA :** Chaque ligne de code mort consomme des tokens et peut induire l'IA en erreur sur ce qui est actif. Git permet de retrouver tout code supprimé via `git log -S "nom_fonction"`.
+
+### Responsabilité unique (SRP)
+
+Avant d'écrire dans un fichier existant, trois questions :
+1. **"Ce code appartient-il vraiment ici ?"** — si non, créer le fichier approprié
+2. **"Est-ce que j'ajoute une deuxième responsabilité ?"** — si oui, fichier séparé
+3. **"Ce helper est-il réutilisable ailleurs ?"** — si oui, extraire en module partagé
+
+**Pourquoi ça aide l'IA :** Un fichier = une responsabilité = un contexte clair. L'IA peut raisonner sur un module sans avoir à comprendre des préoccupations entremêlées.
+
+### Zéro état global — singletons inclus
+
+**Interdit** : `static T g_xxx` dans un `.cpp` (ou `lazy_static` non justifié en Rust). **Interdit aussi** : les singletons via `getInstance()` — ils sont des globals déguisés.
+
+Préférer l'injection de dépendances explicite : paramètre, membre de classe avec owner identifiable.
+
+**Pourquoi ça aide l'IA :** L'état global rend le raisonnement non-local impossible. L'IA ne peut pas analyser une fonction sans tracer tous les globals qu'elle peut modifier.
+
+### Gestion des erreurs — jamais silencieuse
+
+- **Rust** : `unwrap()` et `expect()` interdits en production sauf invariant prouvé
+- **C++** : Jamais de `catch(...)` vide — toujours traiter ou re-lancer
+- **TypeScript** : Jamais de `catch (e) {}` vide — logger ou propager
+
+**Pourquoi ça aide l'IA :** Les erreurs silencieuses créent des états incohérents que l'IA diagnostiquera comme des bugs dans du code sain. Les erreurs explicites donnent à l'IA des signaux clairs.
+
+### Taille des PRs
+
+≤ 400 LOC modifiées par PR (ajouts + suppressions). Au-delà, le reviewer ne peut pas maintenir sa concentration — et l'IA non plus.
+
+**Pourquoi ça aide l'IA :** Une PR de 400 LOC peut être analysée en une passe. Une PR de 4 000 LOC nécessite plusieurs passes avec perte de cohérence.
+
+### Documentation proportionnelle à la taille du projet
+
+| Seuil projet | Documents obligatoires |
+|---|---|
+| > 10 fichiers source | `CLAUDE.md` — instructions IA + conventions |
+| > 3 000 LOC totaux | `ARCHITECTURE.md` — thread model, data flow, ownership |
+| > 5 000 LOC | `CONTRIBUTING.md` — conventions, onboarding, checklist PR |
+| Module complexe | `docs/adr/` — décisions architecturales |
+
+**Pourquoi ça aide l'IA :** `CLAUDE.md` est chargé automatiquement dans chaque session. `ARCHITECTURE.md` évite les hallucinations sur le design global. Les ADRs expliquent les décisions contre-intuitives.
+
+### Conventions de commit (Conventional Commits)
+
+```
+feat: add JWT token refresh mechanism
+fix: prevent double-trigger in drum pad release
+refactor: extract PaymentService from AppController
+perf: pre-allocate audio buffers at startup
+docs: add threading constraints to AudioModule AI_CONTEXT
+```
+
+**Pourquoi ça aide l'IA :** L'IA peut parcourir `git log` et comprendre immédiatement l'historique sans lire chaque diff. Les commits atomiques et conventionnels permettent de trouver l'introduction d'un bug avec `git bisect` en minutes.
 
 ---
 
-## Obsidian Vault Structure
+## Référence des fichiers
+
+### Auto-maintenus (ne jamais éditer manuellement)
+| Fichier | Mis à jour par |
+|---|---|
+| `*/AI_SUMMARY.md` | Hook PostToolUse à chaque édition de fichier source |
+| `graphify-out/graph.json` | `graphify update .` (manuellement ou après grands refactors) |
+
+### Écrits à la main (stables, versionnés)
+| Fichier | Contenu |
+|---|---|
+| `*/AI_CONTEXT.md` | Purpose, thread model, contraintes, modes de défaillance |
+| `docs/REALTIME_RULES.md` | Contraintes du thread temps-réel (ou équivalent domaine) |
+| `docs/KNOWN_FAILURE_PATTERNS.md` | Catalogue des bugs systémiques |
+| `docs/adr/NNNN-*.md` | Décisions d'architecture |
+| `CLAUDE.md` | Instructions IA au niveau projet et conventions |
+
+### Machine-spécifiques (git-ignorés)
+| Fichier | Contenu |
+|---|---|
+| `tools/ai_docs/config.sh` | Chemins locaux : coffre Obsidian, Python, graphify, mémoire Claude |
+
+---
+
+## Structure du coffre Obsidian
 
 ```
-Obsidian/IA_Dev_Brain/
-├── INDEX.md                  ← master navigation hub
-├── LOG.md                    ← chronological session journal
-├── SCHEMA.md                 ← frontmatter conventions, wikilink rules
+Obsidian/MonCoffre/
+├── INDEX.md                  ← hub de navigation central
+├── LOG.md                    ← journal chronologique de sessions
+├── SCHEMA.md                 ← conventions de frontmatter et wikilinks
 │
-├── Seno/                     ← one folder per project
+├── ProjetA/                  ← un dossier par projet
 │   ├── _memory/
-│   │   └── memory.md         ← AI session memory (decisions, patterns)
-│   ├── decisions-log.md      ← notable decisions with [[ADR]] wikilinks
-│   ├── standards-governance.md
+│   │   └── memory.md         ← mémoire IA des sessions (décisions, patterns)
+│   ├── decisions-log.md      ← décisions notables avec [[wikilinks]] ADR
 │   └── architecture/
-│       └── track-b-refactor.md
+│       └── notes.md
 │
-├── OpenCode/                 ← another project
+├── ProjetB/                  ← autre projet
 │   └── _memory/memory.md
 │
-└── _global/                  ← cross-project notes
+└── _global/                  ← notes transversales
     ├── professional-code-standards.md
     └── handoff/
 ```
 
-### Frontmatter template (every vault note)
+### Template frontmatter (chaque note du coffre)
+
 ```yaml
 ---
-project: seno          # seno | opencode | fulldesk | global
-type: architecture     # architecture | decision | bug | reference | roadmap | log
-tags: [seno, audio, track-b]
-summary: "One sentence describing this note for future AI sessions (15-25 words)."
+project: projet-a          # identifiant du projet
+type: architecture         # architecture | decision | bug | reference | roadmap | log
+tags: [projet-a, services, refactor]
+summary: "Une phrase décrivant cette note pour les futures sessions IA (15-25 mots)."
 created: 2026-05-14
 updated: 2026-05-14
-related: [[INDEX]], [[Seno/CLAUDE]], [[ADR-0002]]
+related: [[INDEX]], [[ProjetA/CLAUDE]], [[ADR-0004]]
 ---
 ```
 
-### Session recording (LOG.md format)
+### Format d'enregistrement de session (`LOG.md`)
+
 ```markdown
-## 2026-05-14 — Seno DAW — Track B Phase 19 group-track helpers
+## 2026-05-14 — Projet A — Extraction du service d'authentification
 
-- Extracted `isTrackVisible`, `getTrackIndentLevel`, `getChildTracks`, `getAllDescendants`
-- Added `toggleGroupCollapsed`, `setTrackParent`, propagate mute/solo to children
-- −97 LOC net, SenoApp.cpp now 16 025 LOC (−73.8% cumul Track B)
-- All 528 Rust tests + 114 GoogleTest passing, 0 warnings
-- Next: [Phase 20 candidate TBD]
+- Extrait `TokenValidator`, `SessionManager`, `RefreshHandler` depuis `AppController`
+- −240 LOC net, AppController.ts passe de 1 850 à 1 610 LOC
+- Tous les tests passent, 0 warning lint
+- Pattern : Host struct injecté par paramètre — pas de singleton
+- Prochain : extraire `PermissionChecker` (~180 LOC estimé)
 ```
 
 ---
 
-## Session End Protocol
+## Protocole de fin de session
 
-At the end of every session (mandatory):
+À la fin de chaque session (obligatoire) :
 
-1. **Update project memory** (`Seno/_memory/memory.md`):
-   - What was built/decided
-   - Patterns discovered
-   - Next steps
+1. **Mettre à jour la mémoire projet** (`ProjetA/_memory/memory.md`) :
+   - Ce qui a été construit/décidé
+   - Patterns découverts
+   - Prochaines étapes
 
-2. **Append to LOG.md**:
+2. **Appender dans `LOG.md`** :
    ```
-   ## YYYY-MM-DD — [Project] — Summary (3-5 bullets)
+   ## YYYY-MM-DD — [Projet] — Résumé (3-5 bullets)
    ```
 
-3. **Run `/verify-ai-docs`** to confirm everything is in sync.
+3. **Lancer `/verify-ai-docs`** pour confirmer que tout est en sync.
 
-This ensures the next session — even weeks later, even on a different machine — starts with full context.
+La prochaine session — même des semaines plus tard, même sur une autre machine — démarrera avec le contexte complet.
 
 ---
 
-## Customizing for Your Project
+## Adaptation à votre projet
 
-### 1. Module list
-Edit the tracked modules list in `skills/verify-ai-docs/SKILL.md` (Step 0) to match your project's structure.
+### 1. Liste des modules
+L'auto-découverte est basée sur la présence de `AI_CONTEXT.md`. Aucune liste hardcodée à maintenir — placez simplement un `AI_CONTEXT.md` dans chaque répertoire de module.
 
-### 2. Machine paths
-Copy `tools/ai_docs/config.sh.example` to `config.sh` and fill in:
-- `GRAPHIFY_BIN` — path to graphify binary
-- `OBSIDIAN_VAULT` — root of your Obsidian vault
-- `OBSIDIAN_PROJECT_DIR` — subfolder for this project
-- `CLAUDE_MEMORY_KEY` — subfolder name in `~/.claude/projects/`
+### 2. Chemins machine
+Copier `tools/ai_docs/config.sh.example` vers `config.sh` et renseigner :
+- `GRAPHIFY_BIN` — chemin vers le binaire graphify
+- `OBSIDIAN_VAULT` — racine de votre coffre Obsidian
+- `OBSIDIAN_PROJECT_DIR` — sous-dossier pour ce projet
+- `CLAUDE_MEMORY_KEY` — nom du sous-dossier dans `~/.claude/projects/`
 
-### 3. AI_CONTEXT.md
-Write one per module using `templates/AI_CONTEXT_template.md`. Focus on:
-- What the module does (2-3 sentences)
-- Which functions run on which thread
-- What is forbidden here (alloc in RT, I/O in audio, etc.)
-- One concrete usage example
+### 3. `AI_CONTEXT.md`
+Écrire un fichier par module en utilisant `templates/AI_CONTEXT_template.md`. Se concentrer sur :
+- Ce que fait le module (2-3 phrases)
+- Quelles fonctions s'exécutent sur quel thread
+- Ce qui est interdit ici
+- Les 3-5 bugs les plus fréquents quand on se trompe
+- Un exemple d'usage concret
 
-### 4. REALTIME_RULES.md
-Adapt `templates/REALTIME_RULES_template.md` to your constraints. Inject this file as context whenever working on performance-critical or multithreaded code.
+### 4. `KNOWN_FAILURE_PATTERNS.md`
+Créer `docs/KNOWN_FAILURE_PATTERNS.md` et l'alimenter après chaque post-mortem. Format :
+```markdown
+### N.N — Titre court
+**Symptôme** : Ce que le développeur observe.
+**Cause** : Pourquoi ça arrive.
+**Détection** : Comment le détecter (tool, assert, log).
+**Prévention** : Règle à suivre pour ne jamais y retomber.
+```
+
+### 5. Règles domaine
+Adapter ou créer un fichier `docs/REALTIME_RULES.md` (ou `SECURITY_RULES.md`, `PROTOCOL_RULES.md`...) selon les contraintes de votre domaine. Le nom n'a pas d'importance — l'assembleur de contexte l'injecte si des mots-clés de contrainte RT sont détectés dans `AI_CONTEXT.md`.
 
 ---
 
-## Why This Works
+## Pourquoi ça marche
 
-| Problem | Solution |
+| Problème | Solution |
 |---|---|
-| AI forgets architecture between sessions | Obsidian LOG + Claude Code memory |
-| AI proposes allocations in audio callback | REALTIME_RULES.md injected as context |
-| AI doesn't know which thread a function runs on | AI_CONTEXT.md thread model table |
-| AI suggests calling a function from wrong module | graphify query exposes call graph |
-| AI_SUMMARY.md goes stale after code changes | PostToolUse hook auto-regenerates it |
-| New contributor AI context from zero | `/verify-ai-docs` prints install guide |
-| "What modules exist?" → grep | AI_SUMMARY.md LOC tables + graphify |
+| L'IA oublie l'architecture entre sessions | LOG Obsidian + mémoire Claude Code |
+| L'IA propose des allocations dans le callback RT | `REALTIME_RULES.md` injecté comme contexte |
+| L'IA ignore quel thread exécute quelle fonction | Table thread model dans `AI_CONTEXT.md` |
+| L'IA suggère d'appeler une fonction depuis le mauvais module | `graphify query` expose le graphe d'appel |
+| `AI_SUMMARY.md` devient obsolète après des changements | Hook PostToolUse le régénère automatiquement |
+| Nouveau contributeur → contexte IA zéro | `/verify-ai-docs` imprime le guide d'installation |
+| "Quels modules existent ?" → grep | Tables LOC `AI_SUMMARY.md` + graphify |
+| Répétition des mêmes bugs systémiques | `KNOWN_FAILURE_PATTERNS.md` — mémoire institutionnelle |
+| Fichier trop gros → hallucinations IA | Standards LOC + refactoring obligatoire à 1 500 |
 
 ---
 
-## Project Using This Stack
+## Licence
 
-[**Seno DAW**](https://github.com/Rwanbt) — A professional audio/video/lighting DAW in C++17 + Rust with SDL3 + ImGui. 60k+ lines, fully refactored with this methodology. Track B reduced SenoApp.cpp from 62,002 LOC to ~16,000 LOC (−73.8%) while keeping all AI assistants fully oriented.
-
----
-
-## License
-
-MIT — use freely, adapt to your project, share improvements.
+MIT — utilisation libre, adaptation à votre projet, contributions bienvenues.
 
 ---
 
-## Contributing
+## Contribuer
 
-PRs welcome for:
-- Additional language support (currently optimized for C++/Rust; Python/TypeScript templates welcome)
-- graphify alternatives for other languages
-- Additional skill templates
-- Obsidian plugin integrations
+PRs bienvenues pour :
+- Support de langages additionnels (optimisé C++/Rust/TypeScript ; templates Python/Go bienvenus)
+- Alternatives à graphify pour d'autres langages
+- Templates de skills supplémentaires
+- Intégrations Obsidian
+- Traductions du README
