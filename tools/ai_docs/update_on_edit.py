@@ -3,8 +3,11 @@
 update_on_edit.py — Claude Code PostToolUse hook.
 
 Triggered after every Edit/Write tool call. Reads the tool input JSON
-from stdin, determines which module was affected, and regenerates
-that module's AI_SUMMARY.md.
+from stdin, finds which module was affected by walking up the directory
+tree until an AI_CONTEXT.md is found, then regenerates that module's
+AI_SUMMARY.md.
+
+Works for any project structure — no hardcoded paths.
 
 Registered in .claude/settings.json:
     PostToolUse → Edit|Write → this script
@@ -17,45 +20,66 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Project root detection
-# ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # <project_root>/tools/ai_docs/
+GENERATOR = _SCRIPT_DIR / "generate_ai_summary.py"
 
-# Ordered from most-specific to least-specific so the first match wins.
-MODULE_DIRS = [
-    "app/Source/Core/Audio",
-    "app/Source/Core/IO",
-    "app/Source/Core/Edit",
-    "app/Source/Core/Export",
-    "app/Source/Core/Streaming",
-    "app/Source/Core/Midi",
-    "app/Source/Core/Recording",
-    "app/Source/Core/Script",
-    "app/Source/Core/Input",
-    "app/Source/Core/Undo",
-    "app/Source/Core/Diagnostics",
-    "app/Source/UI",
-    "rust_dsp/src",
-]
+# File extensions that trigger an AI_SUMMARY.md update
+WATCHED_EXTENSIONS = {
+    # C / C++
+    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp",
+    # Rust
+    ".rs",
+    # TypeScript / JavaScript
+    ".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs",
+    # Python
+    ".py",
+    # Go
+    ".go",
+    # Java / Kotlin
+    ".java", ".kt",
+    # C# / F#
+    ".cs", ".fs",
+    # Swift
+    ".swift",
+    # Ruby
+    ".rb",
+    # PHP
+    ".php",
+}
 
-WATCHED_EXTENSIONS = {".cpp", ".h", ".hpp", ".rs"}
+# Directories to skip when walking up (avoid matching project-root accidentaly)
+STOP_DIRS = {".git", "node_modules", "vendor", "__pycache__"}
 
 
 def find_module(file_path: str) -> Path | None:
+    """
+    Walk up the directory tree from file_path.
+    Return the first directory that contains AI_CONTEXT.md.
+    Stop at the git root (directory containing .git) or filesystem root.
+    """
     try:
-        resolved = Path(file_path).resolve()
+        current = Path(file_path).resolve().parent
     except Exception:
         return None
 
-    for rel in MODULE_DIRS:
-        candidate = (PROJECT_ROOT / rel).resolve()
-        try:
-            resolved.relative_to(candidate)
-            return candidate
-        except ValueError:
-            continue
+    visited = set()
+    while current not in visited:
+        visited.add(current)
+
+        # Found a module marker
+        if (current / "AI_CONTEXT.md").exists():
+            return current
+
+        # Stop at git root or filesystem root
+        if (current / ".git").exists() or current == current.parent:
+            return None
+
+        # Don't ascend through noisy dirs
+        if current.name in STOP_DIRS:
+            return None
+
+        current = current.parent
+
     return None
 
 
@@ -68,35 +92,32 @@ def main() -> int:
     except (json.JSONDecodeError, Exception):
         return 0  # not a JSON hook event — skip silently
 
-    # Claude Code PostToolUse passes: { tool_name, tool_input, tool_response }
+    # Claude Code PostToolUse payload: { tool_name, tool_input, tool_response }
     tool_input = data.get("tool_input", data)
     file_path: str = tool_input.get("file_path", "")
 
     if not file_path:
         return 0
 
-    suffix = Path(file_path).suffix.lower()
-    if suffix not in WATCHED_EXTENSIONS:
-        return 0
+    if Path(file_path).suffix.lower() not in WATCHED_EXTENSIONS:
+        return 0  # not a source file — skip
 
     module_dir = find_module(file_path)
     if module_dir is None:
-        return 0  # file not in a tracked module
+        return 0  # no AI_CONTEXT.md in the ancestor chain
 
-    generator = _SCRIPT_DIR / "generate_ai_summary.py"
-    if not generator.exists():
-        print(f"[ai_docs] generator not found: {generator}", file=sys.stderr)
+    if not GENERATOR.exists():
+        print(f"[ai_docs] generator not found: {GENERATOR}", file=sys.stderr)
         return 0
 
     result = subprocess.run(
-        [sys.executable, str(generator), str(module_dir)],
+        [sys.executable, str(GENERATOR), str(module_dir)],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=15,
     )
 
     if result.returncode == 0:
-        # Print to stderr so it appears as a hook notification in the UI
         msg = result.stdout.strip()
         if msg:
             print(f"[ai_docs] {msg}", file=sys.stderr)

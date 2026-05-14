@@ -1,49 +1,83 @@
 # AI_CONTEXT — <ModuleName>
 
-> Hand-written context for AI assistants. Keep concise (< 80 lines).
+> This file is hand-written and version-controlled. Keep it concise (< 80 lines).
+> It is the AI assistant's primary reference for this module.
+> AI_SUMMARY.md is auto-generated alongside it — never edit AI_SUMMARY.md manually.
 > Delete this instruction block before committing.
 
 ## Purpose
-<2-3 sentences: what this module does, what domain problems it solves, why it exists
-as a separate module rather than inline in the caller.>
+<!-- 2-3 sentences: what this module does, what domain problem it solves,
+     why it exists as a separate module rather than being inlined in its callers. -->
 
-## Thread model
-| Component | Thread | Notes |
+## Thread model (if applicable)
+<!-- Fill only if this module has thread or concurrency constraints.
+     Delete this section entirely if the module is single-threaded with no constraints. -->
+
+| Component | Thread / Context | Notes |
 |---|---|---|
-| `<functionName>()` | Main | <any notes> |
-| `<functionName>()` | Audio (RT) | Lock-free, no alloc |
-| `<functionName>()` | Export thread | Alloc OK, not RT |
-
-<!-- Common thread names: Main, Audio (RT), Export, Midi callback, Background scan -->
+| `functionA()` | Main thread | Synchronous, I/O OK |
+| `processCallback()` | Worker thread | No blocking, no dynamic alloc |
+| `queryState()` | Any thread | Lock-free read, MT-safe |
 
 ## Constraints
-- <Constraint 1: e.g. "Must call publishAudioSnapshot() after any structural track change">
-- <Constraint 2: e.g. "atomics are used for cross-thread flags — never replace with mutex">
-- <Constraint 3: e.g. "SEH (__try/__except) is Windows-only — guard with #ifdef _WIN32">
+<!-- What must always be true when using this module.
+     Focus on non-obvious rules that an experienced developer might miss. -->
+- <Constraint 1: e.g., "Must call `publish()` after any structural change to sync state">
+- <Constraint 2: e.g., "Thread A writes; Thread B reads — always use provided atomics">
+- <Constraint 3: e.g., "The returned pointer is valid only until the next call to `reset()`">
 
 ## Forbidden
-- <What must NEVER happen here: e.g. "No heap allocation in any function called from audio callback">
-- <Common mistake to prevent: e.g. "Never read UpdateInfo fields without holding updateMutex">
+<!-- What must NEVER happen in code that uses this module.
+     These are the most important rules — violations cause bugs that are hard to debug. -->
+- <e.g., "Never call `heavyOp()` from the real-time callback — it allocates">
+- <e.g., "Never store a raw reference to the returned object — it may be invalidated">
 
 ## Common patterns
-```cpp
-// Most common usage
-Seno::Module::someFunction(host);
+<!-- Show the most frequent correct usage. Use your project's actual language. -->
 
-// Query (no host needed — read-only, any thread)
-bool result = Seno::Module::queryFunction(index, data);
+```python
+# Python example
+result = module.do_thing(arg)
+if result.ok:
+    process(result.value)
+```
 
-// With error handling
-if (!Seno::Module::riskyOp(host)) {
-    host.showToast("Failed", ToastNotification::Type::Error);
+```typescript
+// TypeScript example
+const result = await module.doThing(arg);
+if (result.success) {
+    process(result.data);
 }
 ```
 
+```cpp
+// C++ example
+auto result = Module::doThing(arg);
+if (result) { process(*result); }
+```
+
+```go
+// Go example
+result, err := module.DoThing(arg)
+if err != nil { return fmt.Errorf("doThing: %w", err) }
+process(result)
+```
+
+```rust
+// Rust example
+let result = module::do_thing(arg)?;
+process(result);
+```
+
+<!-- Keep only the example(s) relevant to your project's language(s). Delete the others. -->
+
 ## Key types
-- `ModuleHost` — N-field host struct (brief description of most important fields)
-- `SomeType` — what it represents
+<!-- List the 2-5 most important types/structs/classes in this module. -->
+- `MyServiceConfig` — configuration passed at construction
+- `MyServiceResult` — returned by all operations; contains status + data
 
 ## See also
-- ADR-XXXX: <relevant architectural decision>
-- `docs/REALTIME_RULES.md` — if this module touches RT code
-- `Core/RelatedModule/AI_CONTEXT.md` — if tightly coupled
+<!-- Link to related modules, ADRs, or docs that provide more context. -->
+- [Related module: `../OtherModule/AI_CONTEXT.md`]
+- [ADR-XXXX: Why this module was extracted]
+- [docs/ARCHITECTURE.md — overall system design]

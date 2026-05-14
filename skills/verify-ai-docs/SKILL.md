@@ -1,35 +1,43 @@
 ---
 name: verify-ai-docs
 description: |
-  Full AI optimization stack health check for large codebases (C++, Rust, or any language).
-  9-tier scorecard: AI docs, graphify dependency graph, Obsidian memory vault,
+  Full AI optimization stack health check for any codebase.
+  9-tier scorecard: AI docs, dependency graph, Obsidian memory vault,
   Claude Code memory, project quality gates, and skills ecosystem.
-  Auto-fixes stale summaries, stale graphify graph, missing hooks.
-  Works for any new contributor — prints install guide when stack is missing.
-  Use when: "verify ai docs", "check ai stack", "infrastructure IA à jour ?",
-  "tout est à jour ?", "vérifier l'optimisation IA", "ai health check".
-  Proactively suggest: after Track B extractions, before a major push,
-  when a new contributor joins, or at the start of a long session.
+  Works for any language (C++, Rust, TypeScript, Python, Go, Java, etc.)
+  and any project structure — no hardcoded paths.
+  Auto-fixes stale summaries, stale graph, missing hooks.
+  Prints install guide for new contributors when stack is missing.
+  Use when: "verify ai docs", "check ai stack", "is everything up to date?",
+  "ai health check", "verify optimization stack", "check my ai setup".
+  Proactively suggest before a major push, when a new contributor joins,
+  or at the start of a long coding session.
 origin: generic
 ---
 
 # AI Optimization Stack — Full Health Check
 
 Follow every step in order. Use real tool calls — never assume file state.
-Project root is detected via `git rev-parse --show-toplevel`. Source `tools/ai_docs/config.sh` for machine paths.
+Project root is detected automatically from git. Config is loaded from
+`tools/ai_docs/config.sh` (machine-specific, git-ignored).
 
 ---
 
-## STEP 0 — Load config
+## STEP 0 — Load config and detect project
 
 ```bash
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
-[ -f "$PROJECT_ROOT/tools/ai_docs/config.sh" ] && source "$PROJECT_ROOT/tools/ai_docs/config.sh"
+echo "Project root: $PROJECT_ROOT"
 
-# Defaults if config missing
+[ -f "$PROJECT_ROOT/tools/ai_docs/config.sh" ] \
+  && source "$PROJECT_ROOT/tools/ai_docs/config.sh" \
+  && echo "Config loaded" \
+  || echo "No config.sh (using defaults)"
+
+# Defaults
 GRAPHIFY_BIN="${GRAPHIFY_BIN:-graphify}"
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-$HOME/Documents/Obsidian}"
-OBSIDIAN_PROJECT_DIR="${OBSIDIAN_PROJECT_DIR:-MyProject}"
+OBSIDIAN_PROJECT_DIR="${OBSIDIAN_PROJECT_DIR:-$(basename $PROJECT_ROOT)}"
 OBSIDIAN_MEMORY_FILE="${OBSIDIAN_MEMORY_FILE:-$OBSIDIAN_PROJECT_DIR/_memory/memory.md}"
 OBSIDIAN_LOG_FILE="${OBSIDIAN_LOG_FILE:-LOG.md}"
 CLAUDE_MEMORY_ROOT="${CLAUDE_MEMORY_ROOT:-$HOME/.claude/projects}"
@@ -37,16 +45,17 @@ CLAUDE_MEMORY_KEY="${CLAUDE_MEMORY_KEY:-}"
 SKILLS_DIR="${SKILLS_DIR:-.claude/skills}"
 ```
 
-**Tracked modules** — customize this list for your project structure.
-Read `tools/ai_docs/config.sh` or `generate_all.py` to find the canonical list.
-Example (Seno DAW):
+**Module discovery** — modules are identified by the presence of `AI_CONTEXT.md`.
+No hardcoded list needed. Run:
+```bash
+find "$PROJECT_ROOT" -name "AI_CONTEXT.md" \
+  -not -path "*/.git/*" \
+  -not -path "*/node_modules/*" \
+  -not -path "*/vendor/*" \
+  -not -path "*/__pycache__/*" \
+  | sort
 ```
-app/Source/Core/Audio    app/Source/Core/IO      app/Source/Core/Edit
-app/Source/Core/Export   app/Source/Core/Streaming  app/Source/Core/Midi
-app/Source/Core/Recording  app/Source/Core/Script  app/Source/Core/Input
-app/Source/Core/Undo     app/Source/Core/Diagnostics  app/Source/Core/App
-app/Source/UI            rust_dsp/src
-```
+This shows all tracked modules. Use this list for Tiers 2 and 3.
 
 ---
 
@@ -63,111 +72,160 @@ for F in \
 done
 ```
 
-Thresholds: `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50 · `generate_all.py` ≥ 35 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 8
+Thresholds: `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
+`generate_all.py` ≥ 35 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20
 
-❌ FAIL on any missing file → stop and print install guide (Step 9).
+❌ FAIL on any missing file → skip remaining tiers and print install guide (Step 9).
 
 ---
 
 ## TIER 2 — AI Documentation
 
-### 2a — REALTIME_RULES.md
+### 2a — Constraint rules doc (optional but recommended)
 ```bash
-[ -f docs/REALTIME_RULES.md ] && echo "EXISTS $(wc -l < docs/REALTIME_RULES.md) lines" || echo "MISSING"
-```
-PASS if exists ≥ 40 lines.
-
-### 2b — AI_CONTEXT.md per tracked module
-```bash
-for M in app/Source/Core/Audio app/Source/Core/IO app/Source/Core/Edit \
-  app/Source/Core/Export app/Source/Core/Streaming app/Source/Core/Midi \
-  app/Source/Core/Recording app/Source/Core/Script app/Source/Core/Input \
-  app/Source/Core/Undo app/Source/Core/Diagnostics app/Source/Core/App \
-  app/Source/UI rust_dsp; do
-  [ -f "$M/AI_CONTEXT.md" ] && echo "OK $M" || echo "MISSING $M"
+# Check for a standalone constraint/rules document (any name)
+for F in docs/REALTIME_RULES.md docs/RULES.md docs/CONSTRAINTS.md docs/THREADING.md; do
+  [ -f "$F" ] && echo "OK $F ($(wc -l < $F) lines)" && break
 done
 ```
+⚠️ WARN if missing — recommended for any project with RT, threading, or domain constraints.
 
-### 2c — Orphan detection (new modules without AI_CONTEXT.md)
+### 2b — AI_CONTEXT.md coverage (auto-discovered)
 ```bash
-for D in app/Source/Core/*/; do
-  HAS_SRC=$(find "$D" -maxdepth 1 \( -name "*.h" -o -name "*.cpp" \) 2>/dev/null | head -1)
-  [ -n "$HAS_SRC" ] && [ ! -f "${D}AI_CONTEXT.md" ] && echo "ORPHAN: $D"
-done
+# Find all directories with source files
+TOTAL_SRC_DIRS=$(find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
+  -not -path "*/vendor/*" -not -path "*/build/*" -not -path "*/dist/*" \
+  -not -path "*/target/*" -not -path "*/__pycache__/*" \
+  \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+     -o -name "*.py" -o -name "*.go" -o -name "*.java" -o -name "*.cs" \) \
+  -printf "%h\n" 2>/dev/null | sort -u | wc -l)
+
+# Count directories that have AI_CONTEXT.md
+COVERED=$(find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
+  -not -path "*/node_modules/*" | wc -l)
+
+echo "Modules with AI_CONTEXT.md: $COVERED"
+echo "Total source directories:   $TOTAL_SRC_DIRS"
+
+# List each tracked module
+find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
+  -not -path "*/node_modules/*" -not -path "*/vendor/*" \
+  | sort | while read CTX; do
+    DIR=$(dirname "$CTX")
+    echo "OK: ${DIR#./}"
+  done
 ```
-`Core/Types/` is exempt (pure data headers, no service logic).
-Each orphan = ⚠️ WARN — print AI_CONTEXT template in Step 8.
+
+### 2c — Orphan detection
+Source directories with files but no `AI_CONTEXT.md`:
+```bash
+find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
+  -not -path "*/vendor/*" -not -path "*/build/*" -not -path "*/dist/*" \
+  -not -path "*/target/*" -not -path "*/__pycache__/*" \
+  \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+     -o -name "*.py" -o -name "*.go" -o -name "*.java" \) \
+  -printf "%h\n" 2>/dev/null | sort -u | while read D; do
+    [ ! -f "$D/AI_CONTEXT.md" ] && echo "ORPHAN: ${D#./}"
+  done | head -20
+```
+Each orphan = ⚠️ WARN. Print template from Step 8 for each.
 
 ---
 
-## TIER 3 — AI_SUMMARY Freshness
+## TIER 3 — AI_SUMMARY.md Freshness (auto-discovered)
 
 ```bash
-for M in app/Source/Core/Audio app/Source/Core/IO app/Source/Core/Edit \
-  app/Source/Core/Export app/Source/Core/Streaming app/Source/Core/Midi \
-  app/Source/Core/Recording app/Source/Core/Script app/Source/Core/Input \
-  app/Source/Core/Undo app/Source/Core/Diagnostics app/Source/Core/App \
-  app/Source/UI; do
-  S="$M/AI_SUMMARY.md"
-  [ ! -f "$S" ] && echo "MISSING $M" && continue
-  STALE=$(find "$M" -maxdepth 1 \( -name "*.h" -o -name "*.cpp" \) -newer "$S" 2>/dev/null | head -1)
-  [ -n "$STALE" ] && echo "STALE $M ($(basename $STALE))" || echo "OK $M"
-done
-# rust_dsp
-S="rust_dsp/src/AI_SUMMARY.md"
-[ ! -f "$S" ] && echo "MISSING rust_dsp/src" || {
-  STALE=$(find rust_dsp/src -maxdepth 1 -name "*.rs" -newer "$S" 2>/dev/null | head -1)
-  [ -n "$STALE" ] && echo "STALE rust_dsp/src ($(basename $STALE))" || echo "OK rust_dsp/src"
-}
+find . -name "AI_CONTEXT.md" \
+  -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/vendor/*" \
+  | sort | while read CTX; do
+    DIR=$(dirname "$CTX")
+    SUMMARY="$DIR/AI_SUMMARY.md"
+    NAME="${DIR#./}"
+
+    if [ ! -f "$SUMMARY" ]; then
+      echo "MISSING: $NAME"
+    else
+      # Check if any source file is newer than AI_SUMMARY.md
+      STALE=$(find "$DIR" -maxdepth 1 \
+        \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+           -o -name "*.tsx" -o -name "*.py" -o -name "*.go" -o -name "*.java" \
+           -o -name "*.cs" -o -name "*.swift" -o -name "*.kt" \) \
+        -newer "$SUMMARY" 2>/dev/null | head -1)
+      [ -n "$STALE" ] \
+        && echo "STALE: $NAME ($(basename $STALE) is newer)" \
+        || echo "OK: $NAME"
+    fi
+  done
 ```
 
-⚠️ WARN = stale → queued for auto-fix in Step 8.
+⚠️ WARN if stale → queued for auto-fix in Step 7.
 
 ---
 
 ## TIER 4 — Automation Chain (PostToolUse hook)
 
+### 4a — Hook registered
 ```bash
-# 4a — Hook registered
-grep -c "run_hook.sh" .claude/settings.json
-
-# 4b — Python detection
-PY=$(bash tools/ai_docs/find_python.sh)
-[ -n "$PY" ] && "$PY" --version && echo "PYTHON_OK: $PY" || echo "PYTHON_MISSING"
-
-# 4c — Functional end-to-end test
-echo "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$PROJECT_ROOT/path/to/any/source/file.cpp\"}}" \
-  | bash tools/ai_docs/run_hook.sh
+grep -c "run_hook.sh" .claude/settings.json 2>/dev/null \
+  && echo "HOOK REGISTERED" || echo "HOOK MISSING"
 ```
 
-PASS 4c if output contains "Updated".
+### 4b — Python detection
+```bash
+PY=$(bash tools/ai_docs/find_python.sh)
+[ -n "$PY" ] && "$PY" --version && echo "PYTHON_OK: $PY" || echo "PYTHON_MISSING"
+```
+
+### 4c — Functional end-to-end test
+Pick any source file that exists in a tracked module and simulate an edit event:
+```bash
+# Find any source file inside a tracked module (has AI_CONTEXT.md in parent)
+TEST_FILE=$(find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
+  | head -1 | xargs dirname | xargs -I{} find {} -maxdepth 1 \
+  \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+     -o -name "*.py" -o -name "*.go" -o -name "*.java" \) 2>/dev/null | head -1)
+
+if [ -n "$TEST_FILE" ]; then
+  ABS_TEST="$PROJECT_ROOT/${TEST_FILE#./}"
+  echo "Testing with: $ABS_TEST"
+  echo "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$ABS_TEST\"}}" \
+    | bash tools/ai_docs/run_hook.sh
+else
+  echo "SKIP — no source file found in tracked module"
+fi
+```
+✅ PASS if output contains "Updated".
 
 ---
 
-## TIER 5 — graphify (Dependency Graph)
+## TIER 5 — Dependency Graph (graphify or equivalent)
 
-### 5a — Binary available
+### 5a — Tool available
 ```bash
 "$GRAPHIFY_BIN" --version 2>/dev/null && echo "GRAPHIFY_OK" || \
   (which graphify 2>/dev/null && echo "GRAPHIFY_OK (PATH)" || echo "GRAPHIFY_MISSING")
 ```
+⚠️ WARN if missing (recommended, not required). Print install note in Step 8.
 
-### 5b — graph.json exists
+### 5b — Graph output exists
 ```bash
-[ -f graphify-out/graph.json ] && echo "EXISTS $(du -h graphify-out/graph.json | cut -f1)" || echo "MISSING"
-[ -f graphify-out/GRAPH_REPORT.md ] && echo "REPORT OK" || echo "REPORT MISSING"
+[ -f graphify-out/graph.json ] \
+  && echo "EXISTS $(du -h graphify-out/graph.json | cut -f1)" \
+  || echo "MISSING — run: graphify ."
 ```
 
 ### 5c — Graph freshness
 ```bash
-NEWEST=$(find src -name "*.cpp" -o -name "*.h" -o -name "*.rs" 2>/dev/null \
-  | xargs ls -t 2>/dev/null | head -1)
-[ -n "$NEWEST" ] && [ graphify-out/graph.json -nt "$NEWEST" ] \
-  && echo "GRAPH FRESH" || echo "GRAPH STALE ($(basename $NEWEST) is newer)"
+NEWEST=$(find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
+  -not -path "*/build/*" -not -path "*/dist/*" -not -path "*/target/*" \
+  \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
+     -o -name "*.py" -o -name "*.go" -o -name "*.java" \) \
+  -newer graphify-out/graph.json 2>/dev/null | head -1)
+[ -n "$NEWEST" ] \
+  && echo "GRAPH STALE ($(basename $NEWEST) is newer)" \
+  || echo "GRAPH FRESH"
 ```
-
-⚠️ WARN if stale → auto-fix: `"$GRAPHIFY_BIN" update .` in Step 8.
-❌ FAIL if binary missing → instructions in Step 9.
+⚠️ WARN if stale → auto-fix: `graphify update .`
 
 ---
 
@@ -175,53 +233,60 @@ NEWEST=$(find src -name "*.cpp" -o -name "*.h" -o -name "*.rs" 2>/dev/null \
 
 ```bash
 # Vault root
-[ -d "$OBSIDIAN_VAULT" ] && echo "VAULT OK: $OBSIDIAN_VAULT" || echo "VAULT MISSING: $OBSIDIAN_VAULT"
+[ -d "$OBSIDIAN_VAULT" ] \
+  && echo "VAULT OK: $OBSIDIAN_VAULT" \
+  || echo "VAULT MISSING: $OBSIDIAN_VAULT (set OBSIDIAN_VAULT in config.sh)"
 
 # Project subfolder
 [ -d "$OBSIDIAN_VAULT/$OBSIDIAN_PROJECT_DIR" ] \
-  && echo "PROJECT DIR OK" || echo "PROJECT DIR MISSING"
+  && echo "PROJECT DIR OK: $OBSIDIAN_PROJECT_DIR" \
+  || echo "PROJECT DIR MISSING: $OBSIDIAN_VAULT/$OBSIDIAN_PROJECT_DIR"
 
-# memory.md (the project AI memory note)
+# memory.md
 MEM="$OBSIDIAN_VAULT/$OBSIDIAN_MEMORY_FILE"
-[ -f "$MEM" ] && echo "MEMORY OK ($(wc -l < $MEM) lines)" || echo "MEMORY MISSING: $MEM"
+[ -f "$MEM" ] \
+  && echo "MEMORY OK ($(wc -l < $MEM) lines)" \
+  || echo "MEMORY MISSING: $MEM"
 
-# LOG.md (global chronological session log)
+# LOG.md — global session journal
 LOG="$OBSIDIAN_VAULT/$OBSIDIAN_LOG_FILE"
-[ -f "$LOG" ] || { echo "LOG MISSING: $LOG"; }
 if [ -f "$LOG" ]; then
-  # Check last entry is within 7 days
-  LAST_MODIFIED=$(find "$LOG" -mtime -7 2>/dev/null)
-  [ -n "$LAST_MODIFIED" ] && echo "LOG RECENT (< 7 days)" || echo "LOG STALE (> 7 days since last session)"
+  RECENT=$(find "$LOG" -mtime -7 2>/dev/null)
+  [ -n "$RECENT" ] && echo "LOG RECENT (< 7 days)" || echo "LOG STALE (> 7 days)"
+else
+  echo "LOG MISSING: $LOG"
 fi
 
-# SCHEMA.md
 [ -f "$OBSIDIAN_VAULT/SCHEMA.md" ] && echo "SCHEMA OK" || echo "SCHEMA MISSING (optional)"
 ```
 
-⚠️ WARN if memory or log stale/missing (vault must exist for PASS).
+⚠️ WARN if memory missing or log stale. ❌ FAIL only if vault root doesn't exist.
 
 ---
 
 ## TIER 7 — Claude Code Memory System
 
 ```bash
-# Locate project memory directory
+# Find memory directory
 if [ -n "$CLAUDE_MEMORY_KEY" ]; then
   MEM_DIR="$CLAUDE_MEMORY_ROOT/$CLAUDE_MEMORY_KEY/memory"
 else
-  MEM_DIR=$(find "$CLAUDE_MEMORY_ROOT" -name "MEMORY.md" 2>/dev/null | head -1 | xargs dirname)
+  MEM_DIR=$(find "$CLAUDE_MEMORY_ROOT" -name "MEMORY.md" 2>/dev/null \
+    | head -1 | xargs -I{} dirname {})
 fi
 
-[ -d "$MEM_DIR" ] && echo "MEMORY DIR OK: $MEM_DIR" || echo "MEMORY DIR MISSING"
-[ -f "$MEM_DIR/MEMORY.md" ] && echo "MEMORY.md OK ($(wc -l < $MEM_DIR/MEMORY.md) lines)" || echo "MEMORY.md MISSING"
+[ -d "$MEM_DIR" ] \
+  && echo "MEMORY DIR OK: $MEM_DIR" \
+  || echo "MEMORY DIR MISSING (set CLAUDE_MEMORY_KEY in config.sh)"
 
-# Warn if MEMORY.md > 200 lines (truncation risk)
 if [ -f "$MEM_DIR/MEMORY.md" ]; then
   LINES=$(wc -l < "$MEM_DIR/MEMORY.md")
-  [ "$LINES" -gt 200 ] && echo "WARN MEMORY.md $LINES lines — truncation risk, prune old entries"
+  echo "MEMORY.md: $LINES lines"
+  [ "$LINES" -gt 200 ] \
+    && echo "WARN: > 200 lines — truncation risk, prune old entries" \
+    || echo "OK"
 fi
 
-# Count memory topic files
 TOPIC_COUNT=$(find "$MEM_DIR" -name "*.md" ! -name "MEMORY.md" 2>/dev/null | wc -l)
 echo "Topic files: $TOPIC_COUNT"
 ```
@@ -231,23 +296,27 @@ echo "Topic files: $TOPIC_COUNT"
 ## TIER 8 — Project Quality Gates
 
 ```bash
-# CLAUDE.md (project)
-[ -f CLAUDE.md ] && echo "CLAUDE.md OK ($(wc -l < CLAUDE.md) lines)" || echo "CLAUDE.md MISSING"
+# Project AI instructions
+[ -f CLAUDE.md ] \
+  && echo "CLAUDE.md OK ($(wc -l < CLAUDE.md) lines)" \
+  || echo "CLAUDE.md MISSING — add project-level AI instructions"
 
-# ARCHITECTURE.md
-[ -f docs/ARCHITECTURE.md ] \
-  && echo "ARCHITECTURE.md OK ($(wc -l < docs/ARCHITECTURE.md) lines)" \
-  || echo "ARCHITECTURE.md MISSING"
+# Architecture doc
+for F in docs/ARCHITECTURE.md ARCHITECTURE.md; do
+  [ -f "$F" ] && echo "ARCHITECTURE OK: $F ($(wc -l < $F) lines)" && break
+done
 
-# ADRs
-ADR_COUNT=$(ls docs/adr/*.md 2>/dev/null | grep -v README | wc -l)
-[ "$ADR_COUNT" -gt 0 ] && echo "ADRs OK ($ADR_COUNT records)" || echo "ADR dir EMPTY"
+# Decision records
+ADR_COUNT=$(find docs/adr docs/decisions -name "*.md" 2>/dev/null \
+  | grep -v README | wc -l)
+[ "$ADR_COUNT" -gt 0 ] \
+  && echo "Decision records: $ADR_COUNT" \
+  || echo "No ADRs — consider docs/adr/ for architectural decisions"
 
-# CONTRIBUTING.md
-[ -f CONTRIBUTING.md ] && echo "CONTRIBUTING.md OK" || echo "CONTRIBUTING.md MISSING"
-
-# docs/REALTIME_RULES.md (standalone)
-[ -f docs/REALTIME_RULES.md ] && echo "REALTIME_RULES.md OK" || echo "REALTIME_RULES.md MISSING"
+# Contributing guide
+for F in CONTRIBUTING.md docs/CONTRIBUTING.md; do
+  [ -f "$F" ] && echo "CONTRIBUTING OK: $F" && break
+done
 ```
 
 ---
@@ -255,162 +324,174 @@ ADR_COUNT=$(ls docs/adr/*.md 2>/dev/null | grep -v README | wc -l)
 ## TIER 9 — Skills Ecosystem
 
 ```bash
-for S in verify-ai-docs realtime-audio cpp-coding-standards cpp-testing; do
-  [ -f "$SKILLS_DIR/$S/SKILL.md" ] \
-    && echo "OK $S ($(wc -l < $SKILLS_DIR/$S/SKILL.md) lines)" \
-    || echo "MISSING $S"
+# Project-local skills
+echo "=== Local skills (.claude/skills/) ==="
+find "$SKILLS_DIR" -name "SKILL.md" 2>/dev/null | sort | while read S; do
+  NAME=$(basename $(dirname "$S"))
+  echo "OK: $NAME ($(wc -l < $S) lines)"
 done
 
-# Check gstack global skills (verify-standards, audio-validate, clap-release)
-GSTACK_SKILLS="${GSTACK_SKILLS:-$HOME/.claude/skills/gstack}"
-for S in verify-standards audio-validate clap-release; do
-  find "$GSTACK_SKILLS" -name "SKILL.md" 2>/dev/null | xargs grep -l "^name: $S" 2>/dev/null | head -1 | \
-    { read F; [ -n "$F" ] && echo "OK $S (gstack)" || echo "MISSING $S (gstack)"; }
-done
+# Count project skills
+COUNT=$(find "$SKILLS_DIR" -name "SKILL.md" 2>/dev/null | wc -l)
+echo "Total: $COUNT local skill(s)"
+
+# Check for verify-ai-docs itself
+[ -f "$SKILLS_DIR/verify-ai-docs/SKILL.md" ] \
+  && echo "verify-ai-docs: PRESENT" \
+  || echo "verify-ai-docs: MISSING — copy from ai-native-dev-stack repo"
 ```
 
 ---
 
 ## STEP 6 — Scorecard
 
-Print the full scorecard:
+Print the full scorecard using results from Tiers 1-9:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  AI OPTIMIZATION STACK — FULL HEALTH SCORECARD
-  Project: <YourProject> · Date: YYYY-MM-DD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AI OPTIMIZATION STACK — HEALTH SCORECARD
+  Project: <ProjectName> · <date>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Tier 1 — Core Scripts           (5/5)   [results]
-Tier 2 — AI Documentation       (N/15)  [results]
-Tier 3 — AI_SUMMARY Freshness   (N/14)  [results]
-Tier 4 — Automation Chain       (3/3)   [results]
-Tier 5 — graphify Graph         (3/3)   [results]
-Tier 6 — Obsidian Memory Vault  (N/5)   [results]
-Tier 7 — Claude Code Memory     (N/3)   [results]
-Tier 8 — Project Quality Gates  (N/5)   [results]
-Tier 9 — Skills Ecosystem       (N/7)   [results]
+Tier 1 — Core Scripts          [N/5]  results
+Tier 2 — AI Documentation      [N/M]  results
+Tier 3 — AI_SUMMARY Freshness  [N/M]  results
+Tier 4 — Automation Chain      [N/3]  results
+Tier 5 — Dependency Graph      [N/3]  results
+Tier 6 — Obsidian Vault        [N/5]  results
+Tier 7 — Claude Code Memory    [N/3]  results
+Tier 8 — Project Quality       [N/4]  results
+Tier 9 — Skills Ecosystem      [N/M]  results
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SCORE: X/Y  |  PASS: A  WARN: B  FAIL: C
-  Status: [OPERATIONAL / DEGRADED / BROKEN]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Status: OPERATIONAL / DEGRADED / BROKEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Replace "MyProject" in the header with your actual project name.
-
-Status:
-- **OPERATIONAL** — 0 FAILs
-- **DEGRADED** — FAILs only in Tiers 2/3/6/7/8/9 (docs/memory/quality)
-- **BROKEN** — FAIL in Tier 1, 4 hook, or 4 Python
+Status rules:
+- **OPERATIONAL** — 0 FAILs (warnings are OK)
+- **DEGRADED** — FAILs in Tiers 2/3/6/7/8/9 only
+- **BROKEN** — FAIL in Tier 1 (scripts missing) or Tier 4 (Python/hook broken)
 
 ---
 
-## STEP 7 — Auto-fix (run automatically)
+## STEP 7 — Auto-fix (execute automatically)
 
-### Fix stale AI_SUMMARY.md
+### Fix stale AI_SUMMARY.md (always)
 ```bash
 PY=$(bash tools/ai_docs/find_python.sh)
 PYTHONIOENCODING=utf-8 "$PY" tools/ai_docs/generate_all.py
 ```
 
-### Fix stale graphify graph
+### Fix stale dependency graph
 ```bash
-"$GRAPHIFY_BIN" update . && echo "Graph updated"
+"$GRAPHIFY_BIN" update . 2>/dev/null && echo "Graph updated" \
+  || echo "graphify not available — skip"
 ```
 
 ### Fix missing PostToolUse hook
-If Tier 4a failed: edit `.claude/settings.json` to add:
+If Tier 4a FAILED — add to `.claude/settings.json`:
 ```json
-{ "type": "command", "command": "bash <PROJECT_ROOT>/tools/ai_docs/run_hook.sh" }
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "command",
+        "command": "bash /absolute/path/to/tools/ai_docs/run_hook.sh"
+      }]
+    }]
+  }
+}
 ```
-Into the `PostToolUse → Edit|Write → hooks` array.
+Use the absolute path to `run_hook.sh` in your project.
 
 ---
 
-## STEP 8 — Report-only fixes
+## STEP 8 — Report-only actions
 
-### Missing AI_CONTEXT.md → print template
+### Missing AI_CONTEXT.md — print this template for each orphan
 ```markdown
 # AI_CONTEXT — <ModuleName>
 
 ## Purpose
-<2-3 sentences: what this module does.>
+<2-3 sentences describing what this module does and why it's a separate module.>
 
-## Thread model
-| Component | Thread | Notes |
+## Thread model (if applicable)
+| Function | Thread | Notes |
 |---|---|---|
-| <fn> | Main / Audio / Export | <notes> |
+| `myFunction()` | Main thread | Synchronous, blocking OK |
+| `processCallback()` | Worker / RT thread | No alloc, no blocking |
 
 ## Constraints
-- <key constraint>
+- <What must always be true in this module>
+- <External invariant this module depends on>
 
 ## Forbidden
-- <what must never happen here>
+- <What must never happen in this module's code>
 
 ## Common patterns
-```cpp
-// Example
+```language
+// Typical usage
+module.doThing(arg);
 ```
 
 ## See also
-- ADR-XXXX
+- [Link to related module or ADR]
 ```
-→ Fill in, save, then re-run `/verify-ai-docs`.
+→ Fill in and save as `<module_dir>/AI_CONTEXT.md`, then re-run `/verify-ai-docs`.
 
-### Missing Obsidian memory.md → print frontmatter template
-```yaml
----
-project: myproject
-type: architecture
-tags: [myproject, memory]
-summary: "AI session memory for MyProject — one sentence, 15-25 words."
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-related: [[INDEX]], [[MyProject/CLAUDE]]
----
+### Missing graphify
+```
+Install: see https://github.com/graphify/graphify
+Then run: graphify .   (from project root, once — takes 30-60s)
+Update:   graphify update .   (fast, AST-only, run after large refactors)
 ```
 
 ---
 
 ## STEP 9 — New contributor install guide
 
-Print ONLY if Tier 1 or Tier 4 Python had FAILs:
+Print ONLY when Tier 1 had FAILs (fresh machine):
 
 ```
-AI OPTIMIZATION STACK — INSTALL GUIDE
-======================================
+AI-NATIVE DEV STACK — INSTALL GUIDE
+=====================================
 
-1. SCRIPTS (already committed to git — nothing to install)
-   tools/ai_docs/generate_ai_summary.py
-   tools/ai_docs/update_on_edit.py
-   tools/ai_docs/generate_all.py
-   tools/ai_docs/run_hook.sh
-   tools/ai_docs/find_python.sh
+Repository: https://github.com/Rwanbt/ai-native-dev-stack
 
-2. PYTHON — Install Python 3.8+ and add to PATH, or set PYTHON_BIN in config.sh
+PREREQUISITES
+  - Git repository (required)
+  - Python 3.8+     (required for AI_SUMMARY generation)
+  - Claude Code     (required for /verify-ai-docs skill)
+  - graphify        (recommended for dependency graph)
+  - Obsidian        (recommended for memory vault)
 
-3. HOOK — Add to .claude/settings.json → hooks.PostToolUse → Edit|Write:
-   { "type": "command", "command": "bash <ROOT>/tools/ai_docs/run_hook.sh" }
+QUICK SETUP
+  1. Scripts are already committed to the project repo.
+     git pull   (gets tools/ai_docs/ + .claude/skills/)
 
-4. CONFIG — Copy and edit tools/ai_docs/config.sh:
-   - Set GRAPHIFY_BIN to your graphify binary path
-   - Set OBSIDIAN_VAULT to your vault root
-   - Set CLAUDE_MEMORY_KEY to match your ~/.claude/projects/ subfolder
+  2. Register the PostToolUse hook:
+     Edit .claude/settings.json and add the run_hook.sh command.
+     See templates/settings_hook_example.json for the exact format.
 
-5. GRAPHIFY — Install from https://github.com/graphify/graphify
-   Then run: graphify . (in project root, once)
+  3. Set up machine config:
+     cp tools/ai_docs/config.sh.example tools/ai_docs/config.sh
+     Edit config.sh: set OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
 
-6. GENERATE — Run: python tools/ai_docs/generate_all.py
+  4. Generate all AI_SUMMARY.md files:
+     python tools/ai_docs/generate_all.py
 
-7. VERIFY — Run: /verify-ai-docs
+  5. Verify:
+     /verify-ai-docs   → should show OPERATIONAL
 ```
 
 ---
 
-## Final summary line
+## Final summary
 
-- All PASS:   `AI optimization stack fully operational. No action needed.`
+- All PASS: `AI optimization stack fully operational. No action needed.`
 - WARNs only: `Stack operational. N auto-fixes applied. N warnings remain.`
-- DEGRADED:   `Stack degraded — see above for missing docs/memory items.`
-- BROKEN:     `Stack broken — Tier 1 or 4 failures require manual setup.`
+- DEGRADED: `Stack degraded — see above for missing docs/memory/quality items.`
+- BROKEN: `Stack broken — Tier 1 or 4 failures require manual intervention.`
