@@ -1,4 +1,6 @@
-🇬🇧 English · [🇫🇷 Français](README.fr.md)
+<img src="ai_native_dev_stack.png" alt="banner_ai_native_dev_stack" >
+
+English · [Français](README.fr.md)
 
 # AI-Native Dev Stack
 
