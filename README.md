@@ -1,3 +1,5 @@
+<div align="center">
+
 <img src="ai_native_dev_stack.png" alt="banner_ai_native_dev_stack" >
 
 English · [Français](README.fr.md)
@@ -9,6 +11,8 @@ English · [Français](README.fr.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-green)](https://claude.ai/code)
 [![Claude Code skill](https://img.shields.io/badge/skill-verify--ai--docs-purple)](skills/verify-ai-docs/SKILL.md)
+
+</div>
 
 ---
 
