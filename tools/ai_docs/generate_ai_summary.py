@@ -50,26 +50,12 @@ def count_loc(path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Language detection
+# Language detection — extension sets imported from the single source of truth
 # ---------------------------------------------------------------------------
-CPP_EXTS    = {".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx"}
-RUST_EXTS   = {".rs"}
-TS_EXTS     = {".ts", ".tsx", ".mts"}
-JS_EXTS     = {".js", ".jsx", ".mjs", ".cjs"}
-PYTHON_EXTS = {".py", ".pyi"}
-GO_EXTS     = {".go"}
-JAVA_EXTS   = {".java"}
-KOTLIN_EXTS = {".kt", ".kts"}
-CS_EXTS     = {".cs"}
-FS_EXTS     = {".fs", ".fsi"}
-SWIFT_EXTS  = {".swift"}
-RUBY_EXTS   = {".rb"}
-PHP_EXTS    = {".php"}
-
-ALL_SOURCE_EXTS = (
-    CPP_EXTS | RUST_EXTS | TS_EXTS | JS_EXTS | PYTHON_EXTS |
-    GO_EXTS | JAVA_EXTS | KOTLIN_EXTS | CS_EXTS | FS_EXTS |
-    SWIFT_EXTS | RUBY_EXTS | PHP_EXTS
+from source_exts import (  # noqa: E402
+    CPP_EXTS, RUST_EXTS, TS_EXTS, JS_EXTS, PYTHON_EXTS,
+    GO_EXTS, JAVA_EXTS, KOTLIN_EXTS, CS_EXTS, FS_EXTS,
+    SWIFT_EXTS, RUBY_EXTS, PHP_EXTS, ALL_SOURCE_EXTS,
 )
 
 

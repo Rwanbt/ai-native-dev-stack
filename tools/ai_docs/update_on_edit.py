@@ -24,29 +24,8 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).parent.resolve()
 GENERATOR = _SCRIPT_DIR / "generate_ai_summary.py"
 
-# File extensions that trigger an AI_SUMMARY.md update
-WATCHED_EXTENSIONS = {
-    # C / C++
-    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp",
-    # Rust
-    ".rs",
-    # TypeScript / JavaScript
-    ".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs",
-    # Python
-    ".py",
-    # Go
-    ".go",
-    # Java / Kotlin
-    ".java", ".kt",
-    # C# / F#
-    ".cs", ".fs",
-    # Swift
-    ".swift",
-    # Ruby
-    ".rb",
-    # PHP
-    ".php",
-}
+# File extensions that trigger an AI_SUMMARY.md update — single source of truth
+from source_exts import ALL_SOURCE_EXTS as WATCHED_EXTENSIONS  # noqa: E402
 
 # Directories to skip when walking up (avoid matching project-root accidentaly)
 STOP_DIRS = {".git", "node_modules", "vendor", "__pycache__"}
