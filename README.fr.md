@@ -8,6 +8,7 @@
 
 > Une méthodologie complète et une boîte à outils pour rendre tout large codebase immédiatement compréhensible par les assistants IA — avec une maintenance automatique pour que le contexte ne devienne jamais obsolète.
 
+[![CI](https://github.com/Rwanbt/ai-native-dev-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/Rwanbt/ai-native-dev-stack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-compatible-green)](https://claude.ai/code)
 [![Claude Code skill](https://img.shields.io/badge/skill-verify--ai--docs-purple)](skills/verify-ai-docs/SKILL.md)

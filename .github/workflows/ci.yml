@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The stack claims Python 3.8+ support — exercise the low and high ends.
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run test suite (stdlib unittest — zero dependencies)
+        run: python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
+
+  loc-gate:
+    name: LOC budget gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce the stack's own 1500-LOC rule on its own sources
+        shell: bash
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            n=$(wc -l < "$f")
+            if [ "$n" -gt 1500 ]; then
+              echo "OVERSIZED: $f ($n LOC) — refactor before adding (stack rule)"
+              fail=1
+            fi
+          done < <(find tools skills -type f \( -name '*.py' -o -name '*.sh' \) 2>/dev/null)
+          if [ "$fail" -eq 0 ]; then
+            echo "All source files within the 1500-LOC budget."
+          fi
+          exit $fail

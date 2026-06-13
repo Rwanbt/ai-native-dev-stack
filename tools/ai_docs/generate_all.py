@@ -12,6 +12,8 @@ The script auto-discovers modules by scanning for AI_CONTEXT.md files,
 skipping .git, node_modules, vendor, __pycache__, and build directories.
 """
 
+from __future__ import annotations  # PEP 563 — keep list[Path] annotations valid on Python 3.8
+
 import subprocess
 import sys
 from pathlib import Path
