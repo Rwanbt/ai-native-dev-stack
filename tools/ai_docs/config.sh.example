@@ -6,6 +6,12 @@
 #
 # Sourced by: run_hook.sh, verify-ai-docs skill, generate_all.py
 
+# ── Python ──────────────────────────────────────────────────────────────────
+# Explicit path to a Python 3.8+ interpreter. Leave empty to auto-detect from
+# PATH and common install locations. Set this if your Python lives somewhere
+# find_python.sh doesn't probe (e.g. a custom venv or non-standard install).
+PYTHON_BIN="${PYTHON_BIN:-}"
+
 # ── graphify ──────────────────────────────────────────────────────────────────
 # Path to the graphify binary if it's not in PATH.
 # Find your install: which graphify   OR   find ~ -name graphify -type f
