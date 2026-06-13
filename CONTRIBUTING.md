@@ -9,7 +9,7 @@ The universal engineering rules in [AGENTS.md](AGENTS.md) apply to every change.
 
 ```
 tools/ai_docs/         # the executable stack (Python + bash)
-  source_exts.py       # single source of truth for source-file extensions
+  source_config.py     # single source of truth for source-file extensions and directory exclusions
   generate_ai_summary.py  # AI_SUMMARY.md generator (per-language parsers)
   update_on_edit.py    # PostToolUse hook entry point
   run_hook.sh          # hook wrapper (finds Python, delegates)
@@ -31,13 +31,30 @@ Zero dependencies — stdlib `unittest` only:
 python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
 ```
 
-CI runs this on Python 3.9 / 3.11 / 3.13, plus a 1500-LOC gate. Both must pass.
+CI runs this on Python 3.8 (legacy, EOL) / 3.9 / 3.11 / 3.13, plus a 1500-LOC gate (raw lines). Both must pass.
+
+## Module structure requirement
+
+Place `AI_CONTEXT.md` and all its source files in the **same flat directory**.
+The scanner uses `iterdir()` (non-recursive by design). Files in subdirectories
+are invisible to the hook and the summary generator.
+
+```
+✅ Valid                    ❌ Invalid (nested files ignored)
+my_module/                  my_module/
+├── AI_CONTEXT.md           ├── AI_CONTEXT.md
+├── service.py              ├── sub/
+└── utils.py                │   └── service.py   ← NOT scanned
+                            └── utils.py
+```
+
+If a subdirectory grows its own concern, promote it: add its own `AI_CONTEXT.md`.
 
 ## Adding support for a new language
 
 The most common contribution. Three steps, all test-covered:
 
-1. **`source_exts.py`** — add the extension set (e.g. `ELIXIR_EXTS = {".ex", ".exs"}`)
+1. **`source_config.py`** — add the extension set (e.g. `ELIXIR_EXTS = {".ex", ".exs"}`)
    and include it in `ALL_SOURCE_EXTS`.
 2. **`generate_ai_summary.py`** — add a `parse_<lang>(path) -> dict` function
    (regex-based, best-effort) and wire it into `generate_summary()` so its

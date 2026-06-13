@@ -41,6 +41,29 @@ One command audits the entire stack: `/verify-ai-docs`
 
 ---
 
+## Core design principle
+
+A **module** is a directory containing `AI_CONTEXT.md`.
+All tooling (summary generation, context assembly, hooks, metrics) is built around
+this definition. Source files must be **direct siblings** of `AI_CONTEXT.md` —
+subdirectory files are not scanned. This flat-module constraint is intentional:
+it enforces high cohesion (one directory = one concern = one context) and keeps
+the scanner simple and fast.
+
+```
+✅ Valid module structure        ❌ Invalid (nested files ignored)
+my_module/                       my_module/
+├── AI_CONTEXT.md                ├── AI_CONTEXT.md
+├── token.rs                     ├── service/
+├── session.rs                   │   └── token.rs   ← NOT scanned
+└── utils.rs                     └── utils.rs
+```
+
+If a subdirectory grows large enough to need its own context, promote it to a
+sub-module with its own `AI_CONTEXT.md`.
+
+---
+
 ## Stack Components
 
 ### 1. Per-Module AI Context (`AI_CONTEXT.md`)

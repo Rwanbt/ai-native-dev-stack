@@ -1,4 +1,6 @@
 {
+  "_note": "Replace the ALL-CAPS placeholder below with the actual absolute path on your machine. To verify the hook runs: open a terminal, cd to your project, then run the manual verify command below.",
+  "_setup_verify": "echo '{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/test.py\"}}' | bash /ABSOLUTE/PATH/TO/YOUR/PROJECT/tools/ai_docs/run_hook.sh",
   "hooks": {
     "PostToolUse": [
       {

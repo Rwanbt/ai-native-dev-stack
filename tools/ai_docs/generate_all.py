@@ -18,13 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Directories to never scan (common build / cache / vendor dirs)
-SKIP_DIRS = {
-    ".git", "node_modules", "vendor", "__pycache__", ".cache",
-    "build", "dist", "target", ".venv", "venv", "env",
-    ".tox", "coverage", ".nyc_output", "out", "bin", "obj",
-    ".gradle", ".idea", ".vscode",
-}
+from source_config import EXCLUDE_DIRS as SKIP_DIRS  # noqa: E402
 
 GENERATOR = Path(__file__).parent / "generate_ai_summary.py"
 

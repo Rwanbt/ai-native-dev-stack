@@ -14,7 +14,7 @@ DETECTED=$(bash "$SCRIPT_DIR/find_python.sh" 2>/dev/null)
 CANDIDATES+=("python3" "python" "py")
 
 for PY in "${CANDIDATES[@]}"; do
-    if "$PY" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+    if "$PY" -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" >/dev/null 2>&1; then
         echo "$INPUT" | PYTHONIOENCODING=utf-8 "$PY" "$SCRIPT" 2>&1
         exit 0
     fi

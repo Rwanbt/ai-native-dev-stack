@@ -14,6 +14,9 @@ jobs:
       matrix:
         # The stack claims Python 3.8+ support — exercise the low and high ends.
         python-version: ["3.9", "3.11", "3.13"]
+        include:
+          - python-version: "3.8"
+            continue-on-error: true  # 3.8 EOL oct 2024 — kept for backward-compat claim
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -29,6 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Enforce the stack's own 1500-LOC rule on its own sources
+        # NOTE: uses raw line count (wc -l), not effective LOC (count_loc() strips blanks/comments).
+        # A file at 1600 raw lines typically has ~1000-1200 effective LOC — the 1500 raw-line
+        # threshold is conservative enough to absorb normal comment density.
+        # Future: replace this gate with a Python call to count_loc() for exact alignment.
         shell: bash
         run: |
           fail=0

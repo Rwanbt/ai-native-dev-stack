@@ -27,10 +27,8 @@ _SCRIPT_DIR = Path(__file__).parent.resolve()
 GENERATOR = _SCRIPT_DIR / "generate_ai_summary.py"
 
 # File extensions that trigger an AI_SUMMARY.md update — single source of truth
-from source_exts import ALL_SOURCE_EXTS as WATCHED_EXTENSIONS  # noqa: E402
-
-# Directories to skip when walking up (avoid matching project-root accidentaly)
-STOP_DIRS = {".git", "node_modules", "vendor", "__pycache__"}
+from source_config import ALL_SOURCE_EXTS as WATCHED_EXTENSIONS  # noqa: E402
+from module_discovery import find_module  # noqa: E402
 
 
 CONTEXT_STALE_DAYS = 30  # warn if AI_CONTEXT.md not touched in this many days while sources changed
@@ -67,37 +65,6 @@ def check_context_freshness(module_dir: Path) -> None:
     except Exception:
         pass  # never block Claude Code
 
-
-def find_module(file_path: str) -> Path | None:
-    """
-    Walk up the directory tree from file_path.
-    Return the first directory that contains AI_CONTEXT.md.
-    Stop at the git root (directory containing .git) or filesystem root.
-    """
-    try:
-        current = Path(file_path).resolve().parent
-    except Exception:
-        return None
-
-    visited = set()
-    while current not in visited:
-        visited.add(current)
-
-        # Found a module marker
-        if (current / "AI_CONTEXT.md").exists():
-            return current
-
-        # Stop at git root or filesystem root
-        if (current / ".git").exists() or current == current.parent:
-            return None
-
-        # Don't ascend through noisy dirs
-        if current.name in STOP_DIRS:
-            return None
-
-        current = current.parent
-
-    return None
 
 
 def main() -> int:

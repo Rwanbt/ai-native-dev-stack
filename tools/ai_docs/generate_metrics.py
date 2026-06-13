@@ -29,16 +29,11 @@ import time
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-from source_exts import ALL_SOURCE_EXTS as SOURCE_EXTENSIONS  # noqa: E402
-
-# Directory names to skip when scanning. Must NOT contain file names:
-# find_context_modules() does rglob("AI_CONTEXT.md") and checks every path
-# component against this set — listing "AI_CONTEXT.md" here made every module
-# exclude itself, forcing coverage to a permanent 0%.
-SKIP_DIRS = {
-    ".git", "node_modules", "vendor", "__pycache__",
-    "build", "dist", "target", ".cache", ".next",
-}
+from source_config import ALL_SOURCE_EXTS as SOURCE_EXTENSIONS  # noqa: E402
+from source_config import EXCLUDE_DIRS as SKIP_DIRS  # noqa: E402
+# NOTE: SKIP_DIRS must NOT contain file names — find_context_modules() checks
+# every path component against this set. File names here would exclude the
+# module itself (coverage stuck at 0%).
 
 CONTEXT_STALE_DAYS = 30
 HIGH_CHURN_COMMITS = 5   # commits in last 30 days = "high churn"
@@ -131,7 +126,7 @@ def high_churn_uncovered(root: Path, source_dirs: list[Path],
             continue
         rel = d.relative_to(root)
         log = git_run(
-            ["log", "--oneline", "--since=30 days ago", "--", str(rel)],
+            ["log", "--oneline", "--since=30 days ago", "--", str(rel).replace("\\", "/")],
             cwd=root,
         )
         count = len([l for l in log.splitlines() if l.strip()])

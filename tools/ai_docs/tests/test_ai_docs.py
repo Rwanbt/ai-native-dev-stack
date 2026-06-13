@@ -19,11 +19,13 @@ from pathlib import Path
 _TOOLS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_TOOLS_DIR))
 
-import source_exts                          # noqa: E402
+import source_config                        # noqa: E402
+import source_config as source_exts         # noqa: E402  (alias for backward-compat tests)
 import generate_ai_summary as gen           # noqa: E402
 import assemble_context as asm              # noqa: E402
 import generate_metrics as met              # noqa: E402
 import update_on_edit as upd                # noqa: E402
+import module_discovery as md               # noqa: E402
 
 
 def _write(path: Path, content: str) -> Path:
@@ -33,8 +35,19 @@ def _write(path: Path, content: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# source_exts — single source of truth
+# source_config — single source of truth (renamed from source_exts)
 # ---------------------------------------------------------------------------
+class TestSourceConfig(unittest.TestCase):
+    def test_exclude_dirs_is_shared(self):
+        import generate_all as ga
+        import generate_metrics as gm
+        self.assertIs(ga.SKIP_DIRS, gm.SKIP_DIRS)
+
+    def test_exclude_dirs_has_critical_entries(self):
+        for d in (".git", "node_modules", ".venv", "out", "bin", "coverage"):
+            self.assertIn(d, source_config.EXCLUDE_DIRS)
+
+
 class TestSourceExts(unittest.TestCase):
     def test_common_extensions_present(self):
         for ext in (".py", ".rs", ".ts", ".cpp", ".h", ".go", ".java", ".cs"):
@@ -82,6 +95,18 @@ class TestCountLoc(unittest.TestCase):
 
     def test_missing_file_returns_zero(self):
         self.assertEqual(gen.count_loc(self.tmp / "nope.py"), 0)
+
+    def test_c_block_with_triple_quote_does_not_close_block(self):
+        # Regression: """ inside a /* ... */ comment must NOT close the C block.
+        f = _write(self.tmp / "b.cpp",
+                   '/* contains """ triple quotes\n'
+                   '   still in comment */\ncode();\n')
+        self.assertEqual(gen.count_loc(f), 1)
+
+    def test_csharp_block_with_triple_quote(self):
+        f = _write(self.tmp / "a.cs",
+                   '/* This comment has """ in it */\npublic class Test { }\n')
+        self.assertEqual(gen.count_loc(f), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +163,43 @@ class TestParsers(unittest.TestCase):
         self.assertIn("PanelHost", r["host_structs"])
         self.assertIn("PlainData", r["structs"])
         self.assertIn("Manager", r["classes"])
+
+    def test_parse_fsharp_basic(self):
+        f = _write(self.tmp / "m.fs",
+                   "module MyModule\n"
+                   "type Config = { x: int }\n"
+                   "let doThing arg = arg + 1\n")
+        r = gen.parse_fsharp(f)
+        self.assertIn("MyModule", r["modules"])
+        self.assertIn("Config", r["types"])
+        self.assertIn("doThing", r["pub_fns"])
+
+    def test_parse_fsharp_excludes_private(self):
+        f = _write(self.tmp / "m.fs",
+                   "module M\n"
+                   "let private helper x = x + 1\n"
+                   "let internal internalFn x = x\n"
+                   "let publicFn x = x * 2\n")
+        r = gen.parse_fsharp(f)
+        self.assertNotIn("helper", r["pub_fns"])
+        self.assertNotIn("internalFn", r["pub_fns"])
+        self.assertIn("publicFn", r["pub_fns"])
+
+    def test_parse_fsharp_excludes_underscore_prefix(self):
+        f = _write(self.tmp / "m.fs",
+                   "module M\n"
+                   "let _privateByConvention x = x\n"
+                   "let rec recFn x = if x = 0 then 0 else recFn (x-1)\n")
+        r = gen.parse_fsharp(f)
+        self.assertNotIn("_privateByConvention", r["pub_fns"])
+        self.assertIn("recFn", r["pub_fns"])
+
+    def test_parse_fsharp_inline_modifier(self):
+        f = _write(self.tmp / "m.fs",
+                   "module M\n"
+                   "let inline fastOp x = x + x\n")
+        r = gen.parse_fsharp(f)
+        self.assertIn("fastOp", r["pub_fns"])
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +330,41 @@ class TestMetricsDiscovery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# update_on_edit — module discovery mirrors assemble_context
+# module_discovery — shared find_module (PR3)
+# ---------------------------------------------------------------------------
+class TestModuleDiscovery(unittest.TestCase):
+    def test_find_module_walks_up(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".git").mkdir()
+            mod = root / "src" / "auth"
+            _write(mod / "AI_CONTEXT.md", "## Purpose\nx\n")
+            src = _write(mod / "a.py", "x = 1\n")
+            self.assertEqual(md.find_module(src), mod)
+
+    def test_find_module_accepts_str(self):
+        with tempfile.TemporaryDirectory() as d:
+            mod = Path(d)
+            _write(mod / "AI_CONTEXT.md", "## Purpose\nx\n")
+            src = _write(mod / "a.rs", "pub fn f(){}\n")
+            self.assertEqual(md.find_module(str(src)), mod)
+
+    def test_find_module_returns_none_without_context(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".git").mkdir()
+            src = _write(root / "src" / "a.py", "x = 1\n")
+            self.assertIsNone(md.find_module(src))
+
+    def test_find_module_stops_at_exclude_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            pkg = Path(d) / "node_modules" / "some-pkg"
+            _write(pkg / "a.js", "const x = 1;\n")
+            self.assertIsNone(md.find_module(pkg / "a.js"))
+
+
+# ---------------------------------------------------------------------------
+# update_on_edit — uses shared module_discovery.find_module
 # ---------------------------------------------------------------------------
 class TestUpdateOnEdit(unittest.TestCase):
     def test_find_module(self):
@@ -279,6 +375,30 @@ class TestUpdateOnEdit(unittest.TestCase):
             _write(mod / "AI_CONTEXT.md", "## Purpose\nx\n")
             src = _write(mod / "a.py", "x = 1\n")
             self.assertEqual(upd.find_module(str(src)), mod)
+
+
+# ---------------------------------------------------------------------------
+# generate_ai_summary — flat module constraint (PR6)
+# ---------------------------------------------------------------------------
+class TestFlatModuleConstraint(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_nested_files_not_scanned(self):
+        """
+        Documents the flat-module constraint: only direct children of the
+        AI_CONTEXT.md directory are scanned. Nested source files are intentionally
+        excluded. This test PASSES — it verifies expected behaviour, not a bug.
+        """
+        _write(self.tmp / "AI_CONTEXT.md", "## Purpose\nx\n")
+        nested = self.tmp / "service"
+        _write(nested / "token.rs", "pub fn token() {}\n")
+        out = gen.generate_summary(self.tmp)
+        self.assertNotIn("token()", out)
 
 
 if __name__ == "__main__":
