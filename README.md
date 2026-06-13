@@ -250,7 +250,7 @@ A 10-tier health check that audits, auto-fixes, and reports the state of the ent
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   AI OPTIMIZATION STACK — HEALTH SCORECARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Tier 1  — Core Scripts            6/6   ✅
+Tier 1  — Core Scripts            8/8   ✅
 Tier 2  — AI Documentation       16/16  ✅  ← includes coverage check
 Tier 3  — AI_SUMMARY Freshness   14/14  ✅
 Tier 4  — Automation Chain        3/3   ✅
@@ -261,7 +261,7 @@ Tier 8  — Project Quality Gates   6/6   ✅  ← includes KFP
 Tier 9  — Skills Ecosystem        7/7   ✅
 Tier 10 — Cognitive Contract      3/3   ✅  ← failure modes · KFP · assembler
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SCORE: 66/66 | Status: OPERATIONAL
+  SCORE: 68/68 | Status: OPERATIONAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
