@@ -18,6 +18,8 @@ Outputs docs/METRICS.md by default. Pass --stdout to print instead.
 Always exits 0.
 """
 
+from __future__ import annotations  # PEP 563 — keep list[]/tuple[]/set[] annotations valid on Python 3.8
+
 import argparse
 import subprocess
 import sys
@@ -27,23 +29,15 @@ import time
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-SOURCE_EXTENSIONS = {
-    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp",
-    ".rs",
-    ".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs",
-    ".py",
-    ".go",
-    ".java", ".kt",
-    ".cs", ".fs",
-    ".swift",
-    ".rb",
-    ".php",
-}
+from source_exts import ALL_SOURCE_EXTS as SOURCE_EXTENSIONS  # noqa: E402
 
+# Directory names to skip when scanning. Must NOT contain file names:
+# find_context_modules() does rglob("AI_CONTEXT.md") and checks every path
+# component against this set — listing "AI_CONTEXT.md" here made every module
+# exclude itself, forcing coverage to a permanent 0%.
 SKIP_DIRS = {
     ".git", "node_modules", "vendor", "__pycache__",
     "build", "dist", "target", ".cache", ".next",
-    "AI_SUMMARY.md", "AI_CONTEXT.md",
 }
 
 CONTEXT_STALE_DAYS = 30

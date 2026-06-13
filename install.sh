@@ -49,16 +49,18 @@ fi
 echo "[1/7] Copying scripts to tools/ai_docs/ ..."
 mkdir -p "$PROJECT_ROOT/tools/ai_docs"
 for F in \
+  source_exts.py \
   generate_ai_summary.py \
   update_on_edit.py \
   generate_all.py \
+  generate_metrics.py \
   assemble_context.py \
   run_hook.sh \
   find_python.sh \
   config.sh.example; do
   [ -f "$SCRIPT_DIR/tools/ai_docs/$F" ] && cp -f "$SCRIPT_DIR/tools/ai_docs/$F" "$PROJECT_ROOT/tools/ai_docs/"
 done
-echo "   OK (6 scripts + assembler)"
+echo "   OK (8 scripts + assembler)"
 
 # ── Step 2: Copy skills ───────────────────────────────────────────────────────
 echo "[2/7] Copying skills (verify-ai-docs, verify-standards) ..."
@@ -217,6 +219,6 @@ echo "5. Verify the full stack:"
 echo "   In Claude Code: /verify-ai-docs && /verify-standards"
 echo ""
 if [ "$INSTALL_GSTACK" = "yes" ]; then
-  echo "5. Add the gstack skills block to your CLAUDE.md (see above)."
+  echo "6. Add the gstack skills block to your CLAUDE.md (see above)."
   echo ""
 fi

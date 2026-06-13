@@ -24,6 +24,8 @@ Exit codes:
     1 — source_file not found or no module found in ancestor tree
 """
 
+from __future__ import annotations  # PEP 563 — keep `X | None` valid on Python 3.8/3.9
+
 import argparse
 import re
 import subprocess
@@ -105,12 +107,15 @@ def extract_adr_refs(ctx_text: str) -> list[str]:
 
 
 def find_graphify_bin() -> str | None:
-    """Locate the graphify binary from PATH or common install locations."""
+    """Locate the graphify binary: GRAPHIFY_BIN env, then PATH, then common dirs."""
+    import os
     import shutil
+    env_bin = os.environ.get("GRAPHIFY_BIN")
+    if env_bin and env_bin != "graphify" and Path(env_bin).exists():
+        return env_bin
     if g := shutil.which("graphify"):
         return g
     candidates = [
-        "/d/App/graphify/bin/graphify",
         str(Path.home() / ".local" / "bin" / "graphify"),
         "/usr/local/bin/graphify",
         str(Path.home() / "bin" / "graphify"),
@@ -151,13 +156,11 @@ def find_claude_memory(root: Path) -> Path | None:
         if mem.exists():
             return mem
 
-    # Fallback: pick the most-recently-modified MEMORY.md
-    found = sorted(
-        projects_dir.rglob("MEMORY.md"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return found[0] if found else None
+    # No deterministic match for THIS project. Do not fall back to the
+    # most-recently-modified MEMORY.md across all projects: on a multi-project
+    # machine that would splice another project's private memory into the
+    # context. Better to return nothing than the wrong project's memory.
+    return None
 
 
 def section_header(title: str) -> str:
