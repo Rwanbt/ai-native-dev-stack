@@ -1,0 +1,10 @@
+# Force LF on scripts and config so they work on Linux CI runners and as
+# Claude Code hooks, regardless of the contributor's core.autocrlf setting.
+# CRLF in a bash script breaks heredocs and `< <(...)` process substitution.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Normalize everything else to LF in the repo.
+* text=auto eol=lf
