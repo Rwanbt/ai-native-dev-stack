@@ -8,7 +8,7 @@ Given a source file path, assembles a single focused AI briefing document:
   - docs/REALTIME_RULES.md         (if module has RT thread constraints)
   - Referenced ADRs                (from ## See also section, up to N lines each)
   - docs/KNOWN_FAILURE_PATTERNS.md (always, if exists — bounded at 200 lines)
-  - graphify dependency path       (if binary available)
+  - graphify dependency context    (node + neighbors, if binary + graph available)
   - Claude Code MEMORY.md          (first 50 lines — cross-session context)
 
 Usage:
@@ -126,18 +126,29 @@ def find_graphify_bin() -> str | None:
     return None
 
 
-def run_graphify_path(graphify_bin: str, root: Path, file_path: Path) -> str | None:
-    """Run `graphify path <file>` and return the output."""
+def run_graphify_explain(graphify_bin: str, root: Path, file_path: Path) -> str | None:
+    """Run `graphify explain <node>` for the file and return its neighbors view.
+
+    graphify's `explain` resolves a node by id or label; a source file's label is
+    its basename (e.g. `lib.rs`). It does NOT accept a relative path, and it
+    returns exit 0 with "No node matching ..." when nothing is found — so we must
+    inspect stdout rather than the return code. (`path` was the wrong command:
+    it needs two node names, not a single file.)
+    """
+    graph = root / "graphify-out" / "graph.json"
+    if not graph.exists():
+        return None
     try:
         result = subprocess.run(
-            [graphify_bin, "path", str(file_path)],
+            [graphify_bin, "explain", file_path.name, "--graph", str(graph)],
             capture_output=True, text=True, timeout=10, cwd=str(root),
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
     except Exception:
-        pass
-    return None
+        return None
+    out = result.stdout.strip()
+    if not out or "No node matching" in out:
+        return None
+    return out
 
 
 def find_claude_memory(root: Path) -> Path | None:
@@ -284,13 +295,13 @@ def assemble(
             )
 
     # ------------------------------------------------------------------ #
-    # graphify dependency path
+    # graphify dependency context (node + neighbors)
     # ------------------------------------------------------------------ #
     graphify_bin = find_graphify_bin()
     if graphify_bin:
-        gfx_result = run_graphify_path(graphify_bin, root, source_file)
+        gfx_result = run_graphify_explain(graphify_bin, root, source_file)
         if gfx_result:
-            parts.append(section_header("DEPENDENCY PATH  (graphify)"))
+            parts.append(section_header("DEPENDENCY CONTEXT  (graphify explain)"))
             parts.append(f"```\n{gfx_result}\n```")
 
     # ------------------------------------------------------------------ #
