@@ -92,12 +92,12 @@ Zéro étape manuelle. Le contexte IA est toujours à jour.
 
 ### 4. Graphe de dépendances (graphify)
 
-[graphify](https://github.com/graphify/graphify) construit un graphe de dépendances au niveau AST pour tout le codebase. Au lieu de grepper "où est utilisé X ?", on interroge :
+[graphify](https://github.com/safishamsi/graphify) construit un graphe de dépendances au niveau AST pour tout le codebase. Au lieu de grepper "où est utilisé X ?", on interroge :
 
 ```bash
-graphify query "qui appelle processRequest"
-graphify path "ModuleA" "ServiceB"
-graphify update .    # ré-indexation après modifications (secondes, pas minutes)
+graphify explain "processRequest"   # résumé en langage clair d'un nœud + voisins
+graphify path "ModuleA" "ServiceB"  # plus court chemin de dépendance entre deux nœuds
+graphify update .                    # ré-indexation après modifications (secondes, pas minutes)
 ```
 
 Le graphe est stocké dans `graphify-out/graph.json` et `GRAPH_REPORT.md`. L'IA et le développeur peuvent l'interroger sans relire des milliers de fichiers.
@@ -221,7 +221,7 @@ Les skills sont des fichiers `.md` dans `.claude/skills/<nom>/SKILL.md` — vers
 
 #### gstack — Skills d'ingénierie globaux
 
-[gstack](https://github.com/garrytan/gstack) est une collection de skills Claude Code communautaires créée par Gary Tan (Président de YC). Elle fournit des skills d'ingénierie génériques disponibles sur **tous** vos projets, indépendamment du codebase :
+[gstack](https://github.com/garrytan/gstack) est une collection de skills Claude Code communautaires créée par Garry Tan (Président de YC). Elle fournit des skills d'ingénierie génériques disponibles sur **tous** vos projets, indépendamment du codebase :
 
 | Skill | But |
 |---|---|
@@ -268,6 +268,18 @@ Tier 10 — Cognitive Contract      3/3   ✅  ← modes défaillance · KFP · 
 Auto-corrige : `AI_SUMMARY.md` obsolètes, graphe graphify périmé, hook PostToolUse manquant.  
 Signale : `AI_CONTEXT.md` manquants avec templates prêts à remplir.  
 Installe : guide d'installation pas-à-pas pour les nouveaux contributeurs.
+
+### 12. Instantané de métriques (`tools/ai_docs/generate_metrics.py`)
+
+Répond à « comment sait-on que ça marche ? » avec des mesures objectives dérivées de git, écrites dans `docs/METRICS.md` :
+
+- **Couverture** — % des répertoires source ayant un `AI_CONTEXT.md` (cible ≥ 80 %)
+- **Fraîcheur** — `AI_SUMMARY.md` à jour ; dérive de `AI_CONTEXT.md` (docs périmés alors que les sources ont changé)
+- **Base de connaissances** — nombre de patterns `KNOWN_FAILURE_PATTERNS.md` et d'ADR (doit croître avec le temps)
+- **Zones à risque** — répertoires à fort churn sans `AI_CONTEXT.md` (où les erreurs IA sont les plus probables)
+- **Tendance** — une ligne append-only par exécution, pour suivre couverture et risque dans le temps
+
+`/verify-ai-docs` régénère cet instantané à chaque exécution.
 
 ---
 
@@ -445,6 +457,7 @@ docs: add threading constraints to AudioModule AI_CONTEXT
 | Fichier | Mis à jour par |
 |---|---|
 | `*/AI_SUMMARY.md` | Hook PostToolUse à chaque édition de fichier source |
+| `docs/METRICS.md` | `generate_metrics.py` (lancé par `/verify-ai-docs`) |
 | `graphify-out/graph.json` | `graphify update .` (manuellement ou après grands refactors) |
 
 ### Écrits à la main (stables, versionnés)

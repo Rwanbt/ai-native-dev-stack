@@ -92,12 +92,12 @@ Zero manual steps. AI context is always current.
 
 ### 4. Dependency Graph (graphify)
 
-[graphify](https://github.com/graphify/graphify) builds an AST-level dependency graph for the entire codebase. Instead of grepping "where is X used?", you query:
+[graphify](https://github.com/safishamsi/graphify) builds an AST-level dependency graph for the entire codebase. Instead of grepping "where is X used?", you query:
 
 ```bash
-graphify query "who calls processRequest"
-graphify path "ModuleA" "ServiceB"
-graphify update .    # re-index after changes (seconds, not minutes)
+graphify explain "processRequest"   # plain-language summary of a node + neighbors
+graphify path "ModuleA" "ServiceB"  # shortest dependency path between two nodes
+graphify update .                    # re-index after changes (seconds, not minutes)
 ```
 
 The graph is stored in `graphify-out/graph.json` and `GRAPH_REPORT.md`. Both the AI and the developer can query it without re-reading thousands of files.
@@ -221,7 +221,7 @@ Skills are `.md` files in `.claude/skills/<name>/SKILL.md` — versioned with th
 
 #### gstack — Global Engineering Skills
 
-[gstack](https://github.com/garrytan/gstack) is a community collection of Claude Code skills created by Gary Tan (President of YC). It provides generic engineering skills available across **all** your projects, regardless of codebase:
+[gstack](https://github.com/garrytan/gstack) is a community collection of Claude Code skills created by Garry Tan (President of YC). It provides generic engineering skills available across **all** your projects, regardless of codebase:
 
 | Skill | Purpose |
 |---|---|
@@ -268,6 +268,18 @@ Tier 10 — Cognitive Contract      3/3   ✅  ← failure modes · KFP · assem
 Auto-fixes: stale `AI_SUMMARY.md` files, outdated graphify graph, missing PostToolUse hook.  
 Reports: missing `AI_CONTEXT.md` files with ready-to-fill templates.  
 Installs: step-by-step installation guide for new contributors.
+
+### 12. Metrics Snapshot (`tools/ai_docs/generate_metrics.py`)
+
+Answers "how do we know this is working?" with objective, git-derived measurements written to `docs/METRICS.md`:
+
+- **Coverage** — % of source directories that have an `AI_CONTEXT.md` (target ≥ 80%)
+- **Freshness** — `AI_SUMMARY.md` up to date; `AI_CONTEXT.md` drift (stale docs where sources changed)
+- **Knowledge base** — `KNOWN_FAILURE_PATTERNS.md` pattern count and ADR count (should grow over time)
+- **Risk zones** — high-churn directories with no `AI_CONTEXT.md` (where AI errors are most likely)
+- **Trend** — one append-only row per run, so coverage and risk are tracked over time
+
+`/verify-ai-docs` regenerates this snapshot on every run.
 
 ---
 
@@ -445,6 +457,7 @@ docs: add threading constraints to AudioModule AI_CONTEXT
 | File | Updated by |
 |---|---|
 | `*/AI_SUMMARY.md` | PostToolUse hook on every source file edit |
+| `docs/METRICS.md` | `generate_metrics.py` (run by `/verify-ai-docs`) |
 | `graphify-out/graph.json` | `graphify update .` (manually or after large refactors) |
 
 ### Hand-written (stable, versioned)
