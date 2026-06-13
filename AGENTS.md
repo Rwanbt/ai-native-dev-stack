@@ -110,6 +110,72 @@ Own the result beyond the edit — local changes have system-level consequences.
 
 ---
 
+## Codebase analysis strategy
+
+Before any analysis, audit, or review, estimate scope and classify intent.
+
+**Estimate scope** (run this first):
+```bash
+git ls-files | grep -E "\.(py|rs|cpp|c|h|hpp|ts|js|go|sh)$" | xargs wc -c 2>/dev/null | tail -1
+# → divide by 4 = estimated tokens (±20% heuristic)
+git ls-files | grep -E "\.(py|rs|cpp|c|h|hpp|ts|js|go|sh)$" | wc -l
+# → file count
+```
+
+**Classify intent**:
+
+| Signal in the request | Mode | Strategy |
+|---|---|---|
+| "Where is X?", "find Y" | **Lookup** | Explore sub-agent |
+| "How does X work?" | **Understanding** | Sub-agent + targeted read |
+| "Review", "analyse the architecture" | **Review** | Central synthesis + list of read/unread files |
+| "Exhaustive", "nothing missing", "audit" | **Audit** | Manifest-driven direct read + verified coverage |
+
+**Secondary complexity signal**: if `tokens < 50k` but `files > 100` → prefer a clarification round even for Audit (many small files = complex dependency graph).
+
+**Strategy by size**:
+```
+< 50 000 tokens  → read ALL files directly in the main context (100% coverage guaranteed)
+50k – 150k       → deterministic cartography (ctags/AST) + layered reads
+> 150 000 tokens → multi-phase workflow (cartography → parallel reads → synthesis)
+```
+
+**Verified coverage (mandatory in Audit mode)**:
+1. Before starting: generate the complete file list — `git ls-files | grep -E "..."` — this is the execution contract
+2. Declare legitimate exclusions upfront by path (`generated/`, `vendor/`, `build/`)
+3. Read every remaining file in sequence
+4. Report at the end:
+
+```
+Coverage — Audit [repo]
+Files: 11 total | Excluded (generated): 0 | Excluded (vendor): 0 | To read: 11
+Read: 11/11 (100%) ✅
+
+Unread business-logic files: none
+Central unread modules (>5 incoming imports): none
+```
+
+**Confidence rule derived from coverage**:
+- `≥ 80%` → conclusions without qualifier
+- `60–80%` → prefix each conclusion with "Partial analysis:"
+- `< 60%` → prefix with "⚠️ Provisional — insufficient coverage"
+
+**Note**: `ctags`/AST tools give structural exhaustiveness (all symbols), NOT behavioral exhaustiveness (same signature ≠ same logic). Direct read remains necessary for behavioral audits. Never use a sub-agent for Audit mode.
+
+---
+
+### This project — ai-native-dev-stack
+
+Measured 2026-06-13 via `git ls-files`:
+
+| Scope | Tokens (÷4) | Files | Strategy |
+|---|---|---|---|
+| Full project (source) | ~22 000 | 11 | **Direct read always** — fits in context in one pass |
+
+The project is small enough that direct read is always the right choice regardless of mode. No clarification round needed unless the request is genuinely ambiguous.
+
+---
+
 ## Pre-commit checklist
 
 Before marking any task done:
