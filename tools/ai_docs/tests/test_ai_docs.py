@@ -207,6 +207,15 @@ class TestAssembleHelpers(unittest.TestCase):
             src = _write(root / "src" / "a.py", "x = 1\n")
             self.assertIsNone(asm.find_module(src))
 
+    def test_graphify_explain_returns_none_without_graph(self):
+        # Regression: the assembler must not invoke graphify (or emit a section)
+        # when there is no graph.json. The guard runs before any subprocess, so
+        # this holds whether or not the graphify binary is installed.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            src = _write(root / "src" / "a.rs", "pub fn f() {}\n")
+            self.assertIsNone(asm.run_graphify_explain("graphify", root, src))
+
 
 # ---------------------------------------------------------------------------
 # generate_metrics — coverage discovery (regression for SKIP_DIRS bug)
