@@ -36,6 +36,8 @@ echo "================================"
 echo "Source:  $SCRIPT_DIR"
 echo "Project: $PROJECT_ROOT"
 echo ""
+echo "Steps: 1) scripts  2) skill  3) AGENTS.md  4) gstack  5) config  6) python  7) summaries"
+echo ""
 
 # Verify it's a git repo
 if [ ! -d "$PROJECT_ROOT/.git" ]; then
@@ -44,7 +46,7 @@ if [ ! -d "$PROJECT_ROOT/.git" ]; then
 fi
 
 # ── Step 1: Copy scripts ──────────────────────────────────────────────────────
-echo "[1/6] Copying scripts to tools/ai_docs/ ..."
+echo "[1/7] Copying scripts to tools/ai_docs/ ..."
 mkdir -p "$PROJECT_ROOT/tools/ai_docs"
 for F in \
   generate_ai_summary.py \
@@ -58,15 +60,27 @@ for F in \
 done
 echo "   OK (6 scripts + assembler)"
 
-# ── Step 2: Copy skill ────────────────────────────────────────────────────────
-echo "[2/6] Copying verify-ai-docs skill ..."
+# ── Step 2: Copy skills ───────────────────────────────────────────────────────
+echo "[2/7] Copying skills (verify-ai-docs, verify-standards) ..."
 mkdir -p "$PROJECT_ROOT/.claude/skills/verify-ai-docs"
 cp -f "$SCRIPT_DIR/skills/verify-ai-docs/SKILL.md" "$PROJECT_ROOT/.claude/skills/verify-ai-docs/"
+mkdir -p "$PROJECT_ROOT/.claude/skills/verify-standards"
+cp -f "$SCRIPT_DIR/skills/verify-standards/SKILL.md" "$PROJECT_ROOT/.claude/skills/verify-standards/"
 echo "   OK"
 
-# ── Step 3: gstack — Global engineering skills (optional) ────────────────────
+# ── Step 3: AGENTS.md — Cross-tool universal rules ───────────────────────────
+echo "[3/7] Copying AGENTS.md (cross-tool universal rules) ..."
+AGENTS_DST="$PROJECT_ROOT/AGENTS.md"
+if [ -f "$AGENTS_DST" ]; then
+  echo "   SKIP — AGENTS.md already exists (not overwriting)"
+else
+  cp "$SCRIPT_DIR/AGENTS.md" "$AGENTS_DST"
+  echo "   Created AGENTS.md — add '@AGENTS.md' near the top of your CLAUDE.md to activate"
+fi
+
+# ── Step 4: gstack — Global engineering skills (optional) ────────────────────
 echo ""
-echo "[3/6] gstack — Global Claude Code skills by Garry Tan / YC"
+echo "[4/7] gstack — Global Claude Code skills by Garry Tan / YC"
 echo "   Provides: /investigate /review /qa /ship /plan-eng-review /office-hours ..."
 echo "   Installs to: ~/.claude/skills/gstack/ (available across ALL your projects)"
 echo "   Source: https://github.com/garrytan/gstack"
@@ -127,8 +141,8 @@ fi
 [ "$INSTALL_GSTACK" = "no" ] && echo "   Skipped."
 echo ""
 
-# ── Step 4: Config ────────────────────────────────────────────────────────────
-echo "[4/6] Creating config.sh ..."
+# ── Step 5: Config ────────────────────────────────────────────────────────────
+echo "[5/7] Creating config.sh ..."
 CONFIG="$PROJECT_ROOT/tools/ai_docs/config.sh"
 if [ -f "$CONFIG" ]; then
   echo "   SKIP — config.sh already exists (not overwriting)"
@@ -137,8 +151,8 @@ else
   echo "   Created config.sh — edit it to set your Obsidian vault path and graphify binary"
 fi
 
-# ── Step 5: Python detection ──────────────────────────────────────────────────
-echo "[5/6] Detecting Python ..."
+# ── Step 6: Python detection ──────────────────────────────────────────────────
+echo "[6/7] Detecting Python ..."
 PY=$(bash "$PROJECT_ROOT/tools/ai_docs/find_python.sh" 2>/dev/null || true)
 if [ -n "$PY" ]; then
   PY_VER=$("$PY" --version 2>&1)
@@ -148,21 +162,21 @@ else
   echo "   Install Python and add to PATH, or set PYTHON_BIN in tools/ai_docs/config.sh"
 fi
 
-# ── Step 6: Generate summaries ────────────────────────────────────────────────
+# ── Step 7: Generate summaries ────────────────────────────────────────────────
 if [ -n "$PY" ]; then
   CTX_COUNT=$(find "$PROJECT_ROOT" -name "AI_CONTEXT.md" \
     -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
   if [ "$CTX_COUNT" -gt 0 ]; then
-    echo "[6/6] Generating AI_SUMMARY.md for $CTX_COUNT tracked module(s) ..."
+    echo "[7/7] Generating AI_SUMMARY.md for $CTX_COUNT tracked module(s) ..."
     cd "$PROJECT_ROOT"
     PYTHONIOENCODING=utf-8 "$PY" tools/ai_docs/generate_all.py
   else
-    echo "[6/6] SKIP — no AI_CONTEXT.md files found yet."
+    echo "[7/7] SKIP — no AI_CONTEXT.md files found yet."
     echo "   Create one per module using templates/AI_CONTEXT_template.md, then run:"
     echo "   python tools/ai_docs/generate_all.py"
   fi
 else
-  echo "[6/6] SKIP — Python not found."
+  echo "[7/7] SKIP — Python not found."
 fi
 
 # ── .gitignore ────────────────────────────────────────────────────────────────
@@ -182,21 +196,25 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "NEXT STEPS:"
 echo ""
-echo "1. Edit tools/ai_docs/config.sh:"
+echo "1. Add '@AGENTS.md' near the top of your CLAUDE.md:"
+echo "   @AGENTS.md"
+echo "   (loads cross-tool universal rules in Claude Code, Cursor, Codex)"
+echo ""
+echo "2. Edit tools/ai_docs/config.sh:"
 echo "   - OBSIDIAN_VAULT    → your Obsidian vault root path"
 echo "   - OBSIDIAN_PROJECT_DIR → this project's vault subfolder"
 echo "   - GRAPHIFY_BIN      → if graphify isn't in PATH"
 echo "   - CLAUDE_MEMORY_KEY → run: ls ~/.claude/projects/"
 echo ""
-echo "2. Register the PostToolUse hook in .claude/settings.json:"
+echo "3. Register the PostToolUse hook in .claude/settings.json:"
 echo "   See templates/settings_hook_example.json for the JSON."
 echo "   Replace ABSOLUTE_PATH with: $PROJECT_ROOT"
 echo ""
-echo "3. Write AI_CONTEXT.md for each source module:"
+echo "4. Write AI_CONTEXT.md for each source module:"
 echo "   Template: templates/AI_CONTEXT_template.md"
 echo ""
-echo "4. Verify the full stack:"
-echo "   In Claude Code: /verify-ai-docs"
+echo "5. Verify the full stack:"
+echo "   In Claude Code: /verify-ai-docs && /verify-standards"
 echo ""
 if [ "$INSTALL_GSTACK" = "yes" ]; then
   echo "5. Add the gstack skills block to your CLAUDE.md (see above)."

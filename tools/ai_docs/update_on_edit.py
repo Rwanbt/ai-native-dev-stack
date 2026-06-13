@@ -18,6 +18,7 @@ Never blocks Claude Code: always exits 0 (errors go to stderr only).
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -49,6 +50,41 @@ WATCHED_EXTENSIONS = {
 
 # Directories to skip when walking up (avoid matching project-root accidentaly)
 STOP_DIRS = {".git", "node_modules", "vendor", "__pycache__"}
+
+
+CONTEXT_STALE_DAYS = 30  # warn if AI_CONTEXT.md not touched in this many days while sources changed
+
+
+def check_context_freshness(module_dir: Path) -> None:
+    """
+    Warn when AI_CONTEXT.md is older than CONTEXT_STALE_DAYS and at least one
+    source file in the module has been modified since. Emits a single line to
+    stderr — never raises, never blocks Claude Code.
+    """
+    context_file = module_dir / "AI_CONTEXT.md"
+    if not context_file.exists():
+        return
+
+    try:
+        context_mtime = context_file.stat().st_mtime
+        age_days = (time.time() - context_mtime) / 86400
+
+        if age_days < CONTEXT_STALE_DAYS:
+            return  # recently updated — no drift
+
+        # Any source file newer than AI_CONTEXT.md?
+        for src in module_dir.iterdir():
+            if src.suffix.lower() in WATCHED_EXTENSIONS:
+                if src.stat().st_mtime > context_mtime:
+                    print(
+                        f"[ai_docs] ⚠️  DRIFT {module_dir.name}/AI_CONTEXT.md "
+                        f"({int(age_days)}d old, sources updated since) — "
+                        f"review AI_CONTEXT.md before next commit.",
+                        file=sys.stderr,
+                    )
+                    return  # one warning per hook call is enough
+    except Exception:
+        pass  # never block Claude Code
 
 
 def find_module(file_path: str) -> Path | None:
@@ -123,6 +159,9 @@ def main() -> int:
             print(f"[ai_docs] {msg}", file=sys.stderr)
     else:
         print(f"[ai_docs] warning: {result.stderr.strip()}", file=sys.stderr)
+
+    # Drift detection — runs after every successful AI_SUMMARY update
+    check_context_freshness(module_dir)
 
     return 0
 

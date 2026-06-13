@@ -56,20 +56,36 @@ Mark each check: ✅ PASS · ⚠️ WARN · ❌ FAIL
 
 ---
 
-## TIER 2 — AI Assistant Rules (CLAUDE.md / project instructions)
+## TIER 2 — AI Assistant Rules (AGENTS.md + CLAUDE.md / project instructions)
 
 These are rules the AI assistant enforces proactively during development.
 
-Check that the following are documented in `CLAUDE.md` or equivalent:
+### 2a — Cross-tool portability (AGENTS.md)
+
+```bash
+# AGENTS.md at project root — cross-tool rules (Claude Code, Cursor, Codex, Copilot)
+[ -f AGENTS.md ] && echo "AGENTS.md OK ($(wc -l < AGENTS.md) lines)" || echo "MISSING — run: cp /path/to/ai-native-dev-stack/AGENTS.md ."
+
+# CLAUDE.md references AGENTS.md via @include
+[ -f CLAUDE.md ] && grep -q "@AGENTS.md" CLAUDE.md \
+  && echo "@AGENTS.md present in CLAUDE.md" \
+  || echo "CLAUDE.md does not reference @AGENTS.md — add '@AGENTS.md' near the top"
+```
+
+- [ ] `AGENTS.md` present at project root (cross-tool portability)
+- [ ] `CLAUDE.md` includes `@AGENTS.md` so rules load in Claude Code automatically
+
+### 2b — Project-specific rules (CLAUDE.md)
 
 ```bash
 # CLAUDE.md exists and is substantial
 [ -f CLAUDE.md ] && echo "EXISTS ($(wc -l < CLAUDE.md) lines)" || echo "MISSING"
 
 # Check for key sections (adapt to your project)
-grep -c "Thread\|Real.time\|Forbidden\|Constraint" CLAUDE.md && echo "RT rules present" || echo "RT rules missing"
-grep -c "naming\|convention\|pattern" CLAUDE.md && echo "Conventions present" || echo "Missing"
-grep -c "pre.commit\|build\|test" CLAUDE.md && echo "Build rules present" || echo "Missing"
+grep -c "Thread\|Real.time\|Forbidden\|Constraint" CLAUDE.md 2>/dev/null && echo "RT rules present" || echo "RT rules missing"
+grep -c "naming\|convention\|pattern" CLAUDE.md 2>/dev/null && echo "Conventions present" || echo "Missing"
+grep -c "pre.commit\|build\|test" CLAUDE.md 2>/dev/null && echo "Build rules present" || echo "Missing"
+grep -c "error\|unwrap\|Result\|catch" CLAUDE.md 2>/dev/null && echo "Error handling present" || echo "Missing"
 ```
 
 Key areas to verify are documented (customize for your project):
