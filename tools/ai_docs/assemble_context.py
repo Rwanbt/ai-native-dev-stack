@@ -24,6 +24,8 @@ Exit codes:
     1 — source_file not found or no module found in ancestor tree
 """
 
+from __future__ import annotations  # PEP 563 — keep `X | None` valid on Python 3.8/3.9
+
 import argparse
 import re
 import subprocess

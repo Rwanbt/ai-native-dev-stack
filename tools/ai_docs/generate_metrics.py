@@ -18,6 +18,8 @@ Outputs docs/METRICS.md by default. Pass --stdout to print instead.
 Always exits 0.
 """
 
+from __future__ import annotations  # PEP 563 — keep list[]/tuple[]/set[] annotations valid on Python 3.8
+
 import argparse
 import subprocess
 import sys

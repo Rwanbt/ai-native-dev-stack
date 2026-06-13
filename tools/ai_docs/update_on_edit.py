@@ -15,6 +15,8 @@ Registered in .claude/settings.json:
 Never blocks Claude Code: always exits 0 (errors go to stderr only).
 """
 
+from __future__ import annotations  # PEP 563 — keep `X | None` valid on Python 3.8/3.9
+
 import json
 import subprocess
 import sys
