@@ -1,5 +1,5 @@
 # Universal Engineering Rules
-<!-- Cross-tool: Claude Code (@AGENTS.md in CLAUDE.md), Cursor (.cursorrules @AGENTS.md), Codex (auto-loaded AGENTS.md) -->
+<!-- Cross-tool: Claude Code (@AGENTS.md in CLAUDE.md), Cursor (reads AGENTS.md natively at root + nested dirs), Codex (auto-loaded AGENTS.md) -->
 <!-- Keep this file at the project root. Customize per project as needed. -->
 <!-- Source: https://github.com/Rwanbt/ai-native-dev-stack -->
 
