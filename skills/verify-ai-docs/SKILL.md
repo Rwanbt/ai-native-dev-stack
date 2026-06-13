@@ -2,7 +2,7 @@
 name: verify-ai-docs
 description: |
   Full AI optimization stack health check for any codebase.
-  9-tier scorecard: AI docs, dependency graph, Obsidian memory vault,
+  10-tier scorecard: AI docs, dependency graph, Obsidian memory vault,
   Claude Code memory, project quality gates, and skills ecosystem.
   Works for any language (C++, Rust, TypeScript, Python, Go, Java, etc.)
   and any project structure — no hardcoded paths.
@@ -585,7 +585,7 @@ module.doThing(arg);
 
 ### Missing graphify
 ```
-Install: see https://github.com/graphify/graphify
+Install: see https://github.com/safishamsi/graphify
 Then run: graphify .   (from project root, once — takes 30-60s)
 Update:   graphify update .   (fast, AST-only, run after large refactors)
 ```
