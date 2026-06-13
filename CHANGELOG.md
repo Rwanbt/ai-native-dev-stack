@@ -8,6 +8,43 @@ releases begin.
 ## [Unreleased]
 
 ### Added
+- `tools/ai_docs/source_config.py` — replaces `source_exts.py`; now also exports
+  `EXCLUDE_DIRS`, the unified directory exclusion set shared by all tools.
+- `tools/ai_docs/module_discovery.py` — shared `find_module()` function, eliminating
+  the divergent duplicate (str vs Path signature) between `update_on_edit.py` and
+  `assemble_context.py`.
+- `parse_fsharp()` — best-effort F# parser (modules, types, public `let` bindings).
+  F# files (`.fs`, `.fsi`) are no longer silently routed to `parse_csharp()`.
+- `test_flat_module_constraint_nested_files_not_scanned` — documents the intentional
+  flat-module scanning behaviour.
+- 12 new tests: `TestSourceConfig`, `TestModuleDiscovery`, F# parser tests,
+  `TestFlatModuleConstraint`, `count_loc` regression tests for C-style block comments.
+- Documented the flat-module constraint (AI_CONTEXT.md and source files must be direct
+  siblings) in `README.md`, `CONTRIBUTING.md`, and the `AI_CONTEXT_template.md`.
+- `settings_hook_example.json` now includes setup notes and a manual verify command
+  to prevent the ALL-CAPS placeholder from silently breaking the hook.
+
+### Fixed
+- `generate_metrics.py` now normalises Windows backslashes before passing paths to git.
+- `run_hook.sh` version guard now uses an explicit exit code instead of `assert`
+  (which is disabled by `python -O`).
+- Removed dead filter `f.name != "AI_SUMMARY.md"` in `generate_ai_summary.py`
+  (`.md` is never in `ALL_SOURCE_EXTS`).
+- `count_loc()` no longer misidentifies `"""` inside a C-style block comment as a
+  Python block-comment terminator. Block-close detection is now conditional on the
+  file extension.
+- `skills/verify-ai-docs/SKILL.md` Tier 2b and 2d: replaced GNU-only `find -printf`
+  with POSIX-compatible `find -exec dirname` (was silently returning 0 on macOS).
+- Added Python 3.8 to the CI matrix with `continue-on-error: true` (3.8 is EOL
+  but the stack claims compatibility).
+
+### Changed
+- `source_exts.py` renamed to `source_config.py` — now also exports `EXCLUDE_DIRS`
+  (unified from the previously divergent `SKIP_DIRS` in `generate_all.py` and
+  `generate_metrics.py`, and `STOP_DIRS` from module discovery).
+- CI LOC gate comment now documents the `wc -l` vs `count_loc()` distinction.
+
+### Previous entries
 - `tools/ai_docs/source_exts.py` — single source of truth for source-file
   extensions, imported by the summary generator, the hook, and the metrics tool.
 - `tools/ai_docs/generate_metrics.py` — objective, git-derived stack metrics

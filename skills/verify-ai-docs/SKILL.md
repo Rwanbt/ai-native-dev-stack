@@ -63,7 +63,7 @@ This shows all tracked modules. Use this list for Tiers 2 and 3.
 
 ```bash
 for F in \
-  tools/ai_docs/source_exts.py \
+  tools/ai_docs/source_config.py \
   tools/ai_docs/generate_ai_summary.py \
   tools/ai_docs/update_on_edit.py \
   tools/ai_docs/generate_all.py \
@@ -75,11 +75,12 @@ for F in \
 done
 ```
 
-Thresholds: `source_exts.py` ≥ 15 · `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
+Thresholds: `source_config.py` ≥ 15 · `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
 `generate_all.py` ≥ 35 · `generate_metrics.py` ≥ 80 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20 · `assemble_context.py` ≥ 80
 
-`source_exts.py` is the single source of truth for source-file extensions — without it
-`generate_ai_summary.py`, `update_on_edit.py`, and `generate_metrics.py` all fail to import.
+`source_config.py` is the single source of truth for source-file extensions and directory
+exclusions — without it `generate_ai_summary.py`, `update_on_edit.py`, and `generate_metrics.py`
+all fail to import.
 
 ❌ FAIL on any missing file → skip remaining tiers and print install guide (Step 9).
 
@@ -104,7 +105,7 @@ TOTAL_SRC_DIRS=$(find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
   -not -path "*/target/*" -not -path "*/__pycache__/*" \
   \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
      -o -name "*.py" -o -name "*.go" -o -name "*.java" -o -name "*.cs" \) \
-  -printf "%h\n" 2>/dev/null | sort -u | wc -l)
+  -exec dirname {} \; 2>/dev/null | sort -u | wc -l)
 
 # Count directories that have AI_CONTEXT.md
 COVERED=$(find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
@@ -153,7 +154,7 @@ find . -not -path "*/.git/*" -not -path "*/node_modules/*" \
   -not -path "*/target/*" -not -path "*/__pycache__/*" \
   \( -name "*.cpp" -o -name "*.h" -o -name "*.rs" -o -name "*.ts" \
      -o -name "*.py" -o -name "*.go" -o -name "*.java" \) \
-  -printf "%h\n" 2>/dev/null | sort -u | while read D; do
+  -exec dirname {} \; 2>/dev/null | sort -u | while read D; do
     [ ! -f "$D/AI_CONTEXT.md" ] && echo "ORPHAN: ${D#./}"
   done | head -20
 ```

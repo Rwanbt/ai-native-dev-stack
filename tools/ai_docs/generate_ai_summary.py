@@ -21,42 +21,68 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # LOC counter — non-blank, non-pure-comment lines
 # ---------------------------------------------------------------------------
+
+# Extensions that use C-style block comments (/* ... */) instead of triple-quotes.
+# Populated after the extension imports below; this forward-ref is resolved at
+# module load time because count_loc() is only called at runtime.
+_C_STYLE_EXTS: "frozenset[str]" = frozenset()  # filled after imports
+
+
 def count_loc(path: Path) -> int:
+    ext = path.suffix.lower()
+    uses_c_blocks = ext in _C_STYLE_EXTS
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
-        lines = text.splitlines()
-        count = 0
-        in_block = False
-        for line in lines:
-            s = line.strip()
-            if not s:
-                continue
-            # Block comments (/* ... */ and """ ... """)
-            if in_block:
-                if "*/" in s or '"""' in s or "'''" in s:
-                    in_block = False
-                continue
-            if s.startswith("/*") or s.startswith('"""') or s.startswith("'''"):
-                if "*/" not in s[2:] and '"""' not in s[3:] and "'''" not in s[3:]:
-                    in_block = True
-                continue
-            # Line comments
-            if s.startswith("//") or s.startswith("#") or s.startswith("--"):
-                continue
-            count += 1
-        return count
-    except Exception:
+    except OSError:
         return 0
+
+    count = 0
+    in_block = False
+
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if in_block:
+            # Close a C-style block only for C-style languages
+            if uses_c_blocks and "*/" in s:
+                in_block = False
+            # Close a triple-quote block only for non-C-style languages
+            elif not uses_c_blocks and ('"""' in s or "'''" in s):
+                in_block = False
+            continue
+        # Open C-style block
+        if uses_c_blocks and s.startswith("/*"):
+            if "*/" not in s[2:]:
+                in_block = True
+            continue
+        # Open triple-quote block (Python / F#)
+        if not uses_c_blocks and (s.startswith('"""') or s.startswith("'''")):
+            triple = '"""' if s.startswith('"""') else "'''"
+            if s.count(triple) < 2:
+                in_block = True
+            continue
+        # Single-line comments
+        if uses_c_blocks and s.startswith("//"):
+            continue
+        if not uses_c_blocks and s.startswith("#"):
+            continue
+        count += 1
+
+    return count
 
 
 # ---------------------------------------------------------------------------
 # Language detection — extension sets imported from the single source of truth
 # ---------------------------------------------------------------------------
-from source_exts import (  # noqa: E402
+from source_config import (  # noqa: E402
     CPP_EXTS, RUST_EXTS, TS_EXTS, JS_EXTS, PYTHON_EXTS,
     GO_EXTS, JAVA_EXTS, KOTLIN_EXTS, CS_EXTS, FS_EXTS,
     SWIFT_EXTS, RUBY_EXTS, PHP_EXTS, ALL_SOURCE_EXTS,
 )
+
+# Now that extension sets are available, resolve the forward-ref in count_loc().
+_C_STYLE_EXTS = frozenset(CPP_EXTS | CS_EXTS | JS_EXTS | TS_EXTS | GO_EXTS | JAVA_EXTS | KOTLIN_EXTS)
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +270,38 @@ def parse_csharp(path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# F# parser
+# ---------------------------------------------------------------------------
+_FSHARP_LET = re.compile(
+    r"^let\s+(?:(?:rec|inline|mutable)\s+)*(?!(?:private|internal)\s)([a-z]\w*)\s",
+    re.MULTILINE,
+)
+
+
+def parse_fsharp(path: Path) -> dict:
+    """Best-effort F# parser: modules, types, public let bindings."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+
+    r: dict = {"modules": [], "types": [], "pub_fns": []}
+
+    for m in re.finditer(r"^module\s+([\w.]+)", text, re.MULTILINE):
+        r["modules"].append(m.group(1))
+    for m in re.finditer(r"^type\s+(\w+)", text, re.MULTILINE):
+        r["types"].append(m.group(1))
+    for m in _FSHARP_LET.finditer(text):
+        name = m.group(1)
+        if not name.startswith("_"):
+            r["pub_fns"].append(name)
+
+    for key in r:
+        r[key] = sorted(set(r[key]))
+    return r
+
+
+# ---------------------------------------------------------------------------
 # Generic fallback (Swift, Ruby, PHP, etc.)
 # ---------------------------------------------------------------------------
 def parse_generic(path: Path) -> dict:
@@ -289,7 +347,6 @@ def generate_summary(module_dir: Path) -> str:
     source_files = [
         f for f in sorted(module_dir.iterdir())
         if f.is_file() and f.suffix.lower() in ALL_SOURCE_EXTS
-        and f.name != "AI_SUMMARY.md"
     ]
 
     if not source_files:
@@ -418,7 +475,7 @@ def generate_summary(module_dir: Path) -> str:
                 lines += [label] + [f"- `{i}`" for i in items] + [""]
 
     # C#
-    cs_files = [f for f in source_files if f.suffix.lower() in CS_EXTS | FS_EXTS]
+    cs_files = [f for f in source_files if f.suffix.lower() in CS_EXTS]
     if cs_files:
         agg_cs: dict = {"namespaces": [], "classes": [], "interfaces": [], "enums": []}
         for f in cs_files:
@@ -430,6 +487,21 @@ def generate_summary(module_dir: Path) -> str:
             lines += [f"**Namespace(s)**: `{'`, `'.join(sorted(set(agg_cs['namespaces'])))}`", ""]
         for label, key in [("## Classes", "classes"), ("## Interfaces", "interfaces"), ("## Enums", "enums")]:
             items = sorted(set(agg_cs[key]))
+            if items:
+                lines += [label] + [f"- `{i}`" for i in items] + [""]
+
+    # F#
+    fs_files = [f for f in source_files if f.suffix.lower() in FS_EXTS]
+    if fs_files:
+        agg_fs: dict = {"modules": [], "types": [], "pub_fns": []}
+        for f in fs_files:
+            p = parse_fsharp(f)
+            for k in agg_fs:
+                agg_fs[k].extend(p[k])
+        if agg_fs["modules"]:
+            lines += [f"**Module(s)**: `{'`, `'.join(sorted(set(agg_fs['modules'])))}`", ""]
+        for label, key in [("## F# Types", "types"), ("## F# Public Functions", "pub_fns")]:
+            items = sorted(set(agg_fs[key]))
             if items:
                 lines += [label] + [f"- `{i}`" for i in items] + [""]
 

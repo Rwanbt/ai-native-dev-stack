@@ -32,12 +32,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from module_discovery import find_module  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-STOP_DIRS = {".git", "node_modules", "vendor", "__pycache__"}
 
 # Keywords in AI_CONTEXT.md that indicate real-time thread constraints
 RT_KEYWORDS = {
@@ -51,7 +51,7 @@ SECTION_WIDTH = 72
 
 
 # ---------------------------------------------------------------------------
-# Module discovery (mirrors update_on_edit.py logic)
+# Module discovery helpers
 # ---------------------------------------------------------------------------
 
 def find_project_root(start: Path) -> Path:
@@ -62,22 +62,6 @@ def find_project_root(start: Path) -> Path:
             return p
         p = p.parent
     return start.resolve()
-
-
-def find_module(file_path: Path) -> Path | None:
-    """Walk up from file_path to find the nearest directory with AI_CONTEXT.md."""
-    current = file_path.resolve().parent
-    visited: set[Path] = set()
-    while current not in visited:
-        visited.add(current)
-        if (current / "AI_CONTEXT.md").exists():
-            return current
-        if (current / ".git").exists() or current == current.parent:
-            return None
-        if current.name in STOP_DIRS:
-            return None
-        current = current.parent
-    return None
 
 
 # ---------------------------------------------------------------------------

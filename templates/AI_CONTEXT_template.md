@@ -1,5 +1,9 @@
 # AI_CONTEXT — <ModuleName>
 
+<!-- IMPORTANT: This file must be in the same directory as the source files it
+     documents. Subdirectory source files are NOT included in AI_SUMMARY.md.
+     See the flat module constraint in README.md. -->
+
 > This file is hand-written and version-controlled. Keep it concise (< 80 lines).
 > It is the AI assistant's primary reference for this module.
 > AI_SUMMARY.md is auto-generated alongside it — never edit AI_SUMMARY.md manually.
