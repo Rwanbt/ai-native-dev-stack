@@ -186,6 +186,38 @@ find . -name "AI_CONTEXT.md" \
 
 ---
 
+## TIER 3b — AI_CONTEXT.md Drift (freshness vs sources)
+
+Detects modules where source files were modified after `AI_CONTEXT.md` — the most common way
+documentation becomes misleading without anyone noticing.
+
+```bash
+find . -name "AI_CONTEXT.md" \
+  -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/vendor/*" \
+  | sort | while read CTX; do
+    DIR=$(dirname "$CTX")
+    NAME="${DIR#./}"
+    CTX_DATE=$(git log -1 --format="%ci" -- "$CTX" 2>/dev/null)
+    if [ -z "$CTX_DATE" ]; then
+      echo "UNTRACKED: $NAME (AI_CONTEXT.md not committed yet)"
+      continue
+    fi
+    # Source commits after AI_CONTEXT.md's last commit — excluding doc files
+    DRIFT=$(git log --oneline --after="$CTX_DATE" -- "$DIR" \
+      | grep -v "AI_CONTEXT\|AI_SUMMARY\|\.md$" | wc -l | tr -d ' ')
+    if [ "$DRIFT" -gt 0 ]; then
+      echo "STALE: $NAME — $DRIFT source commit(s) after last AI_CONTEXT.md update ($CTX_DATE)"
+    else
+      echo "OK: $NAME (in sync)"
+    fi
+  done
+```
+
+Each STALE = ⚠️ WARN — the context doc may no longer accurately describe the module.
+Action: read recent git diff for that module, then update the relevant section(s) of `AI_CONTEXT.md`.
+
+---
+
 ## TIER 4 — Automation Chain (PostToolUse hook)
 
 ### 4a — Hook registered
@@ -412,6 +444,40 @@ TEST_FILE=$(find . -name "AI_CONTEXT.md" -not -path "*/.git/*" \
 
 ---
 
+## STEP 5b — Metrics Snapshot (generate_metrics.py)
+
+Generate or refresh `docs/METRICS.md` — the objective, git-derived measurement of stack health
+over time. This is the answer to "how do we know if this is working?".
+
+```bash
+PY=$(bash tools/ai_docs/find_python.sh)
+if [ -n "$PY" ]; then
+  PYTHONIOENCODING=utf-8 "$PY" tools/ai_docs/generate_metrics.py
+  echo ""
+  echo "=== Metrics summary ==="
+  # Coverage line
+  grep "Directories with" docs/METRICS.md 2>/dev/null | head -1
+  # KFP line
+  grep "KNOWN_FAILURE_PATTERNS" docs/METRICS.md 2>/dev/null | head -1
+  # Risk zones
+  RISK=$(grep "^- \`" docs/METRICS.md 2>/dev/null | grep "add AI_CONTEXT" | wc -l | tr -d ' ')
+  echo "Risk zones (high churn, uncovered): $RISK"
+  # Latest trend row
+  echo "Latest trend:"
+  grep "^| 20" docs/METRICS.md 2>/dev/null | tail -1
+else
+  echo "SKIP — Python not found"
+fi
+```
+
+Key metrics to read from `docs/METRICS.md`:
+- **Coverage %**: target ≥ 80% of source directories. <50% = DEGRADED.
+- **KFP pattern count**: should grow over time. Stagnant for >30 days = the system isn't being used to capture bugs.
+- **Stale contexts**: target 0. >3 = documentation drift risk.
+- **Risk zones**: high-churn uncovered dirs = where AI errors are most likely. Prioritize these for `AI_CONTEXT.md`.
+
+---
+
 ## STEP 6 — Scorecard
 
 Print the full scorecard using results from Tiers 1-10:
@@ -423,15 +489,20 @@ Print the full scorecard using results from Tiers 1-10:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Tier 1  — Core Scripts          [N/6]  results
-Tier 2  — AI Documentation      [N/M]  results  ← includes coverage check
+Tier 2  — AI Documentation      [N/M]  results  ← coverage, orphans, contract
+Tier 2e — AGENTS.md & CLAUDE.md [N/2]  results  ← cross-tool portability
 Tier 3  — AI_SUMMARY Freshness  [N/M]  results
+Tier 3b — AI_CONTEXT Drift      [N/M]  results  ← git-based staleness ← NEW
 Tier 4  — Automation Chain      [N/3]  results
 Tier 5  — Dependency Graph      [N/3]  results
 Tier 6  — Obsidian Vault        [N/5]  results
 Tier 7  — Claude Code Memory    [N/3]  results
-Tier 8  — Project Quality       [N/5]  results  ← includes KFP
+Tier 8  — Project Quality       [N/5]  results  ← KFP, ADRs, ARCHITECTURE
 Tier 9  — Skills Ecosystem      [N/M]  results
 Tier 10 — Cognitive Contract    [N/3]  results  ← failure modes · KFP · assembler
+
+Metrics — Coverage / KFP / Risk  [see docs/METRICS.md]  ← NEW
+  Coverage: X% (N/M dirs)   KFP: N patterns   Risk zones: N
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SCORE: X/Y  |  PASS: A  WARN: B  FAIL: C
