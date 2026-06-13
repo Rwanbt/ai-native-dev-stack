@@ -63,9 +63,11 @@ This shows all tracked modules. Use this list for Tiers 2 and 3.
 
 ```bash
 for F in \
+  tools/ai_docs/source_exts.py \
   tools/ai_docs/generate_ai_summary.py \
   tools/ai_docs/update_on_edit.py \
   tools/ai_docs/generate_all.py \
+  tools/ai_docs/generate_metrics.py \
   tools/ai_docs/run_hook.sh \
   tools/ai_docs/find_python.sh \
   tools/ai_docs/assemble_context.py; do
@@ -73,8 +75,11 @@ for F in \
 done
 ```
 
-Thresholds: `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
-`generate_all.py` ≥ 35 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20 · `assemble_context.py` ≥ 80
+Thresholds: `source_exts.py` ≥ 15 · `generate_ai_summary.py` ≥ 80 · `update_on_edit.py` ≥ 50
+`generate_all.py` ≥ 35 · `generate_metrics.py` ≥ 80 · `run_hook.sh` ≥ 10 · `find_python.sh` ≥ 20 · `assemble_context.py` ≥ 80
+
+`source_exts.py` is the single source of truth for source-file extensions — without it
+`generate_ai_summary.py`, `update_on_edit.py`, and `generate_metrics.py` all fail to import.
 
 ❌ FAIL on any missing file → skip remaining tiers and print install guide (Step 9).
 
@@ -488,7 +493,7 @@ Print the full scorecard using results from Tiers 1-10:
   Project: <ProjectName> · <date>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Tier 1  — Core Scripts          [N/6]  results
+Tier 1  — Core Scripts          [N/8]  results
 Tier 2  — AI Documentation      [N/M]  results  ← coverage, orphans, contract
 Tier 2e — AGENTS.md & CLAUDE.md [N/2]  results  ← cross-tool portability
 Tier 3  — AI_SUMMARY Freshness  [N/M]  results

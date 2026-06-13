@@ -3,7 +3,15 @@
 # Tests each candidate with a real import to skip MS Store stubs.
 # Source or call: PY=$(bash tools/ai_docs/find_python.sh)
 
+# Honor an explicit interpreter from machine config (the documented escape hatch).
+# config.sh lives next to this script and is git-ignored.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+[ -f "$SCRIPT_DIR/config.sh" ] && . "$SCRIPT_DIR/config.sh" 2>/dev/null
+
 CANDIDATES=(
+    # Explicit override from config.sh (checked first when set)
+    "$PYTHON_BIN"
+
     # Standard PATH lookups (fastest — try these first)
     "python3"
     "python"

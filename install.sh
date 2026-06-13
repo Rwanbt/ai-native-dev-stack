@@ -60,7 +60,7 @@ for F in \
   config.sh.example; do
   [ -f "$SCRIPT_DIR/tools/ai_docs/$F" ] && cp -f "$SCRIPT_DIR/tools/ai_docs/$F" "$PROJECT_ROOT/tools/ai_docs/"
 done
-echo "   OK (8 scripts + assembler)"
+echo "   OK (8 scripts + config template)"
 
 # ── Step 2: Copy skills ───────────────────────────────────────────────────────
 echo "[2/7] Copying skills (verify-ai-docs, verify-standards) ..."
