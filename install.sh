@@ -49,7 +49,8 @@ fi
 echo "[1/7] Copying scripts to tools/ai_docs/ ..."
 mkdir -p "$PROJECT_ROOT/tools/ai_docs"
 for F in \
-  source_exts.py \
+  source_config.py \
+  module_discovery.py \
   generate_ai_summary.py \
   update_on_edit.py \
   generate_all.py \
@@ -60,7 +61,7 @@ for F in \
   config.sh.example; do
   [ -f "$SCRIPT_DIR/tools/ai_docs/$F" ] && cp -f "$SCRIPT_DIR/tools/ai_docs/$F" "$PROJECT_ROOT/tools/ai_docs/"
 done
-echo "   OK (8 scripts + config template)"
+echo "   OK (9 scripts + config template)"
 
 # ── Step 2: Copy skills ───────────────────────────────────────────────────────
 echo "[2/7] Copying skills (verify-ai-docs, verify-standards) ..."
