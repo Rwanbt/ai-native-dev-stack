@@ -7,12 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TOOLS = Path(r"D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools")
+ROOT = Path(__file__).resolve().parent.parent
+TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
 import validate_adapters  # noqa: E402
 
-ROOT = Path(r"D:\App\ai-native-dev-stack\stack\agents\anti-debt")
 ADAPTERS = ROOT / "adapters"
 
 

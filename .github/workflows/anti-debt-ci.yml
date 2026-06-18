@@ -142,6 +142,19 @@ jobs:
         working-directory: stack/agents/anti-debt
         run: python3 tests/test_layer12.py
 
+  test-adapters:
+    name: Test adapters validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run adapter tests
+        working-directory: stack/agents/anti-debt
+        run: python3 tests/test_adapters.py
+
   test-layer3-v12:
     name: Test Layer 3 (V1.2 skills)
     runs-on: ubuntu-latest

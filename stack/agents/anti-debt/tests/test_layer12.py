@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # Add the tools dir to path (same workaround as the other test runners)
-TOOLS = Path(r"D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools")
+TOOLS = Path(__file__).resolve().parent.parent / "tools"
 sys.path.insert(0, str(TOOLS))
 
 import static_analysis  # noqa: E402

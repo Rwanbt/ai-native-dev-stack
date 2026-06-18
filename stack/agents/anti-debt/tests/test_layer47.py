@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TOOLS = Path(r"D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools")
+TOOLS = Path(__file__).resolve().parent.parent / "tools"
 sys.path.insert(0, str(TOOLS))
 
 import scan_periodic  # noqa: E402
