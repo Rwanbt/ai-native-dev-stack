@@ -1,0 +1,6 @@
+{
+  "fixture": "fixture5-clean-baseline",
+  "language": "python",
+  "description": "Clean Python repo — should produce 0 critical/high findings",
+  "EXPECTED_FINDINGS": []
+}

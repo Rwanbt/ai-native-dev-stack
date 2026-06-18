@@ -1,0 +1,15 @@
+{
+  "fixture": "fixture3-js-circular",
+  "language": "typescript",
+  "description": "TypeScript repo with circular dependency between modules",
+  "EXPECTED_FINDINGS": [
+    {
+      "id": "exp-f3-001",
+      "category": "dependencies",
+      "subcategory": "circular",
+      "severity": "high",
+      "description": "Circular dependency: a.ts -> b.ts -> a.ts",
+      "min_confidence": 1.0
+    }
+  ]
+}

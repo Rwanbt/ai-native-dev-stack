@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-native-dev-stack/schemas/debt-history.schema.json",
+  "title": "DebtHistory",
+  "description": "Historique persistant des scans d'un projet. Permet de suivre l'évolution et détecter les régressions.",
+  "type": "object",
+  "required": ["project", "created_at", "updated_at", "scans"],
+  "properties": {
+    "project": { "type": "string", "description": "Nom ou chemin du projet scanné" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "scans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["scan_id", "timestamp", "total_findings", "by_severity", "debt_delta"],
+        "properties": {
+          "scan_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "total_findings": { "type": "number", "minimum": 0 },
+          "by_severity": {
+            "type": "object",
+            "properties": {
+              "critical": { "type": "number", "minimum": 0 },
+              "high": { "type": "number", "minimum": 0 },
+              "medium": { "type": "number", "minimum": 0 },
+              "low": { "type": "number", "minimum": 0 }
+            }
+          },
+          "by_category": {
+            "type": "object",
+            "description": "Findings par catégorie (code, security, dependencies, tests, ...)"
+          },
+          "findings_resolved": {
+            "type": "array",
+            "description": "IDs de findings corrigées depuis le scan précédent",
+            "items": { "type": "string" }
+          },
+          "findings_regressed": {
+            "type": "array",
+            "description": "IDs de findings qui étaient absentes au scan précédent et sont revenues",
+            "items": { "type": "string" }
+          },
+          "findings_new": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "debt_delta": {
+            "type": "number",
+            "description": "Variation nette de dette depuis le scan précédent (positif = plus de dette)"
+          },
+          "scan_duration_seconds": { "type": "number" },
+          "tools_used": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

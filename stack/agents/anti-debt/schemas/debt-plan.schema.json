@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-native-dev-stack/schemas/debt-plan.schema.json",
+  "title": "DebtPlan",
+  "description": "Plan d'action priorisé pour résoudre les findings d'un debt-scan.",
+  "type": "object",
+  "required": ["plan_id", "scan_id", "created_at", "mode", "actions", "accepted_debt", "critic_validation"],
+  "properties": {
+    "plan_id": { "type": "string", "description": "UUID v4 unique du plan" },
+    "scan_id": { "type": "string", "description": "Référence au scan source" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "mode": {
+      "type": "string",
+      "enum": ["complete", "mvp"],
+      "description": "complete = toutes les findings critical/high adressées ; mvp = dette acceptée et tracée dans mvp_debt_report_ref"
+    },
+    "mvp_debt_report_ref": {
+      "type": "string",
+      "description": "Chemin du .mvp-debt-report.md si mode=mvp (obligatoire dans ce cas)"
+    },
+    "actions": {
+      "type": "array",
+      "description": "Liste des actions de remédiation",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "addresses_findings", "type", "estimate_days"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string", "minLength": 5 },
+          "addresses_findings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Liste d'IDs de findings que cette action adresse"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["quick_win", "structural", "backlog"]
+          },
+          "estimate_days": { "type": "number", "minimum": 0 },
+          "dependencies": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "IDs d'actions qui doivent être complétées avant celle-ci"
+          },
+          "files_impacted": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "accepted_debt": {
+      "type": "array",
+      "description": "Findings qu'on choisit de NE PAS corriger, avec justification explicite",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "reason"],
+        "properties": {
+          "finding_id": { "type": "string" },
+          "reason": { "type": "string", "minLength": 20, "description": "Justification explicite (anti-MVP déguisé)" },
+          "review_at": { "type": "string", "format": "date", "description": "Date à laquelle la décision doit être re-évaluée" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "success_metrics": {
+      "type": "array",
+      "description": "KPIs pour mesurer le progrès",
+      "items": {
+        "type": "object",
+        "required": ["name", "target", "deadline"],
+        "properties": {
+          "name": { "type": "string" },
+          "baseline": { "type": "number" },
+          "target": { "type": "number" },
+          "deadline": { "type": "string", "format": "date" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "critic_validation": {
+      "type": "object",
+      "description": "Sortie du Critic Engine validant ce plan",
+      "required": ["passed", "concerns", "plan_completeness", "mvp_disguised"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "concerns": { "type": "array", "items": { "type": "string" } },
+        "rejected_findings": { "type": "array", "items": { "type": "string" } },
+        "plan_completeness": {
+          "type": "string",
+          "enum": ["complete", "partial", "incomplete"]
+        },
+        "mvp_disguised": { "type": "boolean" },
+        "recommendations": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "additionalProperties": false
+}

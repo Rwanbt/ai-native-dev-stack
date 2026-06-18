@@ -1,0 +1,31 @@
+{
+  "fixture": "fixture1-py-messy",
+  "language": "python",
+  "description": "Python repo with duplication, hardcoded secrets, outdated deps, no tests",
+  "EXPECTED_FINDINGS": [
+    {
+      "id": "exp-f1-001",
+      "category": "security",
+      "subcategory": "secrets_in_code",
+      "severity": "critical",
+      "description": "Hardcoded API credential in config.py",
+      "min_confidence": 0.85
+    },
+    {
+      "id": "exp-f1-002",
+      "category": "code",
+      "subcategory": "duplication",
+      "severity": "medium",
+      "description": "Function parse_user_data is duplicated across 3 files",
+      "min_confidence": 0.7
+    },
+    {
+      "id": "exp-f1-003",
+      "category": "tests",
+      "subcategory": "coverage_gaps",
+      "severity": "high",
+      "description": "No tests directory found",
+      "min_confidence": 1.0
+    }
+  ]
+}

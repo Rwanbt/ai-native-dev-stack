@@ -1,0 +1,23 @@
+{
+  "fixture": "fixture2-rust-complex",
+  "language": "rust",
+  "description": "Rust repo with god function (cyclomatic complexity > 15)",
+  "EXPECTED_FINDINGS": [
+    {
+      "id": "exp-f2-001",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "description": "Function process_data has cyclomatic complexity > 10",
+      "min_confidence": 1.0
+    },
+    {
+      "id": "exp-f2-002",
+      "category": "code",
+      "subcategory": "god_classes",
+      "severity": "medium",
+      "description": "Single function with too many responsibilities",
+      "min_confidence": 0.7
+    }
+  ]
+}

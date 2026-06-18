@@ -1,0 +1,51 @@
+{
+  "plan_id": "plan-2026-06-17-001",
+  "scan_id": "scan-2026-06-17-001",
+  "created_at": "2026-06-17T10:05:00Z",
+  "mode": "complete",
+  "actions": [
+    {
+      "id": "a-001",
+      "title": "Migrer la cle API Stripe vers les variables d'environnement",
+      "addresses_findings": ["f-001"],
+      "type": "quick_win",
+      "estimate_days": 0.5,
+      "dependencies": [],
+      "files_impacted": ["src/config.py", ".env.example"]
+    },
+    {
+      "id": "a-002",
+      "title": "Decomposer process_data en sous-fonctions",
+      "addresses_findings": ["f-002"],
+      "type": "structural",
+      "estimate_days": 2,
+      "dependencies": [],
+      "files_impacted": ["src/utils.py"]
+    }
+  ],
+  "accepted_debt": [],
+  "success_metrics": [
+    {
+      "name": "critical_findings",
+      "baseline": 1,
+      "target": 0,
+      "deadline": "2026-06-20"
+    },
+    {
+      "name": "complexity_violations",
+      "baseline": 1,
+      "target": 0,
+      "deadline": "2026-07-15"
+    }
+  ],
+  "critic_validation": {
+    "passed": true,
+    "concerns": [],
+    "rejected_findings": [],
+    "plan_completeness": "complete",
+    "mvp_disguised": false,
+    "recommendations": [
+      "Ajouter un test de regression pour verifier que la cle API n'est plus en clair apres le fix."
+    ]
+  }
+}

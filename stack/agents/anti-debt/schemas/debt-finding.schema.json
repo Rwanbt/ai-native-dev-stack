@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-native-dev-stack/schemas/debt-finding.schema.json",
+  "title": "DebtFinding",
+  "description": "Finding unitaire de dette technique. Chaque finding DOIT avoir au moins une preuve concrète et un score de confiance.",
+  "type": "object",
+  "required": [
+    "id",
+    "category",
+    "subcategory",
+    "severity",
+    "description",
+    "evidence",
+    "confidence",
+    "source"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "UUID v4 unique du finding"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["code", "security", "dependencies", "tests", "architecture", "observability", "ai_agent"],
+      "description": "Catégorie principale (cf. taxonomy/debt-categories.yaml)"
+    },
+    "subcategory": {
+      "type": "string",
+      "description": "Sous-catégorie normalisée (cf. taxonomy)"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "location": {
+      "type": "object",
+      "description": "Localisation précise du problème",
+      "properties": {
+        "file": { "type": "string", "description": "Chemin relatif du fichier" },
+        "lines": { "type": "string", "description": "Range de lignes (ex: 12-45)" },
+        "symbol": { "type": "string", "description": "Nom de la fonction/classe/symbole" }
+      },
+      "required": ["file"]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Description humainement lisible du problème"
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Liste de preuves concrètes (chemin:ligne, output d'outil, commit SHA)",
+      "items": {
+        "type": "object",
+        "required": ["type", "value"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["file_location", "tool_output", "commit_diff", "config_value", "doc_reference", "ast_metric", "ast_hash", "file_list", "regex_match", "filesystem_scan"]
+          },
+          "value": { "type": "string", "description": "Valeur de la preuve (chemin:ligne, hash de sortie, etc.)" },
+          "tool": { "type": "string", "description": "Nom de l'outil si type=tool_output" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confiance dans le finding (0=devinette, 1=certitude). < 0.6 = rejeté par défaut"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "tool:ruff",
+        "tool:clippy",
+        "tool:eslint",
+        "tool:golangci-lint",
+        "tool:dependency-cruiser",
+        "tool:osv-scanner",
+        "tool:trufflehog",
+        "tool:gitleaks",
+        "tool:pip-audit",
+        "tool:cargo-audit",
+        "tool:npm-audit",
+        "tool:static-analysis",
+        "tool:polyglot-scan",
+        "tool:python-ast",
+        "tool:python-deps-heuristic",
+        "tool:custom",
+        "llm-inference"
+      ],
+      "description": "Origine du finding (outil déterministe > llm)"
+    },
+    "estimated_effort": {
+      "type": "string",
+      "enum": ["XS", "S", "M", "L", "XL"],
+      "description": "Estimation effort de correction (XS≈30min, S≈2h, M≈1j, L≈3j, XL≈10j+) — cf. scoring-calibration.md"
+    },
+    "risk_of_fix": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Risque de régression si on fixe naïvement"
+    },
+    "auto_fixable": {
+      "type": "boolean",
+      "description": "True si un fix automatique peut être appliqué sans validation humaine"
+    },
+    "score": {
+      "type": "number",
+      "description": "Priority score = (impact × urgence × confidence) / effort_days. Conventionnel — calibrage V2."
+    },
+    "first_seen": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 — quand ce finding a été détecté pour la première fois"
+    },
+    "last_seen": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
