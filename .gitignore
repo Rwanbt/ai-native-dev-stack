@@ -12,3 +12,14 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+
+# Generated artifacts — never commit (anti-debt agent runtime output)
+**/kg/data/
+*.db
+*.log
+**/scan_periodic_report.json
+.debt-history.json
+.debt-scan.json
+
+# Build artifacts (Rust test fixtures, etc.)
+**/target/
