@@ -1,0 +1,46 @@
+{
+  "scan_id": "scan-2026-06-17-real-fixture1",
+  "timestamp": "2026-06-17T11:25:00+00:00",
+  "total_findings": 0,
+  "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+  "by_category": {},
+  "findings": [],
+  "warnings": [
+    {
+      "warning": "ruff not installed on test machine (run 'pip install ruff' or 'pipx install ruff')",
+      "source": "test-runtime-environment",
+      "recommendation": "After installing ruff, expect: 0-N complexity findings from fixture1-py-messy (3 duplicated functions detected by ruff C901/PLR0402 if enabled)"
+    },
+    {
+      "warning": "trufflehog/gitleaks/osv-scanner not installed on test machine",
+      "source": "test-runtime-environment",
+      "recommendation": "After installing trufflehog, expect: 1 critical finding at src/config.py:12 (hardcoded API credential, value redacted)"
+    },
+    {
+      "warning": "pip-audit not installed on test machine",
+      "source": "test-runtime-environment",
+      "recommendation": "After installing pip-audit, expect: 1 high-severity finding for 'requests==2.18.0' (mock CVE)"
+    }
+  ],
+  "critic_validation": {
+    "passed": false,
+    "concerns": ["Critic Engine MUST be invoked separately (see skills/critic/SKILL.md)"],
+    "plan_completeness": "partial",
+    "mvp_disguised": null
+  },
+  "_provenance": {
+    "machine": "Windows 11, Python 3.13",
+    "tools_available": ["python3"],
+    "tools_missing": ["ruff", "trufflehog", "gitleaks", "osv-scanner", "pip-audit", "cargo-audit", "npm-audit", "dependency-cruiser"],
+    "expected_findings_post_install": {
+      "fixture1-py-messy": [
+        {"id": "expected-f1-001", "category": "security", "subcategory": "secrets_in_code", "severity": "critical", "file": "src/config.py:12"},
+        {"id": "expected-f1-002", "category": "code", "subcategory": "duplication", "severity": "medium", "file": "src/helpers.py"},
+        {"id": "expected-f1-003", "category": "tests", "subcategory": "coverage_gaps", "severity": "high", "file": "<repo>"}
+      ],
+      "fixture4-py-secure": [
+        {"id": "expected-f4-001", "category": "security", "subcategory": "known_vulns", "severity": "high", "file": "requirements.txt:requests"}
+      ]
+    }
+  }
+}

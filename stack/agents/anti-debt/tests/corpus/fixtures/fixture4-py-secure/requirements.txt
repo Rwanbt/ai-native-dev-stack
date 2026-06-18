@@ -1,0 +1,3 @@
+requests==2.18.0  # known to have CVE-2018-18074 (verified by advisory db)
+# This fixture tests the dependency scanner's ability to detect known vulns
+# Note: this is a TEST FIXTURE, not a real production dependency

@@ -1,0 +1,5 @@
+[project]
+name = "fixture1-py-messy"
+version = "1.0.0"
+description = "Test fixture: secrets + duplication"
+requires-python = ">=3.11"

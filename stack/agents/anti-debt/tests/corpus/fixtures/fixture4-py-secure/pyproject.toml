@@ -1,0 +1,5 @@
+[project]
+name = "fixture4-py-secure"
+version = "1.0.0"
+description = "Test fixture: known-vulnerable dependency"
+requires-python = ">=3.11"

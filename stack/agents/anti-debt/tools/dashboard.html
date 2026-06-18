@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Anti-Debt Dashboard</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1, h2 { color: #1e3a8a; }
+  .kpi-row { display: flex; gap: 1.5em; margin: 1.5em 0; }
+  .kpi { background: #f3f4f6; padding: 1em 1.5em; border-radius: 8px; min-width: 120px; }
+  .kpi .value { font-size: 2em; font-weight: bold; color: #1e3a8a; }
+  .kpi .label { color: #6b7280; font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  th, td { padding: 0.5em 0.7em; text-align: left; border-bottom: 1px solid #e5e7eb; font-size: 0.9em; }
+  th { background: #f9fafb; }
+  code { background: #f3f4f6; padding: 0 0.3em; border-radius: 3px; font-size: 0.9em; }
+  .cat-legend { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.3em; font-size: 0.9em; }
+  .footer { color: #6b7280; font-size: 0.85em; margin-top: 3em; border-top: 1px solid #e5e7eb; padding-top: 1em; }
+</style>
+</head>
+<body>
+<h1>Anti-Debt Dashboard</h1>
+<p>Generated 2026-06-17T16:40:15.383971+00:00 from <code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\data\kg.db</code></p>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="value">217</div><div class="label">Nodes</div></div>
+  <div class="kpi"><div class="value">215</div><div class="label">Edges</div></div>
+  <div class="kpi"><div class="value">2</div><div class="label">Components</div></div>
+  <div class="kpi"><div class="value">215</div><div class="label">Debts</div></div>
+  <div class="kpi"><div class="value">2</div><div class="label">Critical</div></div>
+</div>
+
+<h2>Severity distribution</h2>
+<svg width="600" height="84" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="3" height="20" fill="#dc2626"/><text x="8" y="15" font-family="monospace" font-size="12" fill="#222">critical: 2</text><rect x="0" y="28" width="35" height="20" fill="#ea580c"/><text x="40" y="43" font-family="monospace" font-size="12" fill="#222">high: 19</text><rect x="0" y="56" width="360" height="20" fill="#ca8a04"/><text x="365" y="71" font-family="monospace" font-size="12" fill="#222">medium: 194</text></svg>
+
+<h2>Category distribution</h2>
+<div style="display:flex; align-items:center; gap:2em;">
+  <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M 100 100 L 100.0 20.0 A 80 80 0 1 1 90.7 20.5 Z" fill="#3b82f6"/><path d="M 100 100 L 90.7 20.5 A 80 80 0 0 1 95.3 20.1 Z" fill="#8b5cf6"/><path d="M 100 100 L 95.3 20.1 A 80 80 0 0 1 100.0 20.0 Z" fill="#ec4899"/></svg>
+  <div class="cat-legend"><div><span style="display:inline-block;width:12px;height:12px;background:#3b82f6;margin-right:6px;"></span>code: 211</div><div><span style="display:inline-block;width:12px;height:12px;background:#8b5cf6;margin-right:6px;"></span>security: 2</div><div><span style="display:inline-block;width:12px;height:12px;background:#ec4899;margin-right:6px;"></span>tests: 2</div></div>
+</div>
+
+<h2>Top files with debt</h2>
+<ul><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_code.py</code> — 26 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools\polyglot_scan.py</code> — 20 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools\static_analysis.py</code> — 20 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_deps.py</code> — 20 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-architecture\tools\scan_architecture.py</code> — 12 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\kg_migrate.py</code> — 10 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tests\test_scan_quality.py</code> — 10 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools\scan_periodic.py</code> — 10 findings</li><li><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_security.py</code> — 10 findings</li><li><code>D:\App\ai-native-dev-stack\tools\ai_docs\generate_ai_summary.py</code> — 8 findings</li></ul>
+
+<h2>Components (projects scanned)</h2>
+<ul><li><b>ai-native-dev-stack</b> <code>D:\App\ai-native-dev-stack</code></li><li><b>anti-debt-agent-self</b> <code>D:\App\ai-native-dev-stack\stack\agents\anti-debt</code></li></ul>
+
+<h2>Recent debts (latest 20)</h2>
+<table><thead><tr><th>Severity</th><th>Cat/Sub</th><th>Description</th><th>Location</th><th>First seen</th></tr></thead><tbody><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>tests/coverage_gaps</td><td>Thin test coverage: 6 test files for 23 source files</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt:1</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash 7d7bc06cb8a3d0eb, first: &#x27;is_installed&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_deps.py:55</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 3x (hash fb4ce507461fbd6a, first: &#x27;parse_user_data&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tests\corpus\fixtures\fixture1-py-messy\src\helpers.py:7</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash 844a7c05171b3697, first: &#x27;visit_Constant&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tools\static_analysis.py:185</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 3x (hash 192c7181830d5182, first: &#x27;tearDown&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tests\test_skills_v12.py:132</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash c5b24b4719cc59a0, first: &#x27;test_override_record</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tests\test_layer12.py:198</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash bd0fd73354f4f3d6, first: &#x27;test_cc_with_branche</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\tests\test_layer12.py:27</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash 124e521e43bbefd2, first: &#x27;count_nodes&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\kg_store.py:223</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash ae3a98e88188c798, first: &#x27;delete_node&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\kg_store.py:156</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 2x (hash dbd07d5a98e68f0c, first: &#x27;get_node&#x27;)</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\kg_store.py:128</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/duplication</td><td>Function body duplicated 5x (hash 78008f3d50ffb9ec, first: &#x27;find_components_affe</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\kg\kg_query.py:55</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;detect_circular_imports_repo&#x27; is 51 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-architecture\tools\scan_architecture.py:61</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;main&#x27; is 54 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-prevention\tools\prevent_finding.py:180</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;normalize_osv&#x27; is 57 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_security.py:123</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;main&#x27; is 55 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_deps.py:308</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;heuristic_python_deps&#x27; is 54 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_deps.py:252</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;heuristic_python_scan&#x27; is 97 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_code.py:301</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;normalize_clippy&#x27; is 60 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_code.py:125</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;normalize_ruff&#x27; is 60 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\scan_code.py:63</code></td><td>2026-06-17T16:30:49</td></tr><tr><td><span style="color:#ca8a04;font-weight:bold">MEDIUM</span></td><td>code/complexity</td><td>Function &#x27;main&#x27; is 69 lines long</td><td><code>D:\App\ai-native-dev-stack\stack\agents\anti-debt\skills\debt-scan\tools\aggregate.py:20</code></td><td>2026-06-17T16:30:49</td></tr></tbody></table>
+
+<div class="footer">
+  Anti-debt agent v1.2 — generated by tools/dashboard.py
+</div>
+</body>
+</html>

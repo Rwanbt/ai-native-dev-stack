@@ -1,0 +1,251 @@
+{
+  "language": "python",
+  "scanner": "ruff",
+  "findings": [
+    {
+      "id": "84480b26-eda0-4e6e-96df-dff164f9341c",
+      "category": "security",
+      "subcategory": "secrets_in_code",
+      "severity": "critical",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\tests\\corpus\\fixtures\\fixture1-py-messy\\src\\config.py",
+        "lines": "9"
+      },
+      "description": "Hardcoded Stripe live secret key",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\tests\\corpus\\fixtures\\fixture1-py-messy\\src\\config.py:9"
+        },
+        {
+          "type": "regex_match",
+          "tool": "python-ast",
+          "value": "SERVICE_API_KEY = \"<redacted-credential>\""
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.482047+00:00",
+      "last_seen": "2026-06-17T13:01:14.482047+00:00"
+    },
+    {
+      "id": "2a7f6d9a-3f60-4681-b2fd-d071ca05ce5e",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\assemble_context.py",
+        "lines": "170"
+      },
+      "description": "Function 'assemble' is 137 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\assemble_context.py:170"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=assemble lines=137"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.260007+00:00",
+      "last_seen": "2026-06-17T13:01:14.260007+00:00"
+    },
+    {
+      "id": "01f5a77d-61a3-42cc-a9ea-fc985c86d608",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\generate_ai_summary.py",
+        "lines": "325"
+      },
+      "description": "Function 'generate_summary' is 200 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\generate_ai_summary.py:325"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=generate_summary lines=200"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.288830+00:00",
+      "last_seen": "2026-06-17T13:01:14.288830+00:00"
+    },
+    {
+      "id": "e7f9fb2d-f69e-4bb0-a295-6f9ff5be402f",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\generate_metrics.py",
+        "lines": "166"
+      },
+      "description": "Function 'generate' is 144 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\tools\\ai_docs\\generate_metrics.py:166"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=generate lines=144"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.336345+00:00",
+      "last_seen": "2026-06-17T13:01:14.336345+00:00"
+    },
+    {
+      "id": "57ba499b-deac-47f5-92ed-1d3c2b726b39",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\kg\\kg_migrate.py",
+        "lines": "164"
+      },
+      "description": "Function 'migrate_v1_to_v2' is 121 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\kg\\kg_migrate.py:164"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=migrate_v1_to_v2 lines=121"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.394065+00:00",
+      "last_seen": "2026-06-17T13:01:14.394065+00:00"
+    },
+    {
+      "id": "0438cb0c-6ff8-4558-9351-ea6862b204f9",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\kg\\kg_sync.py",
+        "lines": "124"
+      },
+      "description": "Function 'import_adr_from_vault' is 51 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\kg\\kg_sync.py:124"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=import_adr_from_vault lines=51"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.420686+00:00",
+      "last_seen": "2026-06-17T13:01:14.420686+00:00"
+    },
+    {
+      "id": "6e86643a-c513-4bb6-9baf-945e976f0a96",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\tests\\test_scan_quality.py",
+        "lines": "50"
+      },
+      "description": "Function 'run_scan' is 51 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\tests\\test_scan_quality.py:50"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=run_scan lines=51"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.453279+00:00",
+      "last_seen": "2026-06-17T13:01:14.453279+00:00"
+    },
+    {
+      "id": "2a75fc4d-1602-4751-bdbb-252da5b407b5",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\skills\\debt-scan\\tools\\aggregate.py",
+        "lines": "20"
+      },
+      "description": "Function 'main' is 69 lines long",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "D:\\App\\ai-native-dev-stack\\stack\\agents\\anti-debt\\skills\\debt-scan\\tools\\aggregate.py:20"
+        },
+        {
+          "type": "ast_metric",
+          "tool": "python-ast",
+          "value": "function=main lines=69"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "tool:python-ast",
+      "estimated_effort": "S",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T13:01:14.490742+00:00",
+      "last_seen": "2026-06-17T13:01:14.490742+00:00"
+    }
+  ],
+  "_meta": {
+    "note": "Canonical sample output of scan_code.py on D:\\App\\ai-native-dev-stack (real Python project)",
+    "scan_date": "2026-06-17",
+    "scanner_chain": "ruff binary missing -> fell back to python-ast heuristic",
+    "total_findings_real_scan": 207,
+    "selected": 8,
+    "severity_breakdown_real_scan": {
+      "critical": 1,
+      "high": 0,
+      "medium": 13,
+      "low": 192
+    }
+  }
+}

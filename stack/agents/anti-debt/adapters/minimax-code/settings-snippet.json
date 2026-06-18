@@ -1,0 +1,12 @@
+{
+  "_comment": "Install this as MiniMax Code's .mavis/agents/mavis/hooks file or use the dedicated installer.",
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(bash:*)",
+      "Bash(ruff:*)",
+      "Bash(trufflehog:*)",
+      "Bash(osv-scanner:*)"
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+# Taxonomie de dette technique — Anti-Dette Agent
+#
+# V1 : 4 catégories principales. Extensions V2+ : architecture, observability, ai_agent.
+# Format :
+#   <categorie>:
+#     - <sous-categorie>   # Valeur normalisée (snake_case)
+#
+# Chaque sous-catégorie doit être :
+# - Déterministe ou semi-déterministe (détectable par outil ou heuristique)
+# - Actionnable (un fix concret existe)
+# - Non chevauchante avec une autre sous-catégorie
+
+code:
+  - duplication            # Code dupliqué (≥ N occurrences quasi-identiques)
+  - complexity             # Complexité cyclomatique > seuil
+  - long_function          # Fonction trop longue (> seuil de lignes)
+  - deep_nesting           # Profondeur d'imbrication > seuil
+  - high_coupling          # Fan-out élevé (module qui importe trop)
+  - dead_code              # Code mort (fonctions/variables non utilisées)
+  - god_classes            # Classes/fonctions avec trop de responsabilités
+  - error_handling         # Gestion d'erreur silencieuse ou absente
+  - type_safety            # Conversions implicites, dynamic_cast non sécurisés
+  - missing_docs           # Symbole public sans docstring (mode strict)
+
+security:
+  - known_vulns            # CVE connues dans dépendances (osv-scanner, npm audit)
+  - secrets_in_code        # API keys, mots de passe, tokens commités (trufflehog, gitleaks)
+  - unsafe_io              # shell=True, subprocess non sanitisé, SQL concaténé
+  - weak_crypto            # MD5, SHA1, DES, RC4, rand() au lieu de secrets
+  - auth_issues            # Auth manquante, bypass possible, permissions faibles
+
+dependencies:
+  - outdated               # Version > N versions de retard (cargo outdated, npm outdated)
+  - abandoned              # Pas de release depuis > 2 ans
+  - malicious              # Dépendance flag malveillante (RUSTSEC, npm audit)
+  - circular               # Dépendances circulaires (dependency-cruiser)
+  - heavy_unused           # Dépendance lourde jamais importée
+
+tests:
+  - coverage_gaps          # Code de prod sans test (coverage.py, cargo tarpaulin)
+  - flaky_tests            # Tests qui passent/failent aléatoirement
+  - missing_integration    # Pas de tests d'intégration end-to-end
+  - outdated_mocks         # Mocks qui ne correspondent plus à l'API réelle
+
+architecture:
+  - circular_dependency    # Cycle d'imports entre modules (scan_architecture)
+  - high_coupling          # Module à fan-out excessif
+  - boundary_violation     # Dépendance qui traverse une frontière interdite
+  - layer_leak             # Couche basse qui dépend d'une couche haute
+  - god_module             # Module concentrant trop de responsabilités
+
+# Extensions (V2+) — décommenter au besoin
+# observability:
+#   - missing_logs
+#   - missing_metrics
+#   - missing_traces
+#   - pii_in_logs
+
+# ai_agent:
+#   - prompts_unversioned
+#   - missing_evaluations
+#   - excessive_model_dependency
+#   - missing_fallback
+
+# Severity par défaut (override possible par finding)
+severity_defaults:
+  code:
+    duplication: medium
+    complexity: medium
+    long_function: medium
+    deep_nesting: low
+    high_coupling: medium
+    dead_code: low
+    god_classes: high
+    error_handling: high
+    type_safety: medium
+    missing_docs: low
+  security:
+    known_vulns: critical
+    secrets_in_code: critical
+    unsafe_io: critical
+    weak_crypto: high
+    auth_issues: critical
+  dependencies:
+    outdated: low
+    abandoned: medium
+    malicious: critical
+    circular: medium
+    heavy_unused: low
+  tests:
+    coverage_gaps: medium
+    flaky_tests: high
+    missing_integration: medium
+    outdated_mocks: medium
+  architecture:
+    circular_dependency: high
+    high_coupling: medium
+    boundary_violation: high
+    layer_leak: medium
+    god_module: medium

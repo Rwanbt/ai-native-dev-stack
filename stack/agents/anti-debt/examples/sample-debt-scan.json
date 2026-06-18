@@ -1,0 +1,64 @@
+{
+  "scan_id": "scan-2026-06-17-001",
+  "timestamp": "2026-06-17T10:00:00Z",
+  "project": "example-project",
+  "total_findings": 2,
+  "findings": [
+    {
+      "id": "f-001",
+      "category": "security",
+      "subcategory": "secrets_in_code",
+      "severity": "critical",
+      "location": {
+        "file": "src/config.py",
+        "lines": "12",
+        "symbol": "API_KEY"
+      },
+      "description": "API key Stripe commitee en clair dans le code source.",
+      "evidence": [
+        {
+          "type": "file_location",
+          "value": "src/config.py:12:API_KEY = 'sk_live_...'"
+        },
+        {
+          "type": "tool_output",
+          "tool": "trufflehog",
+          "value": "Stripe API key detected at src/config.py:12"
+        }
+      ],
+      "confidence": 0.99,
+      "source": "tool:trufflehog",
+      "estimated_effort": "S",
+      "risk_of_fix": "low",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T10:00:00Z",
+      "last_seen": "2026-06-17T10:00:00Z"
+    },
+    {
+      "id": "f-002",
+      "category": "code",
+      "subcategory": "complexity",
+      "severity": "medium",
+      "location": {
+        "file": "src/utils.py",
+        "lines": "45-120",
+        "symbol": "process_data"
+      },
+      "description": "Fonction process_data avec complexite cyclomatique 18 (seuil: 10).",
+      "evidence": [
+        {
+          "type": "tool_output",
+          "tool": "ruff",
+          "value": "C901 'process_data' is too complex (18 > 10)"
+        }
+      ],
+      "confidence": 1.0,
+      "source": "tool:ruff",
+      "estimated_effort": "M",
+      "risk_of_fix": "medium",
+      "auto_fixable": false,
+      "first_seen": "2026-06-17T10:00:00Z",
+      "last_seen": "2026-06-17T10:00:00Z"
+    }
+  ]
+}

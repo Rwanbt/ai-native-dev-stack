@@ -1,0 +1,15 @@
+{
+  "fixture": "fixture4-py-secure",
+  "language": "python",
+  "description": "Python repo with known-vulnerable dependency (requests<2.20 mock CVE)",
+  "EXPECTED_FINDINGS": [
+    {
+      "id": "exp-f4-001",
+      "category": "security",
+      "subcategory": "known_vulns",
+      "severity": "high",
+      "description": "Outdated requests library with known vulnerabilities",
+      "min_confidence": 0.9
+    }
+  ]
+}

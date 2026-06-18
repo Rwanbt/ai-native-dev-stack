@@ -1,0 +1,14 @@
+{
+  "_comment": "Install this as Claude Code's settings.json snippet to enable auto-loading of anti-debt skills.",
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(bash:*)",
+      "Bash(ruff:*)",
+      "Bash(trufflehog:*)",
+      "Bash(osv-scanner:*)",
+      "Bash(pip-audit:*)",
+      "Bash(cargo:*)"
+    ]
+  }
+}
