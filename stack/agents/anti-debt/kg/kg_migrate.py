@@ -168,132 +168,107 @@ def plan_to_decision_node(plan: dict) -> Node:
 # Migration orchestrator
 # ============================================================
 
+def _process_scan_file(store: KgStore, scan_path: Path, report: dict) -> None:
+    """Import one V1 .debt-scan.json: Scan node + Debt/Component nodes + edges."""
+    scan = _read_json(scan_path)
+    if not scan:
+        report["errors"].append(f"unreadable: {scan_path}")
+        return
+    try:
+        v1_scan_id = scan.get("scan_id")
+        # Deterministic id from V1 scan_id (or path) -> idempotent
+        scan_node_id = (f"scan-v1-{v1_scan_id}" if v1_scan_id
+                        else f"scan-v1-path-{_stable_hash(str(scan_path))}")
+        scan_node = Node(
+            id=scan_node_id, type="Decision",  # a scan is a decision-making event
+            name=f"Scan {v1_scan_id or scan_path.stem}",
+            metadata={"kind": "scan", "scan_at": scan.get("timestamp", ""), "v1_imported": True},
+        )
+        store.upsert_node(scan_node)
+
+        findings = scan.get("findings", [])
+        store.upsert_nodes([finding_to_debt_node(f) for f in findings])
+        report["debts_created"] += len(findings)
+
+        # Component nodes (deduplicated by file path)
+        comp_ids, comp_nodes = set(), []
+        for f in findings:
+            fp = f.get("location", {}).get("file")
+            if fp and fp not in comp_ids:
+                comp_ids.add(fp)
+                comp_nodes.append(file_to_component_node(fp))
+        store.upsert_nodes(comp_nodes)
+        report["components_created"] += len(comp_nodes)
+
+        edges = scan_to_event_edges(scan, scan_id=scan_node.id)
+        for e in edges:
+            store.upsert_edge(e)
+        report["edges_created"] += len(edges)
+        report["scans_processed"] += 1
+    except Exception as e:
+        report["errors"].append(f"scan {scan_path}: {e}")
+
+
+def _process_history_file(store: KgStore, hist_path: Path, report: dict) -> None:
+    """Import one V1 .debt-history.json: synthetic Fix nodes + 'resolves' edges."""
+    history = _read_json(hist_path)
+    if not history:
+        return
+    try:
+        fix_nodes, edges = history_to_resolved_edges(history)
+        store.upsert_nodes(fix_nodes)
+        for e in edges:
+            store.upsert_edge(e)
+        report["edges_created"] += len(edges)
+    except Exception as e:
+        report["errors"].append(f"history {hist_path}: {e}")
+
+
+def _process_plan_file(store: KgStore, plan_path: Path, report: dict) -> None:
+    """Import one V1 .debt-plan.json as a Decision node (idempotent id)."""
+    plan = _read_json(plan_path)
+    if not plan:
+        return
+    # Guard against shape confusion: a DebtTriage (fix_order, no actions) is NOT
+    # a DebtPlan. Importing it would silently record actions_count=0.
+    if "fix_order" in plan and "actions" not in plan:
+        report["errors"].append(
+            f"plan {plan_path}: looks like a DebtTriage (has 'fix_order', no 'actions') "
+            f"— expected a DebtPlan. Skipped (see debt-triage.schema.json).")
+        return
+    try:
+        decision = plan_to_decision_node(plan)
+        v1_plan_id = plan.get("plan_id")
+        if v1_plan_id:
+            decision.id = f"decision-v1-{v1_plan_id}"
+        store.upsert_node(decision)
+        report["decisions_created"] += 1
+        report["plans_processed"] += 1
+    except Exception as e:
+        report["errors"].append(f"plan {plan_path}: {e}")
+
+
 def migrate_v1_to_v2(
     v1_root: Path,
     kg_db: Path,
     vault_path: Optional[Path] = None,
 ) -> dict:
-    """Migrate V1 JSON files to V2 SQLite KG.
-
-    Idempotent: re-running is a no-op (UPSERT).
-    Returns a migration report.
-    """
+    """Migrate V1 JSON files to V2 SQLite KG. Idempotent (UPSERT). Returns a report."""
     report = {
-        "v1_root": str(v1_root),
-        "kg_db": str(kg_db),
-        "components_created": 0,
-        "debts_created": 0,
-        "decisions_created": 0,
-        "edges_created": 0,
-        "scans_processed": 0,
-        "plans_processed": 0,
-        "errors": [],
+        "v1_root": str(v1_root), "kg_db": str(kg_db),
+        "components_created": 0, "debts_created": 0, "decisions_created": 0,
+        "edges_created": 0, "scans_processed": 0, "plans_processed": 0, "errors": [],
     }
-
     with KgStore(kg_db) as store:
-        # 1. Discover all V1 files
-        scan_files = list(v1_root.rglob(".debt-scan.json"))
-        history_files = list(v1_root.rglob(".debt-history.json"))
-        plan_files = list(v1_root.rglob(".debt-plan.json"))
-
-        # 2. Process each scan file
-        for scan_path in scan_files:
-            scan = _read_json(scan_path)
-            if not scan:
-                report["errors"].append(f"unreadable: {scan_path}")
-                continue
-            try:
-                # Create the Scan node (anchors edges and timestamps)
-                # Deterministic id from V1 scan_id (or path) → idempotent
-                v1_scan_id = scan.get("scan_id")
-                if v1_scan_id:
-                    scan_node_id = f"scan-v1-{v1_scan_id}"
-                else:
-                    scan_node_id = f"scan-v1-path-{_stable_hash(str(scan_path))}"
-                scan_node = Node(
-                    id=scan_node_id,
-                    type="Decision",  # Scan is a kind of decision-making event
-                    name=f"Scan {v1_scan_id or scan_path.stem}",
-                    metadata={
-                        "kind": "scan",
-                        "scan_at": scan.get("timestamp", ""),
-                        "v1_imported": True,
-                    },
-                )
-                store.upsert_node(scan_node)
-
-                # Create Debt nodes
-                debt_nodes = [finding_to_debt_node(f) for f in scan.get("findings", [])]
-                # Create Component nodes (deduplicated)
-                comp_ids: set[str] = set()
-                comp_nodes: list[Node] = []
-                for f in scan.get("findings", []):
-                    file_path = f.get("location", {}).get("file")
-                    if file_path and file_path not in comp_ids:
-                        comp_ids.add(file_path)
-                        comp_nodes.append(file_to_component_node(file_path))
-
-                # Upsert in batch
-                store.upsert_nodes(comp_nodes)
-                report["components_created"] += len(comp_nodes)
-                store.upsert_nodes(debt_nodes)
-                report["debts_created"] += len(debt_nodes)
-
-                # Create scan->debt edges (use scan_node.id, not the V1 scan_id which
-                # may not exist as a node in the KG)
-                edges = scan_to_event_edges(scan, scan_id=scan_node.id)
-                for e in edges:
-                    store.upsert_edge(e)
-                report["edges_created"] += len(edges)
-                report["scans_processed"] += 1
-            except Exception as e:
-                report["errors"].append(f"scan {scan_path}: {e}")
-
-        # 3. Process history files (resolution edges + synthetic Fix nodes)
-        for hist_path in history_files:
-            history = _read_json(hist_path)
-            if not history:
-                continue
-            try:
-                fix_nodes, edges = history_to_resolved_edges(history)
-                store.upsert_nodes(fix_nodes)
-                for e in edges:
-                    store.upsert_edge(e)
-                report["edges_created"] += len(edges)
-            except Exception as e:
-                report["errors"].append(f"history {hist_path}: {e}")
-
-        # 4. Process plan files (Decision nodes) — deterministic id for idempotency
-        for plan_path in plan_files:
-            plan = _read_json(plan_path)
-            if not plan:
-                continue
-            # Guard against shape confusion: a DebtTriage (fix_order, no actions)
-            # is NOT a DebtPlan. Importing it as a plan would silently record
-            # actions_count=0. Flag it instead of corrupting the KG.
-            if "fix_order" in plan and "actions" not in plan:
-                report["errors"].append(
-                    f"plan {plan_path}: looks like a DebtTriage (has 'fix_order', no "
-                    f"'actions') — expected a DebtPlan. Skipped (see debt-triage.schema.json).")
-                continue
-            try:
-                decision = plan_to_decision_node(plan)
-                # Override id with deterministic value
-                v1_plan_id = plan.get("plan_id")
-                if v1_plan_id:
-                    decision.id = f"decision-v1-{v1_plan_id}"
-                store.upsert_node(decision)
-                report["decisions_created"] += 1
-                report["plans_processed"] += 1
-            except Exception as e:
-                report["errors"].append(f"plan {plan_path}: {e}")
-
-        # 5. Sync to vault if requested
+        for scan_path in v1_root.rglob(".debt-scan.json"):
+            _process_scan_file(store, scan_path, report)
+        for hist_path in v1_root.rglob(".debt-history.json"):
+            _process_history_file(store, hist_path, report)
+        for plan_path in v1_root.rglob(".debt-plan.json"):
+            _process_plan_file(store, plan_path, report)
         if vault_path and vault_path.exists():
             try:
-                sync_report = full_sync(store, vault_path)
-                report["vault_sync"] = sync_report
+                report["vault_sync"] = full_sync(store, vault_path)
             except Exception as e:
                 report["errors"].append(f"vault_sync: {e}")
-
     return report

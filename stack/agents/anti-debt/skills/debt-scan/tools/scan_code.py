@@ -308,103 +308,94 @@ def _project_has_strict_lint_config(root: Path) -> bool:
     return False
 
 
+def _scan_secrets(py: Path, source: str) -> list[dict]:
+    """One secrets_in_code finding per line that matches a secret pattern."""
+    out = []
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        for pattern, label in SECRET_PATTERNS:
+            if pattern.search(line):
+                out.append(_finding_from_location(
+                    file=py, line=lineno, category="security", subcategory="secrets_in_code",
+                    severity="critical", description=f"Hardcoded {label}",
+                    evidence_type="regex_match", evidence_value=line.strip()[:120],
+                    tool="python-ast"))
+                break  # one finding per line
+    return out
+
+
+def _scan_ast_smells(py: Path, tree: ast.AST, strict_mode: bool) -> tuple[list[dict], set]:
+    """Long functions + (strict) missing docstrings. Also returns imported names."""
+    out, imported = [], set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_len = (node.end_lineno or node.lineno) - node.lineno + 1
+            if func_len > 50:
+                out.append(_finding_from_location(
+                    file=py, line=node.lineno, category="code", subcategory="complexity",
+                    severity="medium", description=f"Function '{node.name}' is {func_len} lines long",
+                    evidence_type="ast_metric", evidence_value=f"function={node.name} lines={func_len}",
+                    tool="python-ast"))
+            if strict_mode and not node.name.startswith("_") and ast.get_docstring(node) is None:
+                out.append(_finding_from_location(
+                    file=py, line=node.lineno, category="code", subcategory="missing_docs",
+                    severity="low", description=f"Public function '{node.name}' has no docstring",
+                    evidence_type="ast_metric", evidence_value=f"function={node.name}",
+                    tool="python-ast"))
+    return out, imported
+
+
+def _scan_dead_imports(py: Path, source: str, imported: set, strict_mode: bool) -> list[dict]:
+    """Imports that appear in an import statement but are never referenced."""
+    if not strict_mode:
+        return []
+    out = []
+    for name in imported:
+        total = len(re.compile(rf'\b{re.escape(name)}\b').findall(source))
+        import_stmt_re = re.compile(
+            rf'(?:^|\n)\s*(?:from\s+\S+\s+import\s+.*\b{re.escape(name)}\b|import\s+.*\b{re.escape(name)}\b)')
+        import_occ = len(import_stmt_re.findall(source))
+        if import_occ >= 1 and max(0, total - import_occ) == 0:
+            out.append(_finding_from_location(
+                file=py, line=1, category="code", subcategory="dead_code", severity="low",
+                description=f"Import '{name}' appears unused", evidence_type="ast_metric",
+                evidence_value=f"import={name} usage_count=0", tool="python-ast",
+                discriminator=f"import={name}"))
+    return out
+
+
 def heuristic_python_scan(root: Path) -> list[dict]:
     """Pure-Python fallback scanner — no external tools required.
 
-    Detects: hardcoded secrets, very long functions, unused imports,
-    public functions without docstrings.
-
-    The "missing_docs" and "dead_code" subcategories are only emitted when the
-    project has a strict linter configured — otherwise they create false
-    positives on small/legacy projects.
+    Detects hardcoded secrets, long functions, unused imports, missing docstrings
+    and duplication. `missing_docs`/`dead_code` are only emitted in strict mode
+    (a linter configured) to avoid noise on small/legacy projects.
     """
-    findings: list[dict] = []
-    py_files = list(root.rglob("*.py"))
-    # Skip common noise dirs
     skip_dirs = {".venv", "venv", "__pycache__", ".git", "node_modules", "build", "dist"}
-    py_files = [p for p in py_files if not any(part in skip_dirs for part in p.parts)]
+    py_files = [p for p in root.rglob("*.py")
+                if not any(part in skip_dirs for part in p.parts)]
     strict_mode = _project_has_strict_lint_config(root)
 
+    findings: list[dict] = []
     for py in py_files:
         try:
             source = py.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # 1. Secret patterns
-        for lineno, line in enumerate(source.splitlines(), start=1):
-            for pattern, label in SECRET_PATTERNS:
-                if pattern.search(line):
-                    findings.append(_finding_from_location(
-                        file=py, line=lineno,
-                        category="security", subcategory="secrets_in_code",
-                        severity="critical", description=f"Hardcoded {label}",
-                        evidence_type="regex_match",
-                        evidence_value=line.strip()[:120],
-                        tool="python-ast",
-                    ))
-                    break  # one finding per line
-        # 2. AST analysis
+        findings += _scan_secrets(py, source)
         try:
             tree = ast.parse(source, filename=str(py))
         except SyntaxError:
             continue
-        imported = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imported.add(alias.asname or alias.name.split(".")[0])
-            elif isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    imported.add(alias.asname or alias.name)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                func_len = (node.end_lineno or node.lineno) - node.lineno + 1
-                # Long function (>50 lines)
-                if func_len > 50:
-                    findings.append(_finding_from_location(
-                        file=py, line=node.lineno,
-                        category="code", subcategory="complexity",
-                        severity="medium",
-                        description=f"Function '{node.name}' is {func_len} lines long",
-                        evidence_type="ast_metric",
-                        evidence_value=f"function={node.name} lines={func_len}",
-                        tool="python-ast",
-                    ))
-                # Public function without docstring (only in strict_mode)
-                if strict_mode and not node.name.startswith("_") and ast.get_docstring(node) is None:
-                    findings.append(_finding_from_location(
-                        file=py, line=node.lineno,
-                        category="code", subcategory="missing_docs",
-                        severity="low",
-                        description=f"Public function '{node.name}' has no docstring",
-                        evidence_type="ast_metric",
-                        evidence_value=f"function={node.name}",
-                        tool="python-ast",
-                    ))
-        # 3. Detect dead imports (imported but never referenced)
-        # Heuristic: count occurrences in source, subtract import statement count
-        for name in imported:
-            name_re = re.compile(rf'\b{re.escape(name)}\b')
-            total_occurrences = len(name_re.findall(source))
-            # Find import statement occurrences (line starting with import/from)
-            import_stmt_re = re.compile(
-                rf'(?:^|\n)\s*(?:from\s+\S+\s+import\s+.*\b{re.escape(name)}\b|import\s+.*\b{re.escape(name)}\b)'
-            )
-            import_occurrences = len(import_stmt_re.findall(source))
-            usage_occurrences = max(0, total_occurrences - import_occurrences)
-            if strict_mode and import_occurrences >= 1 and usage_occurrences == 0:
-                findings.append(_finding_from_location(
-                    file=py, line=1,
-                    category="code", subcategory="dead_code",
-                    severity="low",
-                    description=f"Import '{name}' appears unused",
-                    evidence_type="ast_metric",
-                    evidence_value=f"import={name} usage_count={usage_occurrences}",
-                    tool="python-ast",
-                    discriminator=f"import={name}",
-                ))
-    # Detect duplication: hash function bodies (ignoring docstrings) and find groups
-    dup_findings = _detect_python_duplication(py_files)
-    findings.extend(dup_findings)
+        ast_findings, imported = _scan_ast_smells(py, tree, strict_mode)
+        findings += ast_findings
+        findings += _scan_dead_imports(py, source, imported, strict_mode)
+    findings += _detect_python_duplication(py_files)
     return findings
 
 
@@ -516,51 +507,50 @@ def detect_coverage_gaps(root: Path) -> list[dict]:
     return findings
 
 
+def _augment_python(root: Path, findings: list) -> list:
+    """Add the AST heuristic fallback (if the linter was missing) + coverage gaps."""
+    # B1 fix: if the only result is "scanner binary not found", fall back to the
+    # pure-Python AST heuristic so the result is not silently empty.
+    if (findings and isinstance(findings[0], dict) and "warning" in findings[0]
+            and "not found" in findings[0].get("warning", "")):
+        findings = heuristic_python_scan(root) + detect_coverage_gaps(root) + findings
+    # Always add coverage gaps (orthogonal concern), avoiding duplicates.
+    existing = {f.get("subcategory") for f in findings if isinstance(f, dict)}
+    for cf in detect_coverage_gaps(root):
+        if cf.get("subcategory") not in existing:
+            findings.insert(0, cf)
+    return findings
+
+
+def _augment_polyglot(root: Path, lang: str, findings: list) -> list:
+    """Always also run the toolchain-free polyglot scanner for Rust/JS/TS."""
+    polyglot_bin = Path(__file__).parent.parent.parent.parent / "tools" / "polyglot_scan.py"
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(polyglot_bin), "rust" if lang == "rust" else "js", str(root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        if proc.stdout.strip():
+            return json.loads(proc.stdout).get("findings", []) + findings
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+    return findings
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     if not root.is_dir():
         print(json.dumps({"error": f"not a directory: {root}"}))
         return 1
-
     detected = detect_language(root)
     if not detected:
         print(json.dumps({"error": "no_supported_language", "path": str(root)}))
         return 1
-
     lang, cmd, parser = detected
     findings = run_scanner(root, cmd, parser)
-    # B1 fix: if the language is python and we got only a "scanner binary not found"
-    # warning, fall back to the Python AST heuristic so the result is not silent.
-    if lang == "python" and findings and isinstance(findings[0], dict) and "warning" in findings[0]:
-        if "not found" in findings[0].get("warning", ""):
-            ast_findings = heuristic_python_scan(root)
-            coverage_findings = detect_coverage_gaps(root)
-            findings = ast_findings + coverage_findings + findings  # keep the warning at the end
-    # Always add coverage gaps for Python projects (orthogonal concern)
     if lang == "python":
-        coverage_findings = detect_coverage_gaps(root)
-        # Only add if not already added
-        existing_subcats = {f.get("subcategory") for f in findings if isinstance(f, dict)}
-        for cf in coverage_findings:
-            if cf.get("subcategory") not in existing_subcats:
-                findings.insert(0, cf)
-    # For Rust and JS/TS, always ALSO run polyglot_scan.py (which is fast and
-    # works without the toolchain). Real clippy/eslint findings are kept, but
-    # polyglot fills the gap when the toolchain is unavailable or silent.
-    if lang in ("rust", "typescript"):
-        try:
-            polyglot_bin = Path(__file__).parent.parent.parent.parent / "tools" / "polyglot_scan.py"
-            polyglot = subprocess.run(
-                [sys.executable, str(polyglot_bin),
-                 "rust" if lang == "rust" else "js", str(root)],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
-            )
-            if polyglot.stdout.strip():
-                data = json.loads(polyglot.stdout)
-                poly_findings = data.get("findings", [])
-                findings = poly_findings + findings
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-            pass
+        findings = _augment_python(root, findings)
+    elif lang in ("rust", "typescript"):
+        findings = _augment_polyglot(root, lang, findings)
     print(json.dumps({"language": lang, "scanner": parser, "findings": findings}, indent=2))
     return 0
 

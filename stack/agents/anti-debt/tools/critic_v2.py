@@ -203,71 +203,86 @@ def compute_calibration_stats(history: dict) -> dict:
 
 # --- CLI ---
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print(__doc__)
+def _load_findings(path: str) -> list:
+    data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    return data if isinstance(data, list) else data.get("findings", [])
+
+
+def _cmd_triage(argv: list) -> int:
+    if len(argv) < 3:
+        return _usage()
+    triaged = triage(_load_findings(argv[2]))
+    print(json.dumps({
+        "tier_counts": {k: len(triaged[k]) for k in ("accepted", "review", "rejected")},
+        "top_5_accepted": triaged["accepted"][:5],
+        "review_required_count": len(triaged["review"]),
+    }, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_score(argv: list) -> int:
+    if len(argv) < 3:
+        return _usage()
+    plan = build_triage(_load_findings(argv[2]))
+    text = json.dumps(plan, indent=2, ensure_ascii=False)
+    out_path = Path(argv[3]) if len(argv) > 3 else None
+    if out_path:
+        out_path.write_text(text, encoding="utf-8")
+    else:
+        print(text)
+    return 0
+
+
+def _lookup_confidence(findings_path: str, finding_id: str):
+    """Return the confidence of finding_id in findings_path, or None."""
+    try:
+        for it in _load_findings(findings_path):
+            if it.get("id") == finding_id:
+                return it.get("confidence")
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def _cmd_override(argv: list) -> int:
+    if len(argv) < 5:
+        return _usage()
+    findings_path, finding_id, action = argv[2], argv[3], argv[4]
+    reason = argv[5] if len(argv) > 5 else "no reason provided"
+    history_path = Path(argv[6]) if len(argv) > 6 else Path(".debt-history.json")
+    history = load_history(history_path)
+    orig_conf = _lookup_confidence(findings_path, finding_id)
+    try:
+        entry = record_override(history, finding_id, action, reason, orig_conf)
+    except ValueError as e:
+        print(json.dumps({"error": str(e)}))
         return 1
-    cmd = sys.argv[1]
-    if cmd == "triage" and len(sys.argv) >= 3:
-        data = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
-        findings = data if isinstance(data, list) else data.get("findings", [])
-        triaged = triage(findings)
-        print(json.dumps({
-            "tier_counts": {
-                "accepted": len(triaged["accepted"]),
-                "review": len(triaged["review"]),
-                "rejected": len(triaged["rejected"]),
-            },
-            "top_5_accepted": triaged["accepted"][:5],
-            "review_required_count": len(triaged["review"]),
-        }, indent=2, ensure_ascii=False))
-        return 0
-    if cmd == "score" and len(sys.argv) >= 3:
-        data = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
-        findings = data if isinstance(data, list) else data.get("findings", [])
-        out_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
-        plan = build_triage(findings)
-        text = json.dumps(plan, indent=2, ensure_ascii=False)
-        if out_path:
-            out_path.write_text(text, encoding="utf-8")
-        else:
-            print(text)
-        return 0
-    if cmd == "override" and len(sys.argv) >= 5:
-        findings_path = Path(sys.argv[2])
-        finding_id = sys.argv[3]
-        action = sys.argv[4]
-        reason = sys.argv[5] if len(sys.argv) > 5 else "no reason provided"
-        history_path = Path(sys.argv[6]) if len(sys.argv) > 6 else Path(".debt-history.json")
-        history = load_history(history_path)
-        # Look up the finding's confidence so calibration can bucket this override.
-        orig_conf = None
-        try:
-            data = json.loads(Path(findings_path).read_text(encoding="utf-8-sig"))
-            items = data if isinstance(data, list) else data.get("findings", [])
-            for it in items:
-                if it.get("id") == finding_id:
-                    orig_conf = it.get("confidence")
-                    break
-        except (OSError, json.JSONDecodeError):
-            pass
-        try:
-            entry = record_override(history, finding_id, action, reason, orig_conf)
-        except ValueError as e:
-            print(json.dumps({"error": str(e)}))
-            return 1
-        save_history(history_path, history)
-        stats = compute_calibration_stats(history)
-        print(json.dumps({"recorded": entry, "calibration_stats": stats}, indent=2))
-        return 0
-    if cmd == "stats" and len(sys.argv) >= 3:
-        history_path = Path(sys.argv[2])
-        history = load_history(history_path)
-        stats = compute_calibration_stats(history)
-        print(json.dumps(stats, indent=2))
-        return 0
+    save_history(history_path, history)
+    print(json.dumps({"recorded": entry,
+                      "calibration_stats": compute_calibration_stats(history)}, indent=2))
+    return 0
+
+
+def _cmd_stats(argv: list) -> int:
+    if len(argv) < 3:
+        return _usage()
+    print(json.dumps(compute_calibration_stats(load_history(Path(argv[2]))), indent=2))
+    return 0
+
+
+def _usage() -> int:
     print(__doc__)
     return 1
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        return _usage()
+    handler = {
+        "triage": _cmd_triage, "score": _cmd_score,
+        "override": _cmd_override, "stats": _cmd_stats,
+    }.get(sys.argv[1])
+    return handler(sys.argv) if handler else _usage()
 
 
 if __name__ == "__main__":
