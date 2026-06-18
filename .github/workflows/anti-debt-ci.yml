@@ -75,7 +75,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Syntax check (all Python: tools, kg, skills)
+      - name: "Syntax check (all Python: tools, kg, skills)"
         working-directory: stack/agents/anti-debt
         run: |
           python3 -c "
