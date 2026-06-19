@@ -13,6 +13,7 @@ Usage:
     python3 dashboard.py [path-to-kg.db] [output.html]
     # default: <repo>/kg/data/kg.db -> <repo>/tools/dashboard.html
 """
+from __future__ import annotations
 import html
 import json
 import sqlite3

@@ -7,6 +7,7 @@ and produces a single .debt-scan.json conforming to the schema.
 Usage:
     python3 aggregate.py .debt-scan-tmp/ [output.json]
 """
+from __future__ import annotations
 import json
 import sys
 import uuid

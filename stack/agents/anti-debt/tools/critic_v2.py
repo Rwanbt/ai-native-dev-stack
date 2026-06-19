@@ -14,6 +14,7 @@ Usage:
     python3 critic_v2.py stats <history.json>
     python3 critic_v2.py triage <findings.json>
 """
+from __future__ import annotations
 import json
 import sys
 import uuid

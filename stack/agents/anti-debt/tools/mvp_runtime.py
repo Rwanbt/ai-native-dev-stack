@@ -17,6 +17,7 @@ Usage:
     python3 mvp_runtime.py [path-to-project] --auto-confirm   # CI mode
     python3 mvp_runtime.py [path-to-project] --output plan.json
 """
+from __future__ import annotations
 import argparse
 import json
 import subprocess

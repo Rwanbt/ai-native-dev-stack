@@ -14,7 +14,7 @@
 | Fichier | Rôle | Statut |
 |---------|------|--------|
 | `AGENT.md` | System prompt LLM-agnostique (6 directives anti-MVP) | ✅ |
-| `taxonomy/debt-categories.yaml` | 4 catégories × 20 sous-catégories | ✅ |
+| `taxonomy/debt-categories.yaml` | 5 catégories (code, security, dependencies, tests, architecture) | ✅ |
 | `schemas/debt-finding.schema.json` | Schéma finding avec evidence structurée | ✅ |
 | `schemas/debt-plan.schema.json` | Schéma plan avec critic_validation | ✅ |
 | `schemas/debt-history.schema.json` | Schéma historique persistant | ✅ |
@@ -22,7 +22,7 @@
 | `examples/` (3 fichiers) | Exemples validés JSON Schema | ✅ |
 | `adapters/generic/README.md` | Installation manuelle Codex/Aider | ✅ |
 
-**Validation** : taxonomie charge 4 catégories × 20 sous-catégories, 3 schémas JSON valides.
+**Validation** : taxonomie charge 5 catégories, 4 schémas JSON valides.
 
 ### Commit 2 — Skills Markdown ✅
 

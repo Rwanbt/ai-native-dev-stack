@@ -1,6 +1,6 @@
 ---
 name: debt-scan
-description: Scan a codebase to detect technical debt (code, security, dependencies, tests). Orchestrate deterministic tools + LLM. Produce a `.debt-scan.json` file conforming to the schema.
+description: Scan a codebase to detect technical debt (code, security, dependencies, tests, architecture). Orchestrate deterministic tools + LLM. Produce a `.debt-scan.json` file conforming to the schema.
 license: MIT
 ---
 

@@ -20,7 +20,7 @@ Cet agent détecte, classe, priorise et corrige la dette technique de manière :
 anti-debt/
 ├── AGENT.md                  # System prompt LLM-agnostique
 ├── taxonomy/
-│   └── debt-categories.yaml  # 4 catégories V1 (code, security, dependencies, tests)
+│   └── debt-categories.yaml  # 5 catégories (code, security, dependencies, tests, architecture)
 ├── schemas/
 │   ├── debt-finding.schema.json
 │   ├── debt-triage.schema.json   # sortie déterministe du Critic (tiers)
