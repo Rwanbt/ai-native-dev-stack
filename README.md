@@ -308,6 +308,42 @@ Answers "how do we know this is working?" with objective, git-derived measuremen
 
 `/verify-ai-docs` regenerates this snapshot on every run.
 
+### 13. Canonical Engineering Method (`AGENTS.md`)
+
+The single source of the engineering rules every AI agent follows — the always-on
+core (file/function size, error handling, naming, git, dependency direction) plus
+the full senior-reflexes playbook (ADR/RFC, sanitizers, FFI, lock hierarchy, RT
+telemetry, fuzz/property tests, supply-chain scans, perf budgets…) and the
+codebase-analysis/routing strategy. Tool configs **reference** it (`@AGENTS.md`)
+rather than copy it, so Claude Code, Cursor, Codex and MiniMax never diverge.
+Read natively by Cursor/Codex; imported by Claude Code; inlined-and-synced for
+agents without an import directive. See **[PORTABILITY.md](PORTABILITY.md)**.
+
+### 14. Universal Hooks (`hooks/`)
+
+Six cross-agent hooks that automate the methodology regardless of the tool:
+session-start memory load, session-end save, PostToolUse AI-summary regeneration,
+PreToolUse LOC gate, graphify inject, and a read-only-env permission guard. Each
+ships per-agent install notes; secrets are read from the environment, never committed.
+
+### 15. Anti-Debt Governance Agent (`stack/agents/anti-debt/`)
+
+An LLM-agnostic technical-debt governance agent that counters the "ship the MVP"
+bias: deterministic scanners + a Critic Engine (confidence tiers) + a SQLite
+Knowledge Graph + governance skills, with adapters for Claude Code, MiniMax and
+generic tools. Findings have a **deterministic identity** (stable across scans, so
+dedup/history/calibration work), conform to JSON schemas, and separate deterministic
+triage from LLM remediation plans. Linked into each agent via `scripts/setup-agents.sh`.
+
+### 16. Portable, Non-Destructive Updates (`UPDATING.md`)
+
+The whole stack transfers to a new machine or LLM via one clone + `setup-agents.sh`,
+and stays current without destroying anyone's personalization. `stack-update-check.sh`
+detects upstream changes (read-only); `/stack-upgrade` fast-forwards the shared clone.
+Because personal configs *reference* the shared files, a `git pull` updates the method
+for everyone while each user keeps their customizations. For inlined targets (e.g.
+MiniMax), `sync_inlined_method.py` refreshes a managed block. See **[UPDATING.md](UPDATING.md)**.
+
 ---
 
 ## Quick Start

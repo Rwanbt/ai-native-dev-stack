@@ -2,96 +2,93 @@
 
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
-project aims to adhere to [Semantic Versioning](https://semver.org/) once tagged
-releases begin.
+project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.0.0] - 2026-06-19
+
+First tagged release. The stack now spans four cooperating layers — the
+**AI-docs maintenance system**, the **canonical engineering method**, the
+**universal hooks**, and the **anti-debt governance agent** — all transferable
+across machines/LLMs and updated non-destructively.
+
 ### Added
+
+#### Engineering method & portability
+- `AGENTS.md` — the **single canonical source** of the engineering method: the
+  always-on core rules plus the full senior-reflexes playbook (ADR/RFC,
+  sanitizers+Miri, FFI conventions, lock hierarchy, RT lock-free telemetry,
+  fuzz/property tests, CODEOWNERS, supply-chain scans, perf budgets, debt SLA,
+  Boy Scout…) and the codebase-analysis/routing strategy. Tool configs *reference*
+  it (`@AGENTS.md`) instead of copying, so they never diverge.
+- `PORTABILITY.md` — multi-agent transfer guide: the 3-layer model (method /
+  tool-mechanics / personal), new-machine bootstrap, per-agent setup for Claude
+  Code, MiniMax/Mavis, Cursor and Codex, and an in-repo vs machine-local matrix.
+- `scripts/setup-agents.sh` — idempotent, OS-aware linker (symlink on Linux/macOS,
+  junction on Windows) that wires the anti-debt agent into every detected agent root.
+- `routing-guide.md` — universal port of the subagent-vs-direct-read routing rule.
+
+#### Non-destructive updates (gstack-style)
 - `VERSION` (semver) + `stack-version` header in `AGENTS.md` — version source of truth.
 - `scripts/stack-update-check.sh` — read-only upstream-update detection (fetch + compare).
-- `scripts/stack-upgrade.sh` — non-destructive fast-forward-only upgrade; aborts on a
+- `scripts/stack-upgrade.sh` — non-destructive, fast-forward-only upgrade; aborts on a
   dirty tree, touches only the shared repo, reports changed `*.example` templates.
-- `skills/stack-upgrade/SKILL.md` — `/stack-upgrade` command (gstack-style).
-- `UPDATING.md` — the non-destructive update model ("reference, don't copy") + the
-  managed-block convention for the rare inlined case.
+- `skills/stack-upgrade/SKILL.md` — the `/stack-upgrade` command.
 - `scripts/sync_inlined_method.py` — regenerates a `STACK:BEGIN/END` managed block
-  from `AGENTS.md` (with `--check` for CI). For agents without an `@file` import
+  from `AGENTS.md` (with `--check` for CI), for agents without an `@file` import
   (e.g. MiniMax/Mavis): the method is inlined and re-synced, never hand-forked.
-- `tools/ai_docs/source_config.py` — replaces `source_exts.py`; now also exports
-  `EXCLUDE_DIRS`, the unified directory exclusion set shared by all tools.
-- `tools/ai_docs/module_discovery.py` — shared `find_module()` function, eliminating
-  the divergent duplicate (str vs Path signature) between `update_on_edit.py` and
-  `assemble_context.py`.
-- `parse_fsharp()` — best-effort F# parser (modules, types, public `let` bindings).
-  F# files (`.fs`, `.fsi`) are no longer silently routed to `parse_csharp()`.
-- `test_flat_module_constraint_nested_files_not_scanned` — documents the intentional
-  flat-module scanning behaviour.
-- 12 new tests: `TestSourceConfig`, `TestModuleDiscovery`, F# parser tests,
-  `TestFlatModuleConstraint`, `count_loc` regression tests for C-style block comments.
-- Documented the flat-module constraint (AI_CONTEXT.md and source files must be direct
-  siblings) in `README.md`, `CONTRIBUTING.md`, and the `AI_CONTEXT_template.md`.
-- `settings_hook_example.json` now includes setup notes and a manual verify command
-  to prevent the ALL-CAPS placeholder from silently breaking the hook.
+- `UPDATING.md` — the non-destructive update model ("reference, don't copy") + the
+  managed-block convention.
+
+#### Universal hooks
+- `hooks/` — six cross-agent hooks (session-start memory, session-end save,
+  PostToolUse AI summary, PreToolUse LOC gate, graphify inject, readonly-env
+  permission) with per-hook install notes. The Obsidian key is read from the
+  `OBSIDIAN_API_KEY` environment variable (never committed).
+- `scripts/loc_gate.ps1`, `scripts/vault_sync*.ps1` — quality/vault helpers.
+
+#### Anti-debt governance agent (`stack/agents/anti-debt/`)
+- LLM-agnostic technical-debt governance: deterministic scanners + Critic Engine
+  (confidence tiers reject&lt;0.6 / review&lt;0.7 / accept) + SQLite Knowledge Graph
+  + governance skills, with adapters for Claude Code / MiniMax / generic.
+- Deterministic finding identity (`finding_id`, sha256 — stable across scans, so
+  dedup/KG/history/calibration work), schema-conformant findings, deterministic
+  triage separated from LLM remediation plans, centralized secret patterns, and
+  25 ADRs (incl. ADR-0025 calibration semantics + CC parser exceptions).
+
+#### AI-docs maintenance system
+- `tools/ai_docs/source_config.py` — single source of truth for source extensions;
+  also exports `EXCLUDE_DIRS`, the unified directory-exclusion set shared by all tools.
+- `tools/ai_docs/module_discovery.py` — shared `find_module()`, eliminating the
+  divergent str-vs-Path duplicate between `update_on_edit.py` and `assemble_context.py`.
+- `tools/ai_docs/generate_metrics.py` — objective, git-derived stack metrics written
+  to `docs/METRICS.md` (coverage, freshness, drift, KFP/ADR counts, risk zones, trend).
+- `parse_fsharp()` — best-effort F# parser; `.fs`/`.fsi` no longer routed to `parse_csharp()`.
+- `tools/ai_docs/tests/` — 38-test zero-dependency `unittest` suite.
+- `.github/workflows/ci.yml` — tests on Python 3.8/3.9/3.11/3.13 + a 1500-LOC budget gate.
+- `.gitattributes` (forces LF), `CONTRIBUTING.md`, `PYTHON_BIN` config option.
+- Documented the flat-module constraint in `README.md`, `CONTRIBUTING.md`, and
+  `AI_CONTEXT_template.md`; `settings_hook_example.json` setup notes.
 
 ### Fixed
-- `generate_metrics.py` now normalises Windows backslashes before passing paths to git.
-- `run_hook.sh` version guard now uses an explicit exit code instead of `assert`
-  (which is disabled by `python -O`).
-- Removed dead filter `f.name != "AI_SUMMARY.md"` in `generate_ai_summary.py`
-  (`.md` is never in `ALL_SOURCE_EXTS`).
-- `count_loc()` no longer misidentifies `"""` inside a C-style block comment as a
-  Python block-comment terminator. Block-close detection is now conditional on the
-  file extension.
-- `skills/verify-ai-docs/SKILL.md` Tier 2b and 2d: replaced GNU-only `find -printf`
-  with POSIX-compatible `find -exec dirname` (was silently returning 0 on macOS).
-- Added Python 3.8 to the CI matrix with `continue-on-error: true` (3.8 is EOL
-  but the stack claims compatibility).
+- `install.sh` did not copy `generate_metrics.py` (metrics broken on fresh install).
+- `generate_metrics.py` listed file names in `SKIP_DIRS`, pinning module coverage to 0%;
+  it now also normalises Windows backslashes before passing paths to git.
+- `assemble_context.py` used the wrong graphify command (`path` → `explain`) and could
+  fall back to another project's `MEMORY.md`; both fixed.
+- Restored Python 3.8/3.9 compatibility via `from __future__ import annotations`.
+- `count_loc()` no longer treats `"""` inside a C-style block comment as a Python
+  block-comment terminator (extension-conditional now).
+- `run_hook.sh` version guard uses an explicit exit code instead of `assert`
+  (disabled under `python -O`); removed a dead `AI_SUMMARY.md` filter.
+- `verify-ai-docs` SKILL: replaced GNU-only `find -printf` with POSIX `find -exec dirname`.
+- Removed a hardcoded machine-specific graphify path; corrected docs (graphify URL
+  `safishamsi/graphify`, `explain` not `query`, "Garry Tan", tier count, Cursor mechanism).
 
 ### Changed
-- `source_exts.py` renamed to `source_config.py` — now also exports `EXCLUDE_DIRS`
-  (unified from the previously divergent `SKIP_DIRS` in `generate_all.py` and
-  `generate_metrics.py`, and `STOP_DIRS` from module discovery).
-- CI LOC gate comment now documents the `wc -l` vs `count_loc()` distinction.
-
-### Previous entries
-- `tools/ai_docs/source_exts.py` — single source of truth for source-file
-  extensions, imported by the summary generator, the hook, and the metrics tool.
-- `tools/ai_docs/generate_metrics.py` — objective, git-derived stack metrics
-  written to `docs/METRICS.md` (coverage, freshness, drift, KFP/ADR counts,
-  risk zones, append-only trend).
-- `tools/ai_docs/tests/` — zero-dependency `unittest` suite for the tooling
-  (LOC counter, language parsers, summary generation, ADR-ref extraction,
-  module discovery, metrics coverage).
-- `.github/workflows/ci.yml` — CI running the test suite on Python 3.9/3.11/3.13
-  plus a LOC-budget gate that enforces the stack's own 1500-LOC rule.
-- `.gitattributes` — forces LF on `.sh`/`.py`/`.yml` so hooks and CI never break
-  on CRLF.
-- `CONTRIBUTING.md` and this `CHANGELOG.md`.
-- `PYTHON_BIN` config option in `config.sh.example`, now honored by
-  `find_python.sh` (previously documented but never read).
-
-### Fixed
-- `install.sh` did not copy `generate_metrics.py`, so metrics generation was
-  broken on every fresh install.
-- `generate_metrics.py` listed `AI_CONTEXT.md`/`AI_SUMMARY.md` (file names) in
-  `SKIP_DIRS`, forcing module coverage to a permanent 0%.
-- `assemble_context.py` invoked `graphify path <file>` (wrong command, single
-  arg) and silently swallowed the error; replaced with `graphify explain <node>`
-  guarded on the graph existing.
-- `assemble_context.py` could fall back to another project's `MEMORY.md`;
-  it now returns nothing rather than risk leaking foreign context.
-- Restored Python 3.8/3.9 compatibility (PEP 604 `X | None` annotations) via
-  `from __future__ import annotations`.
-- Removed a hardcoded machine-specific graphify path.
-- Documentation: corrected the graphify URL (`safishamsi/graphify`), the
-  graphify CLI example (`explain`, not `query`), "Garry Tan", the verify-ai-docs
-  tier count (10), and the Cursor AGENTS.md mechanism.
-
-### Changed
-- Extension definitions deduplicated across the three tools (DRY).
-
-## Notes
-
-This project is not yet versioned with git tags. The first tagged release will
-move the entries above into a `## [x.y.z] - YYYY-MM-DD` section.
+- Extension definitions deduplicated across the three tools (DRY); `source_exts.py`
+  renamed to `source_config.py`. CI LOC-gate comment documents the `wc -l` vs
+  `count_loc()` distinction.
