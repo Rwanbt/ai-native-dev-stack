@@ -119,7 +119,7 @@ def _function_signature(node: ast.AST) -> str:
     return f"{type(node).__name__}({','.join(args)})"
 
 
-def analyze_file(path: Path) -> tuple[list, list]:
+def analyze_file(path: Path) -> tuple[list, list]:  # CC-EXCEPTION: see ADR-0025 (sequential AST parser)
     """Analyze a single Python file.
 
     Returns (findings, function_records) where function_records is a list of
