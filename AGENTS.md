@@ -176,6 +176,66 @@ The project is small enough that direct read is always the right choice regardle
 
 ---
 
+## Senior engineering reflexes
+
+The rules above are the always-on core. The reflexes below are the full senior playbook — apply them proactively, without being asked, scaled to the project's language and risk. They are the canonical source: per-tool configs (`CLAUDE.md`, MiniMax `agent.md`, `.cursorrules`) should reference this file rather than re-state these rules.
+
+### Documentation & decisions
+
+- **ADR** (Architecture Decision Record) — documents a decision *already made*. Retrospective, in `docs/adr/NNNN-short-title.md`: Context · Decision · Rejected alternatives · Consequences. Triggers: new central pattern, lib choice, thread-model constraint, public-API change.
+- **RFC** (Request for Comments) — requests feedback *before* a major change. Prospective, in `docs/rfcs/`: Motivation · Detailed proposal · Alternatives · Open questions · Review deadline.
+- **`// See ADR-NNNN`** in code — when a block implements a documented decision, link it so a reader reaches the "why" without searching the docs.
+- **Documentation proportional to size**: >10 source files → `CLAUDE.md`; >3,000 LOC → `ARCHITECTURE.md` (thread model, data flow, ownership, red zones); >5,000 LOC → `CONTRIBUTING.md` (conventions, how to add a module, PR checklist).
+- **Domain glossary** — for any jargon-dense domain (audio, finance, medical, network, games), create `docs/glossary.md` defining terms *operationally* (precise definition + link to the implementing module + concrete in-project example). A dev without domain background introduces subtle bugs by misreading a technical term.
+- **Data format versioning & migrations** — every persisted format carries an explicit version + one migration function per delta (`upgradeProjectV6toV7()`). Without migrations a refactor that changes the format makes all old files unreadable.
+- **CHANGELOG.md** — on any project with releases, maintain it from Conventional Commits: `## [VERSION] - YYYY-MM-DD` with `### Added/Fixed/Changed/Removed`.
+
+### Testing
+
+- **Propose tests at service creation** — when a stateless service / pure business logic is created or extracted, proactively offer a test (don't wait to be asked). Stateless free functions are the highest-priority, easiest wins.
+- **Test naming**: `Component_Scenario_ExpectedBehavior` (e.g. `ProjectReader_LoadCorruptedJson_DoesNotCrash`).
+- **Three classified suites**: `*_Unit` (pre-commit + CI, zero I/O, <100ms) · `*_Integration` (CI nightly, mocked devices/files) · `*_Device`/`*_AudioDevice` (manual, real hardware).
+- **Integration & golden tests** on deterministic outputs: golden (render a known output, compare checksum/RMS), replay (import → edit → undo → render → verify), session-load (load N historical projects → migrations still work).
+- **Fuzz & property-based**: fuzz every parser of external data (libFuzzer / `cargo-fuzz`) — malformed input must fail cleanly, never corrupt state silently. Property-based test algorithms with math invariants (`proptest`/`quickcheck`/`rapidcheck`) — e.g. "audio output stays within [-1.0, 1.0] for any input".
+- **Invariants as runtime asserts** — every critical invariant documented in ARCHITECTURE.md has a matching `assert()`/`debug_assert!()` in code. An unverified invariant is just a promise. Free in release, immediate detection in debug.
+- **Zero-alloc CI check** — any real-time thread has a test asserting `heap_alloc_count == 0` after N iterations. An accidental allocation in a hot path is invisible until user reports ("crash after 2h").
+
+### Concurrency & systems
+
+- **Ownership graph = DAG** — never an ownership cycle. Upward (child→parent) or lateral (sibling→sibling) references use `weak_ptr`/observer/callback, never a strong ref. Destruction order = reverse of construction.
+- **Shutdown sequence** — in any multi-threaded system, document in ARCHITECTURE.md which thread is joined first, in what order queues drain, when OS handles are released. A service destroyed while the audio thread holds a reference = guaranteed crash.
+- **Lock hierarchy** — document the mandatory acquisition order (e.g. `ProjectMutex → AudioGraphMutex → TrackMutex`). Never acquire a level-N lock while holding level-N+1. Prevents deadlocks; TSan detects violations.
+- **Thread annotations** — comment every method with `// THREAD: audio | ui | any` so the model is explicit in code, not only in ARCHITECTURE.md.
+- **RT threads** (audio callback, video decode) — no logging, no mutex, no I/O, no allocation. Communicate via a lock-free ring buffer: RT thread pushes `(EventId, timestamp, value)` with atomics; a low-priority thread drains to log/UI. Without it, "it crackles sometimes" reports are undebuggable.
+- **Structured logging** — 4 levels (ERROR irrecoverable · WARN degraded · INFO session events · DEBUG off in release). Per-domain macros when justified (`LOG_AUDIO_WARN`). RT threads log only via the ring buffer above.
+
+### Safety & static analysis
+
+- **Error handling policy** — never swallow silently. Rust: `unwrap()`/`expect()` forbidden in prod except a proven invariant with `// SAFETY:`; prefer `?`/`map_err()`. C++: prefer return codes / `std::optional`/`std::expected` in critical code; never empty `catch(...)`. Errors at system boundaries (I/O, network, user parsing) always handled explicitly.
+- **RAII (C++)** — no naked `new`/`delete`; `make_unique`/`make_shared`/stack. FFI opaque handles wrapped in a RAII type immediately (no naked handle circulating).
+- **`using namespace` banned at file scope** — in headers (0 exceptions, fully qualify) and production `.cpp` (function scope or explicit alias `namespace fs = std::filesystem;` only).
+- **Sanitizers** in dedicated CI builds: ASan (use-after-free, overflow) + UBSan (signed overflow, null deref) can combine; TSan (data races) separate build; MSan (uninit reads). Rust FFI modules: `cargo miri test` (nightly) catches UB at the `extern "C"` boundary that C++ sanitizers miss.
+- **Clang-Tidy (C++)** — beyond cppcheck. Priority checks: `bugprone-use-after-move`, `bugprone-dangling-handle`, `performance-unnecessary-copy-initialization`, `modernize-use-override/make-unique`, `readability-function-size`. Ship a `.clang-tidy` + run in pre-commit/CI.
+- **Hardware abstraction for testability** — any service touching OS resources consumes an interface, never the hardware directly. Priority interfaces: `IFileSystem`, `IClock` (timers/autosave), `IAudioSink`. Lets CI simulate disk errors / latency without real hardware.
+
+### Supply chain
+
+- **`cargo audit --deny warnings`** (RustSec CVE scan of `Cargo.lock`) and **`cargo-deny`** (crate bans, license policy, duplicate versions) on any serious Rust project.
+- **`osv-scanner --recursive .`** or **`trivy fs .`** for vendored/system C++ deps (SDL3, ImGui, FFmpeg, codecs). C++ CVEs are rarer but graver (codec overflow = RCE). Nightly CI.
+- **CODEOWNERS** — `.github/CODEOWNERS` assigning ownership by domain + mandatory reviewer on frozen cores / public APIs / CI. Create it even solo: it prepares a second dev with zero ambiguity.
+
+### Process & collaboration
+
+- **Code review checklist** (before approving any PR): Correctness · Security (secret/injection/missing validation) · Thread safety (shared data protected, atomics correct) · Resources (no leak) · Performance (no alloc in hot path, no avoidable O(n²)) · Readability (a senior understands it in 30s) · Tests (logic covered / no broken test).
+- **Performance budgets** — document per subsystem and check in CI: audio callback <2ms · UI frame <16.6ms (60fps) · undo/redo <50ms · project load <3s · heavy ops (scan, waveform) async non-blocking.
+- **Tech debt SLA** — build/clippy warning: immediate (don't commit) · race condition: 24h · architecture violation: 7 days · legacy TODO: next sprint. "Stop-the-line" on the first two.
+- **Feature flags** — isolate unfinished/experimental code behind a runtime flag (preferred, `config.json`) or compile-time `#ifdef` with `// FEATURE: ... — remove when: ...`. `#if 0` is forbidden (that's dead code — delete it or use a real flag).
+- **Public interface contracts** (exception to "comments = WHY only") — public interface headers document non-inferable contracts in one line: `// @pre Must NOT be called from audio thread`, `// @thread-safety lock-free, MT-safe`, `// @throws never (noexcept)`.
+- **FFI conventions (C++ ↔ Rust)** — the most dangerous boundary. Every `extern "C"`: return an `int32_t`/`ResultCode` error code (never implicit); complex errors via a thread-local `get_last_error_str()`; ownership documented explicitly (`Box::into_raw()` → C++ `unique_ptr` with a deleter calling back into Rust; never `free()` C++-side on Rust-allocated memory). Capture conventions in an "Interop Error Handling + Memory Ownership" ADR.
+- **Boy Scout rule** — when editing a file and you spot neighbouring debt fixable in <15 min (un-injected global, over-long function, untested helper), fix it in the same commit with a note. If >15 min: create a TODO/ticket and move on.
+
+---
+
 ## Pre-commit checklist
 
 Before marking any task done:
