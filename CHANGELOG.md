@@ -15,6 +15,9 @@ releases begin.
 - `skills/stack-upgrade/SKILL.md` — `/stack-upgrade` command (gstack-style).
 - `UPDATING.md` — the non-destructive update model ("reference, don't copy") + the
   managed-block convention for the rare inlined case.
+- `scripts/sync_inlined_method.py` — regenerates a `STACK:BEGIN/END` managed block
+  from `AGENTS.md` (with `--check` for CI). For agents without an `@file` import
+  (e.g. MiniMax/Mavis): the method is inlined and re-synced, never hand-forked.
 - `tools/ai_docs/source_config.py` — replaces `source_exts.py`; now also exports
   `EXCLUDE_DIRS`, the unified directory exclusion set shared by all tools.
 - `tools/ai_docs/module_discovery.py` — shared `find_module()` function, eliminating

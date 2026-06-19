@@ -69,9 +69,20 @@ For those, wrap the stack-managed region in markers and edit only outside them:
 - ...
 ```
 
-An updater replaces only the bytes between `STACK:BEGIN`/`STACK:END`; everything
-outside survives. This is the fallback for the rare inlined case — **prefer the
-`@AGENTS.md` reference**, which needs no markers and no merge at all.
+Regenerate the block from the canonical source with:
+
+```bash
+python3 scripts/sync_inlined_method.py <target-file>        # refresh the block
+python3 scripts/sync_inlined_method.py <target-file> --check # CI/pre-commit: fail if stale
+```
+
+It replaces only the bytes between `STACK:BEGIN`/`STACK:END` (backing up the
+target first); everything outside survives. This is the path for tools without
+an import directive — e.g. **MiniMax/Mavis**, whose `agent.md` has no `@file`
+include, so the method is inlined in a managed block and re-synced on update.
+
+**Prefer the `@AGENTS.md` reference** wherever the tool supports it (Claude Code,
+Cursor, Codex) — it needs no markers and no sync at all.
 
 ## For maintainers: cutting a release
 
