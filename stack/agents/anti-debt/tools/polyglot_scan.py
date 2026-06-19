@@ -7,6 +7,7 @@ Used when clippy/eslint is not installed. Pure regex/AST-heuristic — best-effo
 
 Output: JSON list of debt-finding objects on stdout.
 """
+from __future__ import annotations
 import json
 import re
 import sys
@@ -15,18 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from finding_common import finding_id  # noqa: E402
-
-# --- Secret patterns (reused from scan_code.py) ---
-SECRET_PATTERNS = [
-    (re.compile(r'sk_live_[A-Za-z0-9]{20,}'), "Stripe live secret key"),
-    (re.compile(r'sk_test_[A-Za-z0-9]{20,}'), "Stripe test secret key"),
-    (re.compile(r'AKIA[0-9A-Z]{16}'), "AWS access key ID"),
-    (re.compile(r'AIza[0-9A-Za-z\-_]{35}'), "Google API key"),
-    (re.compile(r'gh[pousr]_[A-Za-z0-9]{36,}'), "GitHub token"),
-    (re.compile(r'xox[baprs]-[A-Za-z0-9-]{10,}'), "Slack token"),
-    (re.compile(r'-----BEGIN [A-Z ]+PRIVATE KEY-----'), "Private key"),
-]
+from finding_common import finding_id, SECRET_PATTERNS  # noqa: E402
 
 CC_THRESHOLD = 10
 CC_CRITICAL = 20

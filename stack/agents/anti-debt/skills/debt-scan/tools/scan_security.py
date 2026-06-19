@@ -6,6 +6,7 @@ Runs trufflehog (or gitleaks) + osv-scanner, normalizes to debt-finding schema.
 Usage:
     python3 scan_security.py [path-to-repo]
 """
+from __future__ import annotations
 import json
 import subprocess
 import sys

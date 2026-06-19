@@ -13,6 +13,7 @@ Output: JSON array of findings following the debt-finding schema.
 Usage:
     python3 static_analysis.py [path-to-repo]
 """
+from __future__ import annotations
 import ast
 import hashlib
 import json

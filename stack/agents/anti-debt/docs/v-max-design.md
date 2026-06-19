@@ -148,7 +148,7 @@ L'agent vise une utilisation long terme (5+ ans sur un même projet) sans interv
 ### Layer 1 (Core) — V1 ✅
 
 - [x] AGENT.md LLM-agnostique
-- [x] Taxonomie extensible (4 catégories V1, extensions V2 commentées)
+- [x] Taxonomie extensible (5 catégories actives : code, security, dependencies, tests, architecture ; extensions V2 commentées)
 - [x] 3 schémas JSON Schema validés
 - [x] 8/8 tests unitaires verts
 

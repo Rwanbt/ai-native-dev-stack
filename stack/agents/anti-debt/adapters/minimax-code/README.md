@@ -2,18 +2,26 @@
 
 ## Installation
 
-Dans ton projet, crée le dossier `.mavis/agents/` et copie les skills :
+Lier le dossier **complet** `anti-debt` (les scanners référencent `tools/` et
+`kg/` en relatif — lier `skills/` seul casserait la résolution) :
 
 ```bash
-mkdir -p .mavis/agents/
-ln -s ../../path/to/ai-native-dev-stack/stack/agents/anti-debt .mavis/agents/anti-debt
+mkdir -p ~/.mavis/agents
+# macOS / Linux
+ln -s /path/to/ai-native-dev-stack/stack/agents/anti-debt ~/.mavis/agents/anti-debt
+# Windows (jonction) :
+#   New-Item -ItemType Junction -Path "$env:USERPROFILE\.mavis\agents\anti-debt" `
+#            -Target "D:\path\to\ai-native-dev-stack\stack\agents\anti-debt"
 ```
 
 ## Activation
 
-Dans MiniMax Code, les skills sont auto-découverts si placés dans
-`.mavis/agents/<name>/skills/`. L'AGENT.md de l'agent `mavis` peut référencer
-ces skills via prompt système.
+Référencer `~/.mavis/agents/anti-debt/AGENT.md` dans le prompt système de
+l'agent `mavis`, puis exécuter les outils déterministes :
+
+```bash
+python3 ~/.mavis/agents/anti-debt/skills/debt-scan/tools/scan_code.py <repo>
+```
 
 ## Hooks custom Mavis recommandés
 

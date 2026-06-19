@@ -18,8 +18,10 @@ __pycache__/
 *.db
 *.log
 **/scan_periodic_report.json
+**/dashboard.html
 .debt-history.json
 .debt-scan.json
+calibration_report.md
 
 # Build artifacts (Rust test fixtures, etc.)
 **/target/

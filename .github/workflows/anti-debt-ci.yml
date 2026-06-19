@@ -101,9 +101,8 @@ jobs:
         run: pip install ruff
       - name: Run scan quality test
         working-directory: stack/agents/anti-debt
-        run: |
-          # Tests corpus metrics — currently permissive thresholds (V1)
-          python3 tests/test_scan_quality.py || echo "[INFO] corpus tests are permissive in V1"
+        # Enforced: the test asserts recall >= 0.70 and precision >= 0.60.
+        run: python3 tests/test_scan_quality.py
 
   test-layer0-kg:
     name: Test Layer 0 (Knowledge Graph)

@@ -7,6 +7,7 @@ Also runs dependency-cruiser if available (circular deps in JS/TS).
 Usage:
     python3 scan_deps.py [path-to-repo]
 """
+from __future__ import annotations
 import json
 import subprocess
 import sys

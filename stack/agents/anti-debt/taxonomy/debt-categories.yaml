@@ -1,6 +1,7 @@
 # Taxonomie de dette technique — Anti-Dette Agent
 #
-# V1 : 4 catégories principales. Extensions V2+ : architecture, observability, ai_agent.
+# 5 catégories actives : code, security, dependencies, tests, architecture.
+# Extensions V2+ commentées plus bas : observability, ai_agent.
 # Format :
 #   <categorie>:
 #     - <sous-categorie>   # Valeur normalisée (snake_case)

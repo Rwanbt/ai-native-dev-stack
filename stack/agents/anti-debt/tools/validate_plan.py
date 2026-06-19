@@ -10,6 +10,7 @@ Usage:
     python3 validate_plan.py plan.json
 Exit 0 = valid, 1 = invalid (violations printed), 2 = usage error.
 """
+from __future__ import annotations
 import json
 import sys
 from pathlib import Path

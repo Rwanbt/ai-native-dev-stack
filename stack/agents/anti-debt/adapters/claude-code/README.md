@@ -2,31 +2,37 @@
 
 ## Installation
 
-Dans ton projet, crée le dossier `.claude/skills/` et symlink :
+Lier le dossier **complet** `anti-debt` (PAS seulement `skills/`) — les scanners
+référencent `tools/` et `kg/` en relatif, donc lier `skills/` seul casse la
+résolution. `Path.resolve()` suit les liens, donc un lien/jonction du dossier
+entier fonctionne.
 
 ```bash
-# Depuis la racine de ton projet
-mkdir -p .claude/skills
-# Sur Windows (cmd ou PowerShell) :
-mklink /D .claude\skills\anti-debt ..\path\to\ai-native-dev-stack\stack\agents\anti-debt\skills
+# macOS / Linux
+ln -s /path/to/ai-native-dev-stack/stack/agents/anti-debt ~/.claude/skills/anti-debt
 
-# Ou copie si symlink indisponible
-cp -r ../path/to/ai-native-dev-stack/stack/agents/anti-debt/skills/* .claude/skills/anti-debt/
+# Windows (jonction — pas besoin d'admin) :
+#   New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\anti-debt" `
+#            -Target "D:\path\to\ai-native-dev-stack\stack\agents\anti-debt"
 ```
 
 ## Activation
 
-Dans Claude Code :
+L'agent est un **agent** (system prompt + outils), pas un skill plat
+auto-découvert. Deux usages :
 
 ```
-/skill anti-debt:debt-scan
+# 1. Charger le system prompt en début de session :
+@~/.claude/skills/anti-debt/AGENT.md
+
+# 2. Lancer un scan déterministe directement :
+python3 ~/.claude/skills/anti-debt/skills/debt-scan/tools/scan_code.py <repo>
+python3 ~/.claude/skills/anti-debt/tools/critic_v2.py score findings.json triage.json
 ```
 
-ou en début de session, mentionner l'AGENT.md :
-
-```
-@.claude/skills/anti-debt/AGENT.md
-```
+> Note : `/skill anti-debt:debt-scan` ne fonctionne PAS — Claude Code découvre
+> les skills à plat (`~/.claude/skills/<nom>/SKILL.md`), or les skills de l'agent
+> sont imbriqués sous `skills/`. Réfère-les via `@` ou exécute les outils.
 
 ## Permissions recommandées
 

@@ -12,6 +12,7 @@ Outputs:
 Usage:
     python3 calibration.py <history.json> [--output report.md] [--apply]
 """
+from __future__ import annotations
 import argparse
 import json
 import sys
