@@ -4,15 +4,19 @@
 # Usage:
 #   bash install.sh [--project-root /path/to/project] [--with-gstack] [--skip-gstack]
 #
-# What this does:
+# What this does (per-project AI-docs stack):
 #   1. Copies scripts to tools/ai_docs/
-#   2. Copies the verify-ai-docs skill to .claude/skills/
-#   3. Installs gstack (global Claude Code skills by Garry Tan / YC) — optional
-#   4. Creates config.sh from the template
-#   5. Detects Python and validates it works
-#   6. Generates all AI_SUMMARY.md files
-#   7. Adds config.sh to .gitignore
-#   8. Prints next steps
+#   2. Copies the verify-ai-docs + verify-standards skills to .claude/skills/
+#   3. Copies AGENTS.md (the canonical engineering method) to the project root
+#   4. Installs gstack (global Claude Code skills by Garry Tan / YC) — optional
+#   5. Creates config.sh from the template
+#   6. Detects Python and validates it works
+#   7. Generates all AI_SUMMARY.md files
+#
+# This installer covers the PER-PROJECT stack. The GLOBAL, multi-agent setup
+# (engineering-method include, universal hooks, the anti-debt agent link for
+# Claude Code / MiniMax / Cursor / Codex) is described in PORTABILITY.md and
+# scripted by scripts/setup-agents.sh. See the NEXT STEPS printed at the end.
 
 set -e
 
@@ -219,7 +223,13 @@ echo ""
 echo "5. Verify the full stack:"
 echo "   In Claude Code: /verify-ai-docs && /verify-standards"
 echo ""
+echo "6. GLOBAL multi-agent setup (one-time per machine):"
+echo "   - Link the anti-debt agent into every AI agent:"
+echo "       bash $SCRIPT_DIR/scripts/setup-agents.sh"
+echo "   - Wire the engineering method + hooks per agent (Claude/MiniMax/Cursor/Codex):"
+echo "       see $SCRIPT_DIR/PORTABILITY.md"
+echo ""
 if [ "$INSTALL_GSTACK" = "yes" ]; then
-  echo "6. Add the gstack skills block to your CLAUDE.md (see above)."
+  echo "7. Add the gstack skills block to your CLAUDE.md (see above)."
   echo ""
 fi

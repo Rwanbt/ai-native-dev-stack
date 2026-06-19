@@ -28,16 +28,20 @@ The usual workarounds (pasting files into context, writing long prompts) don't s
 A **self-maintained AI optimization stack** — a set of structured documents, scripts, and hooks that keeps the AI perpetually oriented without human intervention:
 
 ```
+Engineering method (AGENTS.md)         ←  single canonical source, shared to every LLM
 Per-module AI context files            ←  updated on every file edit
 Dependency graph (graphify)            ←  re-indexed on demand
 Domain rules (standalone)             ←  single file injected for critical code
 Obsidian memory vault                  ←  persistent second brain across sessions
 Claude Code memory                     ←  auto-generated session summaries
 Skills ecosystem                       ←  domain-specific verification commands
+Universal hooks                        ←  session memory load/save, LOC gate (any agent)
+Anti-debt agent                        ←  deterministic tech-debt governance
 PostToolUse hook                       ←  keeps everything in sync automatically
 ```
 
-One command audits the entire stack: `/verify-ai-docs`
+One command audits the entire stack: `/verify-ai-docs`. Transfer it to any
+machine or LLM via **[PORTABILITY.md](PORTABILITY.md)**.
 
 ---
 
@@ -354,6 +358,24 @@ python tools/ai_docs/generate_all.py
 
 # 6. Verify → /verify-ai-docs should display OPERATIONAL
 ```
+
+### Whole-stack transfer (method + hooks + agents, any LLM)
+
+The steps above set up the per-project AI-docs stack. To transfer the **full
+method** to a new machine or wire a new AI agent (Claude Code, MiniMax/Mavis,
+Cursor, Codex) to the same rules, hooks, and the anti-debt agent:
+
+```bash
+# Link the anti-debt agent into every detected AI agent (idempotent, OS-aware)
+bash scripts/setup-agents.sh
+
+# Then wire the engineering method (@AGENTS.md include) + hooks per agent:
+#   → see PORTABILITY.md
+```
+
+The single source of the engineering method is [`AGENTS.md`](AGENTS.md) — every
+tool config references it instead of re-stating the rules, so the configs never
+diverge. Full guide: **[PORTABILITY.md](PORTABILITY.md)**.
 
 ---
 
