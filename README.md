@@ -377,6 +377,13 @@ The single source of the engineering method is [`AGENTS.md`](AGENTS.md) — ever
 tool config references it instead of re-stating the rules, so the configs never
 diverge. Full guide: **[PORTABILITY.md](PORTABILITY.md)**.
 
+**Staying up to date** (gstack-style, non-destructive): `bash scripts/stack-update-check.sh`
+detects upstream changes (read-only); `/stack-upgrade` (or `bash scripts/stack-upgrade.sh`)
+fast-forwards the shared clone without ever touching your personalized configs.
+Because configs *reference* `AGENTS.md` rather than copy it, a `git pull` updates
+the method for everyone while each user keeps their customizations. Full model:
+**[UPDATING.md](UPDATING.md)**.
+
 ---
 
 ## Quality Standards — AI Optimization and Human Readability

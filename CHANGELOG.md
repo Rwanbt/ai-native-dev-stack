@@ -8,6 +8,13 @@ releases begin.
 ## [Unreleased]
 
 ### Added
+- `VERSION` (semver) + `stack-version` header in `AGENTS.md` — version source of truth.
+- `scripts/stack-update-check.sh` — read-only upstream-update detection (fetch + compare).
+- `scripts/stack-upgrade.sh` — non-destructive fast-forward-only upgrade; aborts on a
+  dirty tree, touches only the shared repo, reports changed `*.example` templates.
+- `skills/stack-upgrade/SKILL.md` — `/stack-upgrade` command (gstack-style).
+- `UPDATING.md` — the non-destructive update model ("reference, don't copy") + the
+  managed-block convention for the rare inlined case.
 - `tools/ai_docs/source_config.py` — replaces `source_exts.py`; now also exports
   `EXCLUDE_DIRS`, the unified directory exclusion set shared by all tools.
 - `tools/ai_docs/module_discovery.py` — shared `find_module()` function, eliminating
