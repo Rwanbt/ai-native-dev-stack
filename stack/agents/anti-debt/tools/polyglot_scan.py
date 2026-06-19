@@ -286,7 +286,7 @@ def scan_js_file(path: Path) -> list[dict]:
     return findings
 
 
-def detect_js_cycles(root: Path) -> list[dict]:
+def detect_js_cycles(root: Path) -> list[dict]:  # CC-EXCEPTION: see ADR-0025 (single-pass import-graph parser)
     """Detect circular dependencies between JS/TS files."""
     findings: list = []
     skip_dirs = {"node_modules", "dist", "build", ".git"}
