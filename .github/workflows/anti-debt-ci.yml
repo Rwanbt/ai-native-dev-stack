@@ -180,6 +180,35 @@ jobs:
         working-directory: stack/agents/anti-debt
         run: python3 tests/test_layer47.py
 
+  test-llm-judge:
+    name: Test LLM-as-judge (structural, no API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run LLM judge tests
+        working-directory: stack/agents/anti-debt
+        run: python3 -m unittest tests/test_llm_judge.py
+
+  test-production-mining:
+    name: Test production mining tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate production_mining.py syntax and imports
+        working-directory: stack/agents/anti-debt
+        run: python3 -c "import ast; ast.parse(open('tools/production_mining.py').read())"
+      - name: Run with example fixture (empty overrides = graceful exit)
+        working-directory: stack/agents/anti-debt
+        run: python3 tools/production_mining.py --history examples/real-scan-fixture1-2026-06-17.json --output /tmp/mined/ || true
+
   test-dashboard-e2e:
     name: Test dashboard end-to-end
     runs-on: ubuntu-latest

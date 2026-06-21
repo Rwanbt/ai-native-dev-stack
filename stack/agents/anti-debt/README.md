@@ -65,6 +65,24 @@ debt-scan /path/to/repo
 /skill anti-debt:debt-scan
 ```
 
+## Documentation
+
+| Document | Contenu |
+|----------|---------|
+| [`docs/failure-modes.md`](docs/failure-modes.md) | Inventaire des modes de défaillance (FM-01 à FM-06) + matrice de couverture |
+| [`docs/security-boundaries.md`](docs/security-boundaries.md) | Analyse Lethal Trifecta + frontières de confiance + mitigations |
+| [`docs/scoring-calibration.md`](docs/scoring-calibration.md) | Variables du score, protocole de calibration empirique |
+| [`docs/v-max-design.md`](docs/v-max-design.md) | Roadmap V2-V3 architecture multi-couches |
+
+## Outils d'évaluation
+
+| Outil | Usage |
+|-------|-------|
+| `tools/llm_judge.py` | LLM-as-judge pour évaluation sémantique des findings (faithfulness, actionability, severity, evidence) |
+| `tools/production_mining.py` | Mine les overrides humains → datasets d'eval labélisés |
+| `tools/calibration.py` | Recalibration empirique des seuils depuis l'historique |
+| `tools/dashboard.py` | Dashboard HTML avec métriques business (FP rate, precision, debt velocity) |
+
 ## Pourquoi cet agent existe
 
 Les LLM ont trois biais systémiques sur la dette technique :

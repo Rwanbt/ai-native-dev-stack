@@ -253,7 +253,11 @@ def main() -> int:
     if not config_path.exists():
         print(json.dumps({"error": f"config not found: {config_path}"}))
         return 1
-    projects = json.loads(config_path.read_text(encoding="utf-8"))
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    projects = config.get("projects") if isinstance(config, dict) else config
+    if not isinstance(projects, list):
+        print(json.dumps({"error": "config must be a list of projects, or a dict with 'projects' key"}))
+        return 1
 
     print(f"[{_now()}] scan_periodic starting ({len(projects)} projects, dry_run={args.dry_run})")
     while True:

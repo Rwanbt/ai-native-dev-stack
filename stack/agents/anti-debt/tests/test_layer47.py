@@ -137,8 +137,10 @@ class TestCalibration(unittest.TestCase):
 
     def test_main_no_history(self):
         # Calling main without args should fail (argparse requires history)
-        with self.assertRaises(SystemExit):
-            calibration.main()
+        import unittest.mock
+        with unittest.mock.patch("sys.argv", ["calibration.py"]):
+            with self.assertRaises(SystemExit):
+                calibration.main()
 
 
 class TestDashboard(unittest.TestCase):

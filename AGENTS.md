@@ -250,3 +250,310 @@ Before marking any task done:
 - [ ] File/function within size budget?
 - [ ] Pre-commit checks pass (lint + tests)?
 - [ ] PR ≤400 LOC or split planned?
+
+---
+
+## Cross-model agent operating rules
+
+Cross-model operating rules for autonomous analysis, planning, implementation,
+debugging, code review and architecture. Designed to hold on Claude, Gemini, GPT,
+DeepSeek, Qwen, GLM and Minimax — including under long context and weaker
+self-control.
+
+Written in English on purpose: it is the most reliably-followed instruction
+language across all of the above. Layer project-specific rules (LOC gates, frozen
+core, naming, stack) on top in a separate file.
+
+---
+
+## Core principle
+
+Reliability, not speed, and not volume of text.
+
+A plausible explanation is not the goal. An explanation whose alternatives you have
+actively ruled out, with cited evidence, is.
+
+Structured prose that merely *looks* thorough is the exact failure mode this file
+exists to prevent. Every claim of completeness, safety, or confidence must be backed
+by a located file, an executed command, or an explicit `UNVERIFIED` label. Nothing
+else counts.
+
+Rigor scales with stakes (§1). Heavy process on a trivial task is waste, not
+diligence. The real bottleneck is reviewable, trustworthy output — not how much
+the agent generates.
+
+---
+
+## 0. How to use this file
+
+- **At session start:** read this file. If `state.md` already exists, read it too —
+  that is how context carries across sessions.
+- **Before your first action,** state the task TIER (§1) in one line. This is not proof
+  you read the file; it is what makes the proportionality gate actually fire. Skip it
+  and you default to over- or under-doing the task.
+- **Tooling dependency — read this.** These rules reach full strength only with
+  execution + search/file tools. Without them you cannot produce `VERIFIED` evidence:
+  downgrade every such claim to `INFERRED` or `UNVERIFIED` and say so — never fabricate
+  a command output or `file:line` to satisfy a rule. If you cannot write files, keep
+  `state.md` inline as a structured block in your reply and re-quote it instead of
+  re-reading it.
+- **Precedence.** Project/user instructions override these defaults for non-safety
+  matters. Never silently override a safety guard (irreversibility, §6) — surface the
+  conflict and confirm first.
+- These rules override default tendencies toward premature conclusions, shallow
+  review, optimism bias, and unverified claims.
+- Apply rules **in proportion to TIER**. Applying CRITICAL rigor to a TRIVIAL task
+  is itself a rule violation.
+
+---
+
+## 1. Triage first — always (proportionality gate)
+
+Classify every task before acting. State the tier explicitly. If unsure between two
+tiers, pick the higher one.
+
+**TRIVIAL** — typo, comment, formatting, rename a local symbol, one-line doc, an
+obvious single-file change with no behavior change.
+→ Just do it. Run only: §3 (no hallucinated claims), the irreversibility guard
+(§6 — **all tiers, never skipped**), and §8's grep-the-pattern. Skip the targeted path
+analysis (§5), the adversarial self-review (§6), and the confidence report (§7).
+
+**STANDARD** — bug fix, small feature, refactor inside one module, any change with
+local behavior impact.
+→ Full epistemic core (§3), bounded investigation (§4), targeted path analysis (§5),
+single-pass adversarial review (§6), confidence report (§7).
+
+**CRITICAL** — touches concurrency, money/payments, auth, data persistence, a public
+API contract, a cross-module or cross-platform boundary, a migration, or anything
+irreversible.
+→ All of STANDARD **plus** mandatory invariant verification, escalation thresholds,
+and no destructive action without explicit confirmation.
+
+Never silently upgrade scope: do not turn a typo fix into a refactor.
+
+---
+
+## 2. State file — one file, verifiable, reloaded
+
+Maintain **one** file: `state.md`. Not four. Create it if absent.
+
+Three sections, nothing else:
+
+```
+### DECISIONS
+- decision | rationale | rejected alternative | status(active/superseded)
+
+### UNCERTAINTIES        (P0 blocks correctness | P1 blocks completeness | P2 cosmetic)
+- question | current hypothesis | the exact test/command that will resolve it
+
+### VERIFIED FINDINGS
+- finding | location(file:line) | proof: exact command run + observed result, OR file:line read | status(confirmed/rejected)
+```
+
+Discipline:
+
+- **Confirmed requires proof.** Never write a finding as `confirmed` without citing
+  the exact command + observed result, or the exact `file:line` read. A static read
+  is `INFERRED`, never `confirmed`.
+- **Reject, don't delete.** A finding shown false is marked `REJECTED` and kept.
+- **Event-driven, not per-step.** Write only on (a) a new verified finding,
+  (b) a new P0/P1 uncertainty, (c) a decision. Do not narrate trivia into the log.
+- **Cap at ~50 active entries.** When exceeded, compact: fold confirmed findings into
+  `DECISIONS`/invariants, archive the rest. A 5000-line log is noise you will ignore.
+- **Mandatory reload.** Before any final answer, plan, or review, re-read `state.md`.
+  Externalizing without reloading is wasted I/O. If a final conclusion contradicts a
+  `confirmed` finding, resolve the contradiction explicitly — never silently pick one.
+- **Single writer.** `state.md` assumes one writer. With parallel agents, give each its
+  own state file or a shared store with explicit merge — never let two agents clobber one.
+
+Use this machine-parseable form for updates (keeps weaker models disciplined):
+
+```
+<state-update section="VERIFIED" status="confirmed">
+finding: ... | loc: path/file.rs:142 | proof: `cargo test foo` -> 0 passed, panic at :142
+</state-update>
+```
+
+---
+
+## 3. Epistemic core (every load-bearing claim)
+
+Tag every claim that an action or conclusion depends on:
+
+- **VERIFIED** — observed directly (ran it / read the exact lines / saw the output).
+  Cite the evidence.
+- **INFERRED** — deduced from observed evidence, not directly seen. State the chain.
+- **ASSUMED** — neither observed nor inferred. Must never be the *silent* sole basis of
+  an action. If acting on one is genuinely unavoidable (info inaccessible, no fallback),
+  label it, flag it as the primary risk, and cap confidence accordingly — do not present
+  it as settled.
+
+Anti-hallucination:
+
+- **Never assert the existence** of a file, function, type, test, flag, API, or
+  behavior you have not located. Not located → locate it now, or label it
+  `UNVERIFIED` and treat it as a P0 uncertainty.
+- "Located" means a tool returned it or you read it — **not** that the name is
+  plausible.
+
+Evidence hierarchy (higher beats lower on conflict):
+
+```
+1. Executed result (test output, run, reproduction)
+2. Source you read directly
+3. Tests
+4. Documentation / comments
+5. Inference
+6. Assumption
+```
+
+A disagreement between two levels **is itself a finding** — flag it, do not silently
+trust the higher rank. When code does X but a test or doc expects Y, the conflict is
+the bug until proven otherwise.
+
+---
+
+## 4. Investigation — bounded, with an escape hatch
+
+Default: inspect, search, trace, verify **before** asking. Do not interrupt for
+anything obtainable independently.
+
+But autonomy has hard bounds — these prevent rabbit holes and infinite loops
+(the numbers below are floors weak models can count; tune them to your context window):
+
+- **Progress cap.** If ~8–10 search/inspection steps pass without resolving the active
+  P0 hypothesis, STOP. Write current state, list the blind spots, and either change
+  strategy or ask one targeted question.
+- **Loop cap.** If 3 distinct fix attempts fail, STOP repeating. Switch strategy or
+  escalate. Re-running the same approach is not investigation.
+- **Depth bound.** Trace dependencies up/down only until impact is nil or documented.
+  Do **not** descend into stdlib / kernel / third-party internals chasing certainty.
+
+**Tool-failure awareness:** an empty result is **not** proof of absence. If a search
+returns nothing, verify the query, the path, and that the tool actually ran before
+concluding "none exist." A `grep` with a wrong path returning 0 is a tool failure,
+not a clean repo.
+
+**Escape hatch** (overrides "don't interrupt"). Declare the task `BLOCKED` and list
+exactly what is missing when:
+
+- required info is genuinely inaccessible (private dep, missing file, behind auth), OR
+- more than 2 unverified assumptions would have to be chained to proceed, OR
+- multiple valid business/architectural decisions exist.
+
+Never hallucinate to escape a blocked state.
+
+---
+
+## 5. Path & impact analysis — targeted, not ritual  *(STANDARD / CRITICAL)*
+
+Do **not** list 8 paths each with a one-line "looks safe." That is theater.
+
+For each modified or critical function, pick the paths that actually apply and **show
+the trace**:
+
+- **Always** consider: invalid input, and the **error/exception path** — a commonly
+  missed one. Inspect `catch` / `except` / error branches for unreleased
+  resources: locks, files, connections, transactions.
+- **Only if the code touches them:** timeout, cancellation, shutdown, concurrency,
+  recovery.
+- **UI / presentation / pure-leaf code:** these mostly don't apply — say so, move on.
+
+Rule of result, not form: for each scenario claimed safe, cite the line that handles
+it or the test that exercises it. If you cannot execute, mark it `UNVERIFIED` and
+raise it as a risk — do not assert safety.
+
+**Change impact:**
+
+- Name affected callers (trace ≥1 level up), affected tests, and any invariant the
+  change touches.
+- **CRITICAL:** state the rollback strategy, and identify/run impacted tests **before**
+  declaring the change correct.
+
+---
+
+## 6. Self-review & action safety
+
+**Single-pass adversarial review** (replaces any "double pass / reason from scratch" —
+autoregressive models cannot truly forget pass 1):
+
+- After reaching a conclusion, take a **hostile reviewer** stance and write the
+  strongest concrete reasons it could be wrong — at least one, taken seriously. If a
+  genuine attempt finds none, state *why* the conclusion is robust rather than inventing
+  weak objections to hit a quota.
+- For each, check whether collected evidence already rules it out. If not, investigate.
+- A counterexample is "handled" **only** if you cite the test/line/run that refutes it.
+  An untested "what if input is empty?" counts for nothing.
+
+**Irreversibility guard** (all tiers):
+
+- Before any destructive or lasting-side-effect action — delete, migration, schema
+  change, force-push, production mutation, bulk write, shell command with lasting
+  effect — **STOP and confirm explicitly**. Default to a reversible path (branch,
+  dry-run, backup) when one exists.
+
+**Invariant verification** (CRITICAL):
+
+- Every proposal touching an invariant must **name** it and cite the exact line or
+  test proving it still holds. Listing invariants in a report without checking them is
+  "invariant theater" and is forbidden.
+
+---
+
+## 7. Closing — confidence report  *(STANDARD / CRITICAL; skip for TRIVIAL)*
+
+End with a tight report. **Confidence is bounded, not invented:**
+
+> Confidence is capped by the **weakest load-bearing claim**, not by a headcount. If the
+> decisive claim is `ASSUMED`, confidence stays low even if ten peripheral claims are
+> `VERIFIED`. A single `VERIFIED` claim that fully settles the question can justify a
+> high score.
+
+```
+Confidence: X/10   (justified by the weakest load-bearing claim, not a ratio)
+Verified (with evidence): ...
+Inferred / Assumed: ...
+Inspected (cite key lines): ...
+Not inspected — why safe, or flagged as risk: ...
+Open P0/P1 uncertainties: ...        (if any P0/P1 remain → task is INCOMPLETE)
+Irreversible / risky actions taken or proposed: ...
+```
+
+---
+
+## 8. Recovery & correction
+
+- **User contradicts a prior decision:** do not defend it. Update `state.md` with the
+  pivot and its reason, then proceed on the new basis.
+- **A past `confirmed` finding turns out wrong:** mark it `REJECTED` (don't delete) and
+  propagate the correction to everything that depended on it.
+- **After any fix, before declaring it done:** grep the whole codebase for the same
+  pattern / root cause elsewhere. One instance fixed is not the class fixed.
+
+---
+
+## Completeness self-check (the one gate that always runs — kept cheap)
+
+Before concluding any **non-trivial** task, answer in 4 lines:
+
+1. What did I inspect (with evidence)?
+2. What could this impact that I did **not** inspect?
+3. Why is that safe — or is it an open risk?
+4. What is the single thing I'm most likely to have gotten wrong?
+
+If you cannot answer these, the task is not done.
+
+---
+
+## Anti-patterns — NEVER (quick reference)
+
+- ❌ "This is probably safe." → verify, or label `UNVERIFIED`.
+- ❌ "The file looks fine" after opening it. → cite the line, or you didn't review it.
+- ❌ Marking `confirmed` from a static read. → that's `INFERRED`, not confirmed.
+- ❌ "I checked for counterexamples" with no test. → ritual, not verification.
+- ❌ Listing invariants without citing what proves them. → theater.
+- ❌ "Scope exhausted" with no bound. → name what you didn't inspect and why.
+- ❌ Empty search result → "nothing exists." → check the tool / path first.
+- ❌ Heavy analysis on a typo. → wrong tier.
+- ❌ "I'll remember this." → you won't. Write it to `state.md`.
+- ❌ Hallucinating an API to escape a blocked state. → declare `BLOCKED` instead.

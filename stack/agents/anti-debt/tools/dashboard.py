@@ -213,16 +213,132 @@ def render_html(stats: dict) -> str:
 </html>"""
 
 
+def load_business_metrics(history_path: Path | None = None) -> dict:
+    """Load business metrics from .debt-history.json if available."""
+    if history_path is None:
+        history_path = ROOT / ".debt-history.json"
+    if not history_path.exists():
+        return {}
+
+    with open(history_path, "r", encoding="utf-8") as f:
+        history = json.load(f)
+
+    scans = history.get("scans", [])
+    overrides = history.get("overrides", [])
+
+    if not scans:
+        return {}
+
+    total_findings = sum(s.get("total_findings", 0) for s in scans)
+    total_overrides = len(overrides)
+    reject_overrides = sum(1 for o in overrides if o.get("action") == "reject_override")
+    accept_overrides = sum(1 for o in overrides if o.get("action") in ("accept_override", "confirm"))
+
+    fp_rate = round(reject_overrides / max(total_findings, 1), 4)
+    precision = round(accept_overrides / max(accept_overrides + reject_overrides, 1), 4)
+
+    total_regressed = sum(len(s.get("findings_regressed", [])) for s in scans)
+    total_resolved = sum(len(s.get("findings_resolved", [])) for s in scans)
+    total_new = sum(len(s.get("findings_new", [])) for s in scans)
+
+    deltas = [s.get("debt_delta", 0) for s in scans if "debt_delta" in s]
+    avg_velocity = round(sum(deltas) / max(len(deltas), 1), 2)
+
+    by_category_overrides = defaultdict(lambda: {"accept": 0, "reject": 0})
+    for o in overrides:
+        cat = o.get("category", "unknown")
+        if o.get("action") == "reject_override":
+            by_category_overrides[cat]["reject"] += 1
+        elif o.get("action") in ("accept_override", "confirm"):
+            by_category_overrides[cat]["accept"] += 1
+
+    category_precision = {}
+    for cat, counts in by_category_overrides.items():
+        total = counts["accept"] + counts["reject"]
+        if total > 0:
+            category_precision[cat] = round(counts["accept"] / total, 3)
+
+    return {
+        "total_scans": len(scans),
+        "total_findings_all_time": total_findings,
+        "total_overrides": total_overrides,
+        "false_positive_rate": fp_rate,
+        "effective_precision": precision,
+        "findings_regressed": total_regressed,
+        "findings_resolved": total_resolved,
+        "findings_new": total_new,
+        "avg_debt_velocity": avg_velocity,
+        "precision_by_category": category_precision,
+    }
+
+
+def render_business_metrics_html(metrics: dict) -> str:
+    """Render business metrics as an HTML section."""
+    if not metrics:
+        return "<p><em>No .debt-history.json found — business metrics unavailable.</em></p>"
+
+    cat_rows = ""
+    for cat, prec in sorted(metrics.get("precision_by_category", {}).items()):
+        color = "#65a30d" if prec >= 0.8 else "#ca8a04" if prec >= 0.6 else "#dc2626"
+        cat_rows += (
+            f'<tr><td>{html.escape(cat)}</td>'
+            f'<td><span style="color:{color};font-weight:bold">{prec:.1%}</span></td></tr>'
+        )
+
+    velocity = metrics.get("avg_debt_velocity", 0)
+    vel_color = "#65a30d" if velocity <= 0 else "#dc2626"
+
+    return f"""
+<h2>Business Metrics</h2>
+<div class="kpi-row">
+  <div class="kpi"><div class="value">{metrics.get('false_positive_rate', 0):.1%}</div><div class="label">FP Rate</div></div>
+  <div class="kpi"><div class="value">{metrics.get('effective_precision', 0):.1%}</div><div class="label">Precision</div></div>
+  <div class="kpi"><div class="value" style="color:{vel_color}">{velocity:+.1f}</div><div class="label">Debt Velocity</div></div>
+  <div class="kpi"><div class="value">{metrics.get('findings_resolved', 0)}</div><div class="label">Resolved</div></div>
+  <div class="kpi"><div class="value">{metrics.get('findings_regressed', 0)}</div><div class="label">Regressed</div></div>
+</div>
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap: 2em; margin: 1em 0;">
+  <div>
+    <h3>Precision by category</h3>
+    <table><thead><tr><th>Category</th><th>Precision</th></tr></thead>
+    <tbody>{cat_rows if cat_rows else '<tr><td colspan="2">No override data yet</td></tr>'}</tbody></table>
+  </div>
+  <div>
+    <h3>Scan history</h3>
+    <ul>
+      <li>Total scans: {metrics.get('total_scans', 0)}</li>
+      <li>Total findings (all time): {metrics.get('total_findings_all_time', 0)}</li>
+      <li>Total overrides: {metrics.get('total_overrides', 0)}</li>
+      <li>New findings: {metrics.get('findings_new', 0)}</li>
+    </ul>
+  </div>
+</div>"""
+
+
 def main() -> int:
-    db_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DB
-    out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_HTML
-    if not db_path.exists():
-        print(json.dumps({"error": f"kg db not found: {db_path}. Run scan_periodic.py first."}))
+    import argparse as _ap
+    parser = _ap.ArgumentParser(description="Anti-debt dashboard generator")
+    parser.add_argument("db", nargs="?", type=Path, default=DEFAULT_DB, help="KG database path")
+    parser.add_argument("output", nargs="?", type=Path, default=DEFAULT_HTML, help="Output HTML path")
+    parser.add_argument("--history", type=Path, default=None, help=".debt-history.json for business metrics")
+    args = parser.parse_args()
+
+    if not args.db.exists():
+        print(json.dumps({"error": f"kg db not found: {args.db}. Run scan_periodic.py first."}))
         return 1
-    stats = load_stats(db_path)
-    out_path.write_text(render_html(stats), encoding="utf-8")
-    print(f"Dashboard written to {out_path}")
+    stats = load_stats(args.db)
+    metrics = load_business_metrics(args.history)
+    html_content = render_html(stats)
+    if metrics:
+        html_content = html_content.replace(
+            '<div class="footer">',
+            render_business_metrics_html(metrics) + '\n<div class="footer">'
+        )
+    args.output.write_text(html_content, encoding="utf-8")
+    print(f"Dashboard written to {args.output}")
     print(f"  Components: {len(stats['components'])}, Debts: {len(stats['debts'])}, Edges: {stats['total_edges']}")
+    if metrics:
+        print(f"  Business: precision={metrics['effective_precision']:.1%}, FP rate={metrics['false_positive_rate']:.1%}, velocity={metrics['avg_debt_velocity']:+.1f}")
     return 0
 
 
