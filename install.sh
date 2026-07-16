@@ -68,11 +68,17 @@ done
 echo "   OK (9 scripts + config template)"
 
 # ── Step 2: Copy skills ───────────────────────────────────────────────────────
-echo "[2/7] Copying skills (verify-ai-docs, verify-standards) ..."
+echo "[2/7] Copying skills (verify-ai-docs, verify-standards, commit-convention) ..."
 mkdir -p "$PROJECT_ROOT/.claude/skills/verify-ai-docs"
 cp -f "$SCRIPT_DIR/skills/verify-ai-docs/SKILL.md" "$PROJECT_ROOT/.claude/skills/verify-ai-docs/"
 mkdir -p "$PROJECT_ROOT/.claude/skills/verify-standards"
 cp -f "$SCRIPT_DIR/skills/verify-standards/SKILL.md" "$PROJECT_ROOT/.claude/skills/verify-standards/"
+mkdir -p "$PROJECT_ROOT/.claude/skills/commit-convention"
+cp -f "$SCRIPT_DIR/skills/commit-convention/SKILL.md" "$PROJECT_ROOT/.claude/skills/commit-convention/"
+mkdir -p "$PROJECT_ROOT/.claude/skills/commit-convention/bin"
+cp -f "$SCRIPT_DIR/skills/commit-convention/bin/validate-commit.sh" "$PROJECT_ROOT/.claude/skills/commit-convention/bin/"
+cp -f "$SCRIPT_DIR/skills/commit-convention/bin/extract_commit_msg.py" "$PROJECT_ROOT/.claude/skills/commit-convention/bin/"
+chmod +x "$PROJECT_ROOT/.claude/skills/commit-convention/bin/validate-commit.sh"
 echo "   OK"
 
 # ── Step 3: AGENTS.md — Cross-tool universal rules ───────────────────────────

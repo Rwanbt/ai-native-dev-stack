@@ -6,7 +6,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- `skills/commit-convention/` — Conventional Commits 1.0 enforcer with two
+  complementary modes:
+  - **Auto-suggest** — when the user says "commit", `/commit`, or has a
+    non-empty staged diff and seems ready to commit, the skill inspects
+    `git diff --staged`, infers type/scope/subject, and proposes 1–3
+    candidates via AskUserQuestion.
+  - **Validator hook** — `bin/validate-commit.sh` (PreToolUse on `Bash`)
+    validates every `git commit` first line against the CC regex. PASS is
+    silent `allow`; non-conformant or soft-warning commits (full line > 100
+    chars, trailing period, BREAKING CHANGE without `!`) trigger `ask` with
+    a `[warn]` prefix. `--no-verify` is honored as a user override.
+  - 18 zero-dependency smoke tests (`tests/test_validate.sh`) cover allow /
+    ask / warn paths and pass green.
+- `install.sh` step 2 now also copies `commit-convention` into
+  `.claude/skills/` of the target project, alongside the existing
+  `verify-ai-docs` and `verify-standards`.
 
 ## [1.0.0] - 2026-06-19
 
