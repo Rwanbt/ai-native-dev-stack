@@ -238,6 +238,46 @@ The rules above are the always-on core. The reflexes below are the full senior p
 
 ---
 
+## Architectural change discipline (vs routine fixes)
+
+Routine fixes (lint, typo, single-line, doc, test):
+- Use existing AGENTS.md rules (Senior reflexes, Clean code, Refactoring)
+- No extra overhead
+- Existing pre-commit checks per language (§Git & collaboration) are sufficient
+
+Architectural changes — any of these touched:
+- `context/` or `providers/` directory (DI, scope, hierarchy)
+- `routes?/` (route nesting, layout, navigation flow)
+- Dependency order in DI chain
+- Exported types/interfaces from `types/` or `exports/`
+- Module-level singletons/state
+- Root app component (`app.tsx`, `App.tsx`)
+
+REQUIRED before proposing the change:
+1. Run `graphify path <symbol>` and cite the consumer tree in your commit message
+2. Read ≥ 3 call sites of the changed symbol directly (not grep summary)
+3. State scope explicitly in the commit message:
+   "Affects: [list]. Does not affect: [list]."
+4. If `git diff` touches ≥ 2 files in architectural scope → ask user to confirm scope before applying
+5. Tag the commit with `[arch-change]` for review priority
+
+Rationale (from 2026-06-26 incident):
+The FileStoreProvider bug was introduced by a fix that placed a directory-scoped
+provider inside session-scoped providers. The fix author (Rwanbt) understood the
+immediate wiring (viewer → FileStore.markClean) but missed the directory-vs-session
+scope distinction. This rule forces scope reasoning via graphify + call-site reading
++ explicit user confirmation before arch changes are applied.
+
+Enforcement:
+- Mavis pretool-arch-change-detect hook (auto on Edit/Write arch-scope files)
+- Mavis arch-change-gate skill (loaded on hook trigger)
+- These are the canonical mechanisms — don't duplicate as manual checklists
+
+See also: `D:\Documents\Obsidian\IA_Dev_Brain\Systeme-Agentique\Components\AI-Native-DevStack\AGENTS.md`
+for the full mirror of this section + cross-references to hook/skill implementations.
+
+---
+
 ## Pre-commit checklist
 
 Before marking any task done:
