@@ -25,3 +25,4 @@ calibration_report.md
 
 # Build artifacts (Rust test fixtures, etc.)
 **/target/
+.gstack/

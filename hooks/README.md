@@ -2,7 +2,7 @@
 
 > Ce dossier contient les hooks universels de AI Native Dev Stack, installables sur tout agent IA.
 
-## Les 4 hooks universels
+## Les hooks fournis
 
 | Hook | Event | Trigger | Agents |
 |------|-------|---------|--------|
@@ -32,7 +32,7 @@ Pour le LOC gate (PreToolUse):
 ## Installation Claude Code
 
 ### Global hooks
-`~/.claude/hooks.json`:
+`~/.claude/settings.json`:
 ```json
 {
   "hooks": {
@@ -60,14 +60,22 @@ Dans `~/.claude/CLAUDE.md`, section début de session:
 pwsh -NoProfile -File 'D:/App/ai-native-dev-stack/scripts/vault_sync_once_daily.ps1'
 ```
 
+## Installation OpenCode (Linux)
+
+`python3 scripts/install_agents.py` installe le plugin natif
+`~/.config/opencode/plugins/ai-native-dev-stack.ts`. Il adapte les événements
+OpenCode au LOC gate et au générateur `AI_SUMMARY.md`; aucun fichier de
+configuration utilisateur n'est écrasé.
+
 ## Installation Codex
 
-`~/.codex/hooks.json` — même format que Claude Code.
+Utiliser les hooks natifs Codex. Les payloads et décisions ne sont pas
+identiques à ceux de Claude Code; ne pas recopier le JSON Claude tel quel.
 
 ## Installation Cursor
 
-Cursor utilise `.cursorrules` et les plugins MCP.
-Vérifier la documentation Cursor pour l'équivalent de `hooks.json`.
+Cursor supporte ses propres règles et hooks. Utiliser son format natif; les
+skills partagés sont installés sous `~/.agents/skills/` sur Linux.
 
 ## Notes
 

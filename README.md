@@ -402,12 +402,24 @@ method** to a new machine or wire a new AI agent (Claude Code, MiniMax/Mavis,
 Cursor, Codex) to the same rules, hooks, and the anti-debt agent:
 
 ```bash
-# Link the anti-debt agent into every detected AI agent (idempotent, OS-aware)
-bash scripts/setup-agents.sh
+# Install rules, skills and agents into every detected AI CLI
+# (idempotent; one Python implementation, same behaviour on every OS)
+bash scripts/setup-agents.sh                          # Linux / macOS / Git Bash
+pwsh -NoProfile -File scripts/setup-agents.ps1        # Windows, no Git Bash needed
+python scripts/install_agents.py                      # any OS, direct
+
+# Verify, or preview without writing:
+python scripts/install_agents.py --check
+python scripts/install_agents.py --dry-run
 
 # Then wire the engineering method (@AGENTS.md include) + hooks per agent:
 #   → see PORTABILITY.md
 ```
+
+Skills are installed into every agent root the stack knows about — Claude Code
+(`~/.claude/skills`) and the cross-CLI `~/.agents/skills` used by Codex,
+OpenCode and Cursor — as links, not copies, so a `git pull` updates every CLI
+at once.
 
 The single source of the engineering method is [`AGENTS.md`](AGENTS.md) — every
 tool config references it instead of re-stating the rules, so the configs never

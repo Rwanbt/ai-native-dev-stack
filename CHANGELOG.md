@@ -8,6 +8,77 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `conventions.json` — machine-readable twin of the size/complexity thresholds
+  declared in `AGENTS.md`. Every enforcement point now reads it instead of
+  carrying its own copy of the numbers.
+- `scripts/validate_conventions.py` + a CI job — fails the build when
+  `AGENTS.md` and `conventions.json` disagree on any threshold.
+- `install.py` / `install.ps1` — cross-platform per-project installer.
+  `install.sh` is now a thin shim that locates Python and delegates.
+- `scripts/setup-agents.ps1` — Windows-native entry point for the global
+  installer; Git Bash and WSL are no longer required on Windows.
+- C/C++ scanner in `polyglot_scan.py` — function-level cyclomatic complexity,
+  length and god-function detection, with comment- and string-aware parsing.
+  C/C++ was previously the only major language the debt scanners ignored.
+- `hooks/lib/obsidian_client.js` — one Obsidian REST client shared by the two
+  memory hooks, which each carried a diverging copy.
+- `skills/ai-pilot/` — the AI-pilotability pattern skill, scrubbed of personal
+  paths and private project references.
+- CI now exercises both installers on Linux, macOS and Windows (dry-run, real
+  install, idempotent re-run, `--check`), and both memory hooks on all three.
+
+### Fixed
+
+- **LOC gate warnings never reached the agent.** The 500 and 800 LOC branches
+  built a `reason` string and then emitted a payload that did not contain it,
+  so only the 1500 blocking tier had any visible effect. Warnings now carry
+  `reason` like the blocking tier does.
+- **Convention thresholds were enforced at values `AGENTS.md` never declared.**
+  Cyclomatic complexity `>25 blocking` was implemented as `20`, the `>15 alert`
+  tier did not exist, and function size `>200 blocking` was not implemented at
+  all. All three ladders now come from `conventions.json` and are CI-verified.
+- **`session-end-save` could truncate `LOG.md`.** It read the log, concatenated
+  and PUT the whole file back; a failed read was indistinguishable from an
+  empty file, so a read failure rewrote the log with a single entry. It now
+  appends, which also removes the lost-update race between concurrent sessions.
+- **`session-end-save` ignored `OBSIDIAN_API_URL` on write** — the URL was
+  computed and then discarded in favour of a hardcoded host and port.
+- **Both memory hooks failed silently.** Every error path resolved to an empty
+  string, so an unreachable vault looked like a successful empty load. They now
+  report the failure and the endpoints they tried.
+- Memory hooks now try the plugin's default HTTPS endpoint (`27124`) before the
+  non-encrypted `27123`, which the plugin ships disabled.
+- **`install.sh` installed skills only into `.claude/skills/`**, so on OpenCode
+  or Codex they landed where the CLI never looks. The installer now writes to
+  every known agent root, and discovers skills from `skills/*/SKILL.md` instead
+  of a hardcoded list that silently went stale.
+- `install_agents.py` reported its own Windows junctions as unmanaged paths,
+  making `--check` fail on every Windows install it had performed.
+- `verify-ai-docs` TIER 9 only looked at `.claude/skills`, reporting "no
+  skills" on projects driven by another CLI.
+- OpenCode plugin adapter no longer hardcodes the LOC threshold (it reads
+  `conventions.json` at runtime) and no longer assumes `python3` exists, which
+  is false on a default Windows install.
+
+### Changed
+
+- **One implementation of the LOC rule.** `scripts/loc_gate.ps1` is merged into
+  `hooks/pretool-loc-gate/run_gate.js`, which now offers all three modes
+  (single file, `--staged`, `--all`). The CI job calls that same script, so CI
+  and the hook can no longer disagree about the limit.
+- `scripts/install-linux.py` → `scripts/install_agents.py`, no longer gated to
+  Linux; `setup-agents.sh` is a shim over it on every platform.
+- The Rust and JS scanners now share one size/complexity ladder and one secret
+  sweep instead of re-implementing both.
+- gstack is no longer installed by a 15-second prompt that defaulted to *yes*
+  when unattended. It is opt-in (`--with-gstack`), can be pinned
+  (`--gstack-ref`), and the resolved commit is recorded in `.stack-lock.json`.
+
+### Removed
+
+- `scripts/loc_gate.ps1` — merged into `run_gate.js` (recoverable via
+  `git log -S`).
+
 - `skills/commit-convention/` — Conventional Commits 1.0 enforcer with two
   complementary modes:
   - **Auto-suggest** — when the user says "commit", `/commit`, or has a

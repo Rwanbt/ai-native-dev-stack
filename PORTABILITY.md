@@ -27,9 +27,9 @@ config by hand, you have just created a fork that will rot.
 | `AGENTS.md` — the complete method (Layer 1) | `~/.claude/CLAUDE.md` — Layer 3 + `@AGENTS.md` include |
 | `routing-guide.md` — analysis/orchestration routing | Mavis `~/.mavis/agents/mavis/agent.md` — Layer 3 + method ref |
 | `hooks/` — universal hooks + per-agent install notes | Obsidian vault (`config.sh` paths, API key in env) |
-| `scripts/` — `setup-agents.sh`, `loc_gate.ps1`, `vault_sync*` | The anti-debt agent *link* (created by `setup-agents.sh`) |
+| `scripts/` — cross-platform installer + entry points, vault utilities | Managed global instructions and links created by `setup-agents.sh` |
 | `stack/agents/anti-debt/` — the debt agent + adapters | The hook *registrations* (per-agent, formats differ) |
-| `tools/ai_docs/`, `skills/`, `templates/`, `install.sh` | `tools/ai_docs/config.sh` (git-ignored, per-machine) |
+| `tools/ai_docs/`, `skills/`, `templates/`, `install.py`, `conventions.json` | `tools/ai_docs/config.sh` (git-ignored, per-machine) |
 
 ---
 
@@ -40,15 +40,22 @@ config by hand, you have just created a fork that will rot.
 git clone https://github.com/Rwanbt/ai-native-dev-stack.git
 cd ai-native-dev-stack
 
-# 2. Link the portable agents (anti-debt) into every detected agent root.
-#    Idempotent, OS-aware (symlink on Linux/macOS, junction on Windows).
+# 2. Install the global method, skills, agents and supported hooks.
+#    Idempotent links + managed instruction blocks, on every OS.
+#    Linux / macOS / Git Bash:
 bash scripts/setup-agents.sh
+#    Windows (PowerShell, no Git Bash needed):
+#    pwsh -NoProfile -File scripts/setup-agents.ps1
+#    Any OS, directly:
+#    python scripts/install_agents.py
 
 # 3. Wire the engineering method into each agent config (Layer 1 include) — see per-agent below.
 
 # 4. (Per project) install the AI-docs maintenance stack into a target repo:
 cd /path/to/your/project
 bash /path/to/ai-native-dev-stack/install.sh
+#    Windows: pwsh -NoProfile -File C:\path\to\ai-native-dev-stack\install.ps1
+#    Any OS:  python /path/to/ai-native-dev-stack/install.py
 ```
 
 Then set the machine-local values:
@@ -66,7 +73,7 @@ Then set the machine-local values:
    @/absolute/path/to/ai-native-dev-stack/AGENTS.md
    ```
    Keep only Layer 3 (personal/machine) and a Layer-2 appendix (gstack/graphify) in `CLAUDE.md` itself.
-2. **Anti-debt agent** — `scripts/setup-agents.sh` links it to `~/.claude/skills/anti-debt`. Activate by loading `@~/.claude/skills/anti-debt/AGENT.md` and running its tools (see [adapter](stack/agents/anti-debt/adapters/claude-code/README.md)). Note: `/skill anti-debt:...` does **not** work (Claude discovers skills flat).
+2. **Anti-debt agent** — `scripts/setup-agents.sh` (or `setup-agents.ps1`) installs a native `~/.claude/agents/anti-debt.md` adapter and exposes every anti-debt skill flat under `~/.claude/skills/`. On Windows, directory links fall back to junctions when symlink creation is denied.
 3. **Hooks** — register in `~/.claude/settings.json` (or project `.claude/settings.json`), absolute paths:
    ```json
    {
@@ -83,7 +90,7 @@ Then set the machine-local values:
 ### MiniMax (Mavis)
 
 1. **Method (Layer 1)** — Mavis reads its agent's `agent.md`. Reference `AGENTS.md` from it (or include its content) and keep only Mavis-specific Layer 3 there. Do **not** maintain a hand-ported copy of the rules — point at `AGENTS.md`.
-2. **Anti-debt agent** — `setup-agents.sh` links it to `~/.mavis/agents/anti-debt`. Run its tools directly (see [adapter](stack/agents/anti-debt/adapters/minimax-code/README.md)):
+2. **Anti-debt agent** — `setup-agents.sh` links it to `~/.mavis/agents/anti-debt` and installs the managed method block in the Mavis agent. Run its tools directly (see [adapter](stack/agents/anti-debt/adapters/minimax-code/README.md)):
    ```bash
    python3 ~/.mavis/agents/anti-debt/skills/debt-scan/tools/scan_code.py <repo>
    ```
@@ -97,13 +104,20 @@ Then set the machine-local values:
 
 ### Cursor
 
-- **Method** — Cursor reads `AGENTS.md` natively at the repo root (and in nested dirs). Cloning the repo into a project, or placing `AGENTS.md` at the project root, is enough. No include needed.
-- **Hooks / anti-debt** — run the anti-debt tools manually; Cursor has no SessionStart hook equivalent (use `.cursorrules` for any always-on note).
+- **Method** — Cursor reads `AGENTS.md` natively at the repo root. The Linux installer also exposes all skills through the shared `~/.agents/skills/` location.
+- **Hooks / anti-debt** — use Cursor's native hook configuration when available; hook protocols are not interchangeable with Claude settings. Run the anti-debt tools or shared skills directly.
 
 ### Codex
 
-- **Method** — Codex auto-loads `AGENTS.md` at the project root. Same as Cursor.
-- **Hooks** — `~/.codex/hooks.json`, same format as Claude Code.
+- **Method** — Codex auto-loads project `AGENTS.md`; the Linux installer adds a managed global `~/.codex/AGENTS.md` pointer and installs skills in `~/.agents/skills/`.
+- **Hooks** — use Codex-native hooks. Do not copy Claude hook JSON unchanged because event payloads and decisions differ.
+
+### OpenCode
+
+- **Method** — the Linux installer creates `~/.config/opencode/AGENTS.md`, which OpenCode loads globally.
+- **Skills / agent** — shared skills are linked under `~/.agents/skills/`; the `anti-debt` subagent is linked under `~/.config/opencode/agents/`.
+- **Hooks** — `~/.config/opencode/plugins/ai-native-dev-stack.ts` installs a native plugin. It blocks edits above 1500 LOC and regenerates AI summaries after edits without changing `opencode.json`.
+- Restart OpenCode after installation because rules, skills, agents, and plugins are loaded at startup.
 
 ---
 
@@ -113,8 +127,11 @@ Then set the machine-local values:
 # Method present and complete:
 grep -c "Senior engineering reflexes" AGENTS.md          # → 1
 
-# Agents linked:
-bash scripts/setup-agents.sh --dry-run                   # → "already linked correctly" per agent
+# Agents linked (any OS):
+python3 scripts/install_agents.py --check                 # → 0 issue
+
+# Declared conventions == enforced conventions:
+python3 scripts/validate_conventions.py                   # → all thresholds agree
 
 # Anti-debt runs through an agent path (Claude example):
 python3 ~/.claude/skills/anti-debt/skills/debt-scan/tools/scan_code.py .

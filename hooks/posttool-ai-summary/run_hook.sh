@@ -5,7 +5,7 @@
 
 INPUT=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-STACK_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+STACK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Chemin vers le script Python de AI Native Dev Stack
 UPDATE_SCRIPT="$STACK_ROOT/tools/ai_docs/update_on_edit.py"
