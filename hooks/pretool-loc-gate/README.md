@@ -2,9 +2,14 @@
 
 ## Objectif
 
-Bloquer ou alerter quand un fichier dépasse les seuils LOC définis dans le CLAUDE.md global.
+Bloquer ou alerter quand un fichier dépasse les seuils de taille déclarés dans
+`AGENTS.md` (section *Code structure*).
 
-## Seuils LOC (depuis CLAUDE.md global)
+## Seuils
+
+Les seuils ne sont **pas** écrits dans le script. Ils viennent de
+[`conventions.json`](../../conventions.json) à la racine du stack, dont la CI
+vérifie qu'il reste aligné sur `AGENTS.md` (`scripts/validate_conventions.py`).
 
 | Condition | Action |
 |-----------|--------|
@@ -12,29 +17,38 @@ Bloquer ou alerter quand un fichier dépasse les seuils LOC définis dans le CLA
 | > 800 LOC (fichier existant) | Warning — proposer extraction |
 | > 1500 LOC (tout fichier) | **BLOCK** — refactoring obligatoire |
 
+Les warnings émettent un champ `reason` au même titre que le blocage : l'agent
+reçoit toujours la raison, pas seulement un `metadata` muet.
+
+## Une seule implémentation
+
+`run_gate.js` — Node.js stdlib uniquement, aucun appel à un interpréteur
+spécifique à une plateforme. Fonctionne à l'identique sur Linux, macOS et
+Windows. `scripts/loc_gate.ps1` a été fusionné dedans et supprimé.
+
+## Trois modes
+
+```bash
+node run_gate.js <fichier>   # un fichier — contrat hook PreToolUse
+node run_gate.js --staged    # fichiers git staged — pre-commit
+node run_gate.js --all       # scan complet du dépôt courant
+```
+
+En mode `--staged` et `--all`, seules les extensions listées dans
+`conventions.json > scan_extensions` sont examinées, en excluant
+`conventions.json > exclude_dirs`.
+
 ## Comportement par agent
 
-### Mavis (PreToolUse)
-
-Retourne `{"_abort":{"reason":"..."}}` pour bloquer l'outil si > 1500 LOC.
-
-### Claude Code / Codex / Cursor
-
-Affiche un warning dans la sortie du hook.
-Exit code 1 si > 1500 LOC (bloque le hook mais pas l'outil dans certains cas).
+| Agent | Blocage | Warning |
+|---|---|---|
+| Mavis (PreToolUse) | `{"_abort":{"reason":"..."}}` | `{"reason":"..."}` |
+| Claude Code / Codex / Cursor / OpenCode | exit 1 + `reason` | exit 0 + `reason` |
 
 ## Installation
 
-### Mavis (PreToolUse gate)
+### Claude Code / Codex / OpenCode
 
-```powershell
-# Créer via CLI ou fichier:
-# C:\Users\barat\.mavis\agents\mavis\hooks\pretool-loc-gate.md
-```
-
-### Claude Code / Codex
-
-Ajouter dans `hooks.json`:
 ```json
 {
   "hooks": {
@@ -44,7 +58,7 @@ Ajouter dans `hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node <chemin>/pretool-loc-gate/run.js"
+            "command": "node /CHEMIN/ABSOLU/hooks/pretool-loc-gate/run_gate.js"
           }
         ]
       }
@@ -53,8 +67,14 @@ Ajouter dans `hooks.json`:
 }
 ```
 
-## Scripts
+### Pre-commit (tout OS)
 
-- `run_gate.sh` — bash (Linux/macOS/Git Bash)
-- `run_gate.ps1` — PowerShell (Windows)
-- `run_gate.js` — Node.js (universel)
+```bash
+# .git/hooks/pre-commit
+node /CHEMIN/ABSOLU/hooks/pretool-loc-gate/run_gate.js --staged || exit 1
+```
+
+### Mavis
+
+Déclarer le hook dans `~/.mavis/agents/mavis/hooks/pretool-loc-gate.md` en
+pointant sur la même commande `node`.

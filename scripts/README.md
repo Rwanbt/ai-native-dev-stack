@@ -26,32 +26,21 @@ pwsh -NoProfile -File 'D:/App/ai-native-dev-stack/scripts/vault_sync_once_daily.
 Script de sync effectif (appelé par vault_sync_once_daily.ps1).
 État actuel: placeholder — le vault `IA_Dev_Brain` est local uniquement (hors Git).
 
-## loc_gate.ps1
+## loc_gate.ps1 — supprimé
 
-Gate LOC pour fichiers source — vérifie contre les seuils CLAUDE.md.
+Fusionné dans `hooks/pretool-loc-gate/run_gate.js`, seule implementation de la
+regle LOC. Node stdlib, identique sur Linux/macOS/Windows, trois modes :
 
-**Usage:**
-```powershell
-# Check un fichier
-pwsh -NoProfile -File scripts/loc_gate.ps1 -FilePath "src/main.rs"
-
-# Check fichiers git staged
-pwsh -NoProfile -File scripts/loc_gate.ps1 -Staged
-
-# Check tous les fichiers source (scan)
-pwsh -NoProfile -File scripts/loc_gate.ps1
+```bash
+node hooks/pretool-loc-gate/run_gate.js <fichier>   # un fichier (hook PreToolUse)
+node hooks/pretool-loc-gate/run_gate.js --staged    # fichiers git staged (pre-commit)
+node hooks/pretool-loc-gate/run_gate.js --all       # scan complet du depot
 ```
 
-**Seuils:**
-| Condition | Action |
-|-----------|--------|
-| > 500 LOC (nouveau) | Warning — proposer décomposition |
-| > 800 LOC (existant) | Warning — proposer extraction |
-| > 1500 LOC | **ERROR** — refactoring obligatoire |
+Les seuils ne sont plus ecrits dans le script : ils viennent de `conventions.json`
+a la racine du stack, que la CI maintient aligne sur `AGENTS.md`.
 
-**Intégration pre-commit:**
-```powershell
-# Dans .git/hooks/pre-commit
-pwsh -NoProfile -File D:/App/ai-native-dev-stack/scripts/loc_gate.ps1 -Staged
-if ($LASTEXITCODE -ne 0) { exit 1 }
+**Integration pre-commit** (`.git/hooks/pre-commit`, tout OS) :
+```bash
+node /chemin/vers/ai-native-dev-stack/hooks/pretool-loc-gate/run_gate.js --staged || exit 1
 ```
