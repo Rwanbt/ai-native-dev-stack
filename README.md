@@ -368,8 +368,9 @@ cp tools/ai_docs/config.sh.example your-project/tools/ai_docs/config.sh
 # 5. Generate all AI_SUMMARY.md files
 python tools/ai_docs/generate_all.py
 
-# 6. Verify the full stack
-# In Claude Code: /verify-ai-docs
+# 6. Verify the full stack — in any agent that loaded the skills
+#    (Claude Code, Codex, OpenCode, Cursor):
+#    /verify-ai-docs
 ```
 
 ### For a new machine / new contributor

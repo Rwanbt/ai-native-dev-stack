@@ -136,8 +136,8 @@ python3 scripts/validate_conventions.py                   # → all thresholds a
 # Anti-debt runs through an agent path (Claude example):
 python3 ~/.claude/skills/anti-debt/skills/debt-scan/tools/scan_code.py .
 
-# AI-docs stack in a project:
-# In Claude Code: /verify-ai-docs  → OPERATIONAL
+# AI-docs stack in a project — in any agent that loaded the skills:
+#   /verify-ai-docs  → OPERATIONAL
 ```
 
 A correct transfer means: each agent loads `AGENTS.md` (Layer 1), the anti-debt

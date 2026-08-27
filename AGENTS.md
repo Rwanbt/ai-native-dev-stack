@@ -26,10 +26,13 @@ Own the result beyond the edit — local changes have system-level consequences.
 
 ## Error handling
 
+This is the single statement of the error-handling policy. Other sections point
+here rather than restating it.
+
 - Never swallow errors silently: no empty `catch {}`, no ignored `Result`, no `_ =`
-- **Rust**: `?`, `map_err()`, or `anyhow::bail!` — `unwrap()` only with `// SAFETY: [proven reason]`
-- **C++**: `std::optional`/`std::expected` over exceptions in hot paths; never `catch(...) {}`
-- At system boundaries (I/O, HTTP, user input, external parsing): always handle explicitly
+- **Rust**: `?`, `map_err()`, or `anyhow::bail!` — `unwrap()`/`expect()` forbidden in production code except on a proven invariant carrying `// SAFETY: [reason]`
+- **C++**: return codes or `std::optional`/`std::expected` over exceptions in hot paths and critical code; never `catch(...) {}`
+- At system boundaries (I/O, HTTP, network, user input, external parsing): always handle explicitly
 - Internal trusted boundaries may `assert`/`debug_assert` in debug, panic in Rust
 
 ---
@@ -37,9 +40,9 @@ Own the result beyond the edit — local changes have system-level consequences.
 ## Naming & comments
 
 - **Language**: English everywhere — code, comments, commits, PR descriptions. One language per repo.
-- **Names**: explicit over short — `processAudioFrame()` > `process()`, `userEmailAddress` > `email`
+- **Names**: explicit over short — `processAudioFrame()` > `process()`, `userEmailAddress` > `email`. One term per concept across the codebase.
 - **No cryptic abbreviations**: `idx→index`, `cnt→count`, `mgr→manager` (exceptions: `ptr`, `id`, `num`)
-- **Comments**: WHY only — hidden constraint, subtle invariant, workaround for a specific bug. Never describe WHAT the code does.
+- **Comments**: WHY only — hidden constraint, subtle invariant, workaround for a specific bug. Never describe WHAT the code does, and never to explain confusing code: simplify the code instead. (One exception, in §Senior reflexes: public interface contracts.)
 - **Dead code**: delete immediately, never comment out. `git log -S "functionName"` recovers any deleted code.
 
 ---
@@ -81,9 +84,8 @@ Own the result beyond the edit — local changes have system-level consequences.
 <!-- Distilled from Clean Code — Robert C. Martin -->
 
 - Preserve behavior, write for the next reader, leave touched code cleaner within scope.
-- Precise names with one term per concept; split boolean flags and mixed abstraction levels out of functions.
+- Split boolean flags and mixed abstraction levels out of functions. (Naming itself: see §Naming & comments.)
 - Separate commands from queries. No hidden side effects.
-- Comments only for rationale or contracts — never to explain confusing code (simplify the code instead).
 - When touching code: remove the smell most likely to make the next change risky or unclear.
 
 ---
@@ -224,7 +226,7 @@ The rules above are the always-on core. The reflexes below are the full senior p
 
 ### Safety & static analysis
 
-- **Error handling policy** — never swallow silently. Rust: `unwrap()`/`expect()` forbidden in prod except a proven invariant with `// SAFETY:`; prefer `?`/`map_err()`. C++: prefer return codes / `std::optional`/`std::expected` in critical code; never empty `catch(...)`. Errors at system boundaries (I/O, network, user parsing) always handled explicitly.
+- **Error handling policy** — see §Error handling above. It is stated once, there.
 - **RAII (C++)** — no naked `new`/`delete`; `make_unique`/`make_shared`/stack. FFI opaque handles wrapped in a RAII type immediately (no naked handle circulating).
 - **`using namespace` banned at file scope** — in headers (0 exceptions, fully qualify) and production `.cpp` (function scope or explicit alias `namespace fs = std::filesystem;` only).
 - **Sanitizers** in dedicated CI builds: ASan (use-after-free, overflow) + UBSan (signed overflow, null deref) can combine; TSan (data races) separate build; MSan (uninit reads). Rust FFI modules: `cargo miri test` (nightly) catches UB at the `extern "C"` boundary that C++ sanitizers miss.

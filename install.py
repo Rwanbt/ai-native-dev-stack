@@ -65,6 +65,16 @@ PROJECT_SKILL_ROOTS = [
 
 GSTACK_URL = "https://github.com/garrytan/gstack.git"
 
+# gstack publishes no git tags — versions live only in commit messages, and the
+# default branch moves daily. Tracking it means two students installing a week
+# apart get different environments, which is unusable for teaching.
+#
+# So the default is a commit that was cloned and inspected before being written
+# here (setup script present, 61 SKILL.md files, self-described v1.71.0.0).
+# Override with --gstack-ref, or set this to None to track the default branch.
+# When you move it, verify the new commit the same way and say so here.
+GSTACK_DEFAULT_REF = "394db326f2d3"  # v1.71.0.0 — verified 2026-08-27
+
 
 class Installer:
     def __init__(self, project_root: Path, dry_run: bool) -> None:
@@ -289,8 +299,9 @@ def parse_args() -> argparse.Namespace:
     gstack.add_argument("--with-gstack", dest="gstack", action="store_const", const="yes",
                         help="install gstack (third-party code from GitHub)")
     gstack.add_argument("--skip-gstack", dest="gstack", action="store_const", const="no")
-    parser.add_argument("--gstack-ref", default=None,
-                        help="commit or tag to pin gstack to (reproducible installs)")
+    parser.add_argument("--gstack-ref", default=GSTACK_DEFAULT_REF,
+                        help=f"commit to pin gstack to (default: {GSTACK_DEFAULT_REF}); "
+                             "pass 'main' to track the default branch instead")
     parser.add_argument("--dry-run", action="store_true", help="show actions, change nothing")
     parser.set_defaults(gstack="no")
     return parser.parse_args()
