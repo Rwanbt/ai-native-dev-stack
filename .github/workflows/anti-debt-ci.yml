@@ -4,9 +4,14 @@ on:
   push:
     paths:
       - 'stack/agents/anti-debt/**'
+      - '.github/workflows/anti-debt-ci.yml'
   pull_request:
     paths:
       - 'stack/agents/anti-debt/**'
+      - '.github/workflows/anti-debt-ci.yml'
+  # Manual trigger: the path filters above mean a change to this workflow
+  # itself never ran it, so edits here shipped unverified.
+  workflow_dispatch:
 
 jobs:
   validate-schemas:
