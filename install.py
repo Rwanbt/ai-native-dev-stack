@@ -97,14 +97,36 @@ class Installer:
         return True
 
     def copy_tree(self, source: Path, target: Path) -> None:
-        """Copy a directory, replacing the target's tracked contents."""
+        """Mirror a stack-owned directory into the project.
+
+        Prunes files the source no longer has. A plain copy leaves a file
+        deleted upstream sitting in every project that installed it earlier —
+        the same silent drift this stack exists to prevent. These directories
+        are entirely stack-managed, so nothing user-authored is at risk.
+        """
         if not source.is_dir():
             return
         self.mkdir(target)
+
+        wanted: set[Path] = set()
         for item in source.rglob("*"):
             if item.is_dir():
                 continue
-            self.copy(item, target / item.relative_to(source))
+            relative = item.relative_to(source)
+            wanted.add(relative)
+            self.copy(item, target / relative)
+
+        if not target.is_dir():
+            return
+        for existing in sorted(target.rglob("*"), reverse=True):
+            if existing.is_dir():
+                if not any(existing.iterdir()) and not self.dry_run:
+                    existing.rmdir()
+                continue
+            if existing.relative_to(target) not in wanted:
+                self.info(f"pruned {existing.relative_to(self.project)} (removed upstream)")
+                if not self.dry_run:
+                    existing.unlink()
 
     # --- steps ------------------------------------------------------------
 

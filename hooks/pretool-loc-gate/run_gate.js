@@ -161,6 +161,20 @@ function main() {
   }
 
   // Single-file mode — the PreToolUse hook contract.
+  // The rule is about source structure (AGENTS.md "Code structure"), so a long
+  // CHANGELOG, dataset or generated file must not block an edit. Reported in
+  // metadata rather than skipped silently, so an unexpected extension is visible.
+  if (!hasScannedExtension(arg)) {
+    console.log(JSON.stringify({
+      metadata: {
+        locGate: 'skipped',
+        file: path.resolve(arg),
+        reason_skipped: `extension ${path.extname(arg) || '(none)'} is not in conventions.json > scan_extensions`,
+      },
+    }));
+    return;
+  }
+
   const r = checkFile(arg);
   const metadata = { locGate: r.level, file: r.file, lines: r.lines };
   if (r.threshold) metadata.threshold = r.threshold;

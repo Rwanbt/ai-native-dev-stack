@@ -109,6 +109,19 @@ jobs:
           test -d "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs"
           test -d "$HOME/stack-ci/proj/.agents/skills/verify-ai-docs"
 
+      - name: A re-install prunes files removed upstream
+        shell: bash
+        run: |
+          set -e
+          # A plain copy leaves a file deleted upstream sitting in every
+          # project that installed it earlier — the drift this stack exists
+          # to prevent.
+          touch "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs/OBSOLETE.md"
+          python install.py --project-root "$HOME/stack-ci/proj" --skip-gstack
+          if [ -f "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs/OBSOLETE.md" ]; then
+            echo "a file removed upstream survived a re-install"; exit 1
+          fi
+
   vault-sync:
     name: Vault sync (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -233,6 +246,13 @@ jobs:
           # A blocking file must abort and exit non-zero.
           if node "$GATE" big.py > gate-out.json; then echo "expected exit 1"; exit 1; fi
           grep -q '_abort' gate-out.json
+
+          # The rule is about source structure: a long CHANGELOG or dataset must
+          # not block an edit, and the skip must be visible rather than silent.
+          node -e "require('fs').writeFileSync('big.md','line\n'.repeat(2000))"
+          node "$GATE" big.md > md-out.json
+          grep -q '"locGate":"skipped"' md-out.json
+          grep -q 'scan_extensions' md-out.json
 
       - name: Memory hooks — must report failure, never fake success
         shell: bash
