@@ -1,28 +1,36 @@
-# vault_sync_once_daily.ps1
-# Sync vault Obsidian une fois par jour (première session de la journee)
-# Copie depuis D:\scripts\vault_sync_once_daily.ps1
-# Chemin du vault: D:\Documents\Obsidian\IA_Dev_Brain
+# vault_sync_once_daily.ps1 — Windows entry point for the once-a-day vault sync.
+#
+# The implementation is scripts/vault_sync_once_daily.py. The sentinel is
+# written only when the sync actually succeeded, so a failed backup does not
+# suppress the retry for the rest of the day.
+#
+# Usage:
+#   pwsh -NoProfile -File scripts/vault_sync_once_daily.ps1
+#   pwsh -NoProfile -File scripts/vault_sync_once_daily.ps1 -Vault 'D:\...' -Force
 
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SCRIPT_SYNC = Join-Path $SCRIPT_DIR "vault_sync.ps1"
-$SENTINEL = Join-Path $SCRIPT_DIR "vault_last_sync_date.txt"
-$TODAY = (Get-Date -Format "yyyy-MM-dd")
+param(
+    [string]$Vault,
+    [switch]$Force
+)
 
-# Skip si deja synchronise aujourd'hui
-if ((Test-Path $SENTINEL) -and ((Get-Content $SENTINEL -Raw).Trim() -eq $TODAY)) {
-    Write-Host "vault: deja synchronise aujourd'hui ($TODAY) — skip"
-    exit 0
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$implementation = Join-Path $scriptDir "vault_sync_once_daily.py"
+
+$python = $null
+foreach ($candidate in @("python", "python3", "py")) {
+    if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+    & $candidate -c "import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) { $python = $candidate; break }
 }
-
-# Premiere session de la journee → sync
-if (Test-Path $SCRIPT_SYNC) {
-    & $SCRIPT_SYNC
-} else {
-    Write-Host "vault: vault_sync.ps1 introuvable — skip"
+if (-not $python) {
+    Write-Error "No working Python 3.8+ found — vault NOT synced."
     exit 1
 }
 
-# Marquer la date apres sync reussi
-Set-Content -Path $SENTINEL -Value $TODAY
-Write-Host "vault: synchronise ($TODAY)"
-exit 0
+$arguments = @($implementation)
+if ($Vault) { $arguments += @("--vault", $Vault) }
+if ($Force) { $arguments += "--force" }
+
+$env:PYTHONIOENCODING = "utf-8"
+& $python @arguments
+exit $LASTEXITCODE

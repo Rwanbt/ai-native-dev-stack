@@ -109,6 +109,99 @@ jobs:
           test -d "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs"
           test -d "$HOME/stack-ci/proj/.agents/skills/verify-ai-docs"
 
+  vault-sync:
+    name: Vault sync (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build a throwaway vault and bare remote
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/remote" "$RUNNER_TEMP/vault"
+          git init -q --bare "$RUNNER_TEMP/remote"
+          cd "$RUNNER_TEMP/vault"
+          git init -q -b master .
+          git config user.email ci@example.com
+          git config user.name CI
+          echo "# INDEX" > INDEX.md
+          git add -A && git commit -qm init
+          git remote add origin "$RUNNER_TEMP/remote"
+          git push -q -u origin master
+          git remote set-head origin -a
+
+      - name: Clean vault reports "already in sync", and is idempotent
+        shell: bash
+        run: |
+          set -e
+          python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault" | tee /tmp/a.txt
+          grep -q "already in sync" /tmp/a.txt
+          python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault" | grep -q "already in sync"
+
+      - name: A new note is committed and the push is verified
+        shell: bash
+        run: |
+          set -e
+          echo "note" > "$RUNNER_TEMP/vault/note.md"
+          python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault" | grep -q "pushed to the remote"
+          python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault" | grep -q "already in sync"
+
+      - name: A real credential blocks the push; a documented example does not
+        shell: bash
+        run: |
+          set -e
+          echo 'AKIAQ7B3CDEFGHIJKLMN' > "$RUNNER_TEMP/vault/real.md"
+          if python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault"; then
+            echo "expected the credential guard to block"; exit 1
+          fi
+          test -z "$(git -C "$RUNNER_TEMP/vault" diff --cached --name-only)"
+          rm "$RUNNER_TEMP/vault/real.md"
+          echo 'AKIAIOSFODNN7EXAMPLE is the AWS docs key' > "$RUNNER_TEMP/vault/doc.md"
+          python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault" | grep -q "pushed to the remote"
+
+      - name: A side branch is refused
+        shell: bash
+        run: |
+          set -e
+          git -C "$RUNNER_TEMP/vault" checkout -q -b side
+          if python scripts/vault_sync.py --vault "$RUNNER_TEMP/vault"; then
+            echo "expected the branch guard to block"; exit 1
+          fi
+          git -C "$RUNNER_TEMP/vault" checkout -q master
+
+      - name: A failed sync does not mark the day as done
+        shell: bash
+        run: |
+          set -e
+          # Force a failure: put the vault back on a side branch.
+          git -C "$RUNNER_TEMP/vault" checkout -q -b side2
+          export OBSIDIAN_SYNC_STATE="$RUNNER_TEMP/sentinel.txt"
+          rm -f "$OBSIDIAN_SYNC_STATE"
+          if python scripts/vault_sync_once_daily.py --vault "$RUNNER_TEMP/vault"; then
+            echo "expected once-daily to propagate the failure"; exit 1
+          fi
+          if [ -f "$OBSIDIAN_SYNC_STATE" ]; then
+            echo "sentinel written despite a failed sync — retries suppressed"; exit 1
+          fi
+          git -C "$RUNNER_TEMP/vault" checkout -q master
+          python scripts/vault_sync_once_daily.py --vault "$RUNNER_TEMP/vault"
+          test -f "$OBSIDIAN_SYNC_STATE"
+
+      - name: The lock is never left in the working tree
+        shell: bash
+        run: |
+          set -e
+          test -z "$(git -C "$RUNNER_TEMP/vault" ls-files | grep -i lock || true)"
+          test -z "$(git -C "$RUNNER_TEMP/vault" status --porcelain)"
+
   hooks:
     name: Hooks run on every OS
     runs-on: ${{ matrix.os }}

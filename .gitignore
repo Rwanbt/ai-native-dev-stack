@@ -26,3 +26,6 @@ calibration_report.md
 # Build artifacts (Rust test fixtures, etc.)
 **/target/
 .gstack/
+
+# Vault sync sentinel (per-machine state, never committed)
+scripts/vault_last_sync_date.txt

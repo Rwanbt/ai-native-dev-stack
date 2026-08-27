@@ -56,23 +56,31 @@ as `20`, and function size `>200 blocking` was never implemented at all.
 Keeps the inlined copy of the engineering method in sync with `AGENTS.md` for
 tools that cannot follow an `@include`.
 
-## vault_sync_once_daily.ps1 / vault_sync.ps1
+## vault_sync.py — Obsidian vault sync
 
-Obsidian vault sync, run once per day at first session.
+The single implementation; `vault_sync.ps1`, `vault_sync.sh` and
+`vault_sync_once_daily.ps1` are shims that locate Python and delegate.
 
-> **Status: placeholder.** `vault_sync.ps1` in this repo does not sync
-> anything — it prints a notice and exits 0. A working per-machine version
-> exists outside this repo. Do not rely on the committed copy for backups
-> until it is replaced by a real, parameterised implementation.
->
-> Known defect to fix at the same time: `vault_sync_once_daily.ps1` writes its
-> "synced today" sentinel unconditionally, including when the sync reported a
-> divergence and pushed nothing — which disables retries for the rest of the
-> day.
-
-```powershell
-pwsh -NoProfile -File scripts/vault_sync_once_daily.ps1
+```bash
+python scripts/vault_sync.py --vault /path/to/vault
+python scripts/vault_sync.py --dry-run          # report, change nothing
+python scripts/vault_sync_once_daily.py         # at most one sync per day
 ```
+
+Vault path resolution: `--vault`, else `$OBSIDIAN_VAULT`, else an error.
+Sentinel location: `$OBSIDIAN_SYNC_STATE`, else next to the script.
+
+### What it guarantees
+
+| Guarantee | Why it exists |
+|---|---|
+| Never reports a success it has not verified | The push is confirmed by re-reading the remote ref afterwards. The previous version printed "pushed to GitHub" after a no-op, and 13 days of notes were never backed up. |
+| Pushes the branch that is checked out | The previous version pushed a hardcoded `master`, so a vault sitting on any other branch was silently never pushed. |
+| Refuses a non-primary branch | A vault has no reason to carry branches, and a side branch is exactly how the backup stopped working. Override with `--allow-branch`. |
+| Refuses to push credentials | Staged content is scanned with the stack's shared `SECRET_PATTERNS` before any commit. |
+| Stops on divergence, exits non-zero | Guessing a merge on someone's second brain is not acceptable. |
+| Single writer | A lock in `.git/` — never in the working tree, or the vault is permanently dirty and the lock gets committed with the notes. |
+| A failed sync does not mark the day done | `vault_sync_once_daily.py` writes its sentinel only on exit 0. The previous version wrote it unconditionally, so a failure suppressed retries until the next day. |
 
 ## The LOC gate lives elsewhere
 
