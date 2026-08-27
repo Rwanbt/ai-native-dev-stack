@@ -1,111 +1,65 @@
 /**
- * session-end-save.js — SessionEnd Memory Saver
+ * run.js — SessionEnd memory saver.
  *
- * Appende une entrée LOG.md à la fin de session.
- * Node.js stdlib uniquement — zéro dépendance externe.
+ * Appends one entry to LOG.md in the Obsidian vault.
+ * Node.js stdlib only — zero external dependency.
  *
  * Usage: node run.js
- * Variables d'environnement:
- *   SESSION_ID - ID de session (optionnel)
- *   PROJECT_NAME - Nom du projet actif (optionnel)
- *   SESSION_SUMMARY - Résumé de session (optionnel)
+ * Environment:
+ *   OBSIDIAN_API_KEY  - Local REST API key (required; without it, no-op)
+ *   OBSIDIAN_API_URL  - override endpoint (default: https://127.0.0.1:27124)
+ *   SESSION_ID        - session id (optional)
+ *   PROJECT_NAME      - active project name (optional)
+ *   SESSION_SUMMARY   - session summary (optional)
+ *
+ * Appends via the API's POST verb rather than read-modify-write. The previous
+ * implementation read LOG.md, concatenated, and PUT the whole file back —
+ * which truncated the log to a single entry whenever the read failed (a failed
+ * read and an empty file were indistinguishable), and lost entries whenever
+ * two sessions ended at once.
  */
 
-const http = require('http');
-const fs = require('fs');
 const path = require('path');
-
-// Obsidian Local REST API key — read from the environment, never hardcoded.
-// Set OBSIDIAN_API_KEY in your shell/agent config (see README.md).
-const API_KEY = process.env.OBSIDIAN_API_KEY || '';
-const VAULT_BASE = process.env.OBSIDIAN_API_URL || 'http://127.0.0.1:27123';
+const { appendVaultFile, configured } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
 
 const SESSION_ID = process.env.SESSION_ID || 'unknown';
 const PROJECT_NAME = process.env.PROJECT_NAME || '';
 const SUMMARY = process.env.SESSION_SUMMARY || '';
 
-/**
- * Lit un fichier du vault via l'API REST locale.
- */
-async function readVaultFile(vaultPath) {
-  return new Promise((resolve) => {
-    const url = `${VAULT_BASE}/vault/?path=${encodeURIComponent(vaultPath)}`;
-    const options = { headers: { 'Authorization': `Bearer ${API_KEY}` } };
-    http.get(url, options, (res) => {
-      if (res.statusCode !== 200) { resolve(''); return; }
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve(data));
-      res.on('error', () => resolve(''));
-    }).on('error', () => resolve(''));
-  });
-}
+const LOG_PATH = process.env.OBSIDIAN_LOG_PATH || 'LOG.md';
 
-/**
- * Écrit un fichier dans le vault via l'API REST locale.
- */
-async function writeVaultFile(vaultPath, content) {
-  return new Promise((resolve) => {
-    const url = `${VAULT_BASE}/vault/`;
-    const body = JSON.stringify({
-      path: vaultPath,
-      content: content,
-    });
-    const options = {
-      hostname: '127.0.0.1',
-      port: 27123,
-      path: '/vault/',
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
-    const req = http.request(options, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve({ status: res.statusCode, data }));
-    });
-    req.on('error', (err) => resolve({ status: 0, error: err.message }));
-    req.write(body);
-    req.end();
-  });
-}
-
-/**
- * Formate la date ISO en YYYY-MM-DD HH:MM.
- */
-function formatDate() {
+/** YYYY-MM-DD HH:MM in local time (the vault is a human-facing journal). */
+function formatStamp() {
   const now = new Date();
-  return now.toISOString().replace('T', ' ').substring(0, 16);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} `
+       + `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function emit(metadata) {
+  console.log(JSON.stringify({ metadata }));
 }
 
 async function main() {
-  try {
-    const stamp = formatDate();
-    const projectLine = PROJECT_NAME ? ` — [${PROJECT_NAME}]` : '';
-    const summaryLine = SUMMARY ? `\n${SUMMARY}` : '';
-
-    // Construire l'entrée LOG
-    const logEntry = `\n## ${stamp}${projectLine}${summaryLine}\n\nSession: ${SESSION_ID}\n`;
-
-    // Lire le LOG existant
-    const existingLog = await readVaultFile('LOG.md');
-    const newLog = existingLog
-      ? existingLog.trimEnd() + logEntry
-      : `# LOG — Journal de session\n\n${logEntry.trimStart()}`;
-
-    await writeVaultFile('LOG.md', newLog);
-
-    console.log(JSON.stringify({
-      metadata: { sessionSaved: stamp, project: PROJECT_NAME }
-    }));
-  } catch (err) {
-    console.log(JSON.stringify({
-      metadata: { sessionSaveError: err.message }
-    }));
+  if (!configured()) {
+    emit({ sessionSaveSkipped: 'OBSIDIAN_API_KEY not set' });
+    return;
   }
+
+  const stamp = formatStamp();
+  const projectLine = PROJECT_NAME ? ` — [${PROJECT_NAME}]` : '';
+  const summaryLine = SUMMARY ? `\n${SUMMARY}` : '';
+  const entry = `\n## ${stamp}${projectLine}${summaryLine}\n\nSession: ${SESSION_ID}\n`;
+
+  const res = await appendVaultFile(LOG_PATH, entry);
+
+  if (!res.ok) {
+    // Report the failure; never fall back to overwriting the log.
+    emit({ sessionSaveError: res.error, logPath: LOG_PATH });
+    return;
+  }
+
+  emit({ sessionSaved: stamp, project: PROJECT_NAME, logPath: LOG_PATH });
 }
 
-main();
+main().catch((err) => emit({ sessionSaveError: err.message }));

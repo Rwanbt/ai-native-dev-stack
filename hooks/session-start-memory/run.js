@@ -1,75 +1,67 @@
 /**
- * session-start-memory.js — SessionStart Memory Loader
+ * run.js — SessionStart memory loader.
  *
- * Charge le contexte de session depuis le vault Obsidian local.
- * Node.js stdlib uniquement — zéro dépendance externe.
+ * Loads session context from the Obsidian vault via the Local REST API.
+ * Node.js stdlib only — zero external dependency.
  *
  * Usage: node run.js
- * Retourne JSON sur stdout: { userMemory, handoff, lastSession }
+ * Environment:
+ *   OBSIDIAN_API_KEY  - Local REST API key (required; without it, no-op)
+ *   OBSIDIAN_API_URL  - override endpoint (default: https://127.0.0.1:27124)
+ *
+ * Emits JSON on stdout: { metadata: { sessionContext: {...} } }
+ *
+ * A failed read is reported as such — it is never silently reported as
+ * "loaded, but empty", which is what made a misconfigured endpoint look like
+ * a working hook.
  */
 
-const https = require('https');
-const http = require('http');
-const fs = require('fs');
 const path = require('path');
+const { readVaultFile, configured, ENDPOINTS } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
 
-// Obsidian Local REST API key — read from the environment, never hardcoded.
-// Set OBSIDIAN_API_KEY in your shell/agent config (see README.md).
-const API_KEY = process.env.OBSIDIAN_API_KEY || '';
-const VAULT_BASE = process.env.OBSIDIAN_API_URL || 'http://127.0.0.1:27123';
+const USER_MEMORY_PATH = process.env.OBSIDIAN_USER_MEMORY_PATH || 'memory/user.md';
+const HANDOFF_PATH = process.env.OBSIDIAN_HANDOFF_PATH || '_global/handoff.md';
 
-/**
- * Lit un fichier du vault Obsidian via l'API REST locale.
- * @param {string} vaultPath - Chemin relatif dans le vault (ex: "_global/handoff.md")
- * @returns {Promise<string>} Contenu du fichier ou chaîne vide
- */
-async function readVaultFile(vaultPath) {
-  return new Promise((resolve) => {
-    const url = `${VAULT_BASE}/vault/?path=${encodeURIComponent(vaultPath)}`;
-    const options = {
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
-    };
-    http.get(url, options, (res) => {
-      if (res.statusCode !== 200) {
-        resolve('');
-        return;
-      }
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-      res.on('error', () => resolve(''));
-    }).on('error', () => resolve(''));
-  });
+/** Keep the first `maxLines` non-blank lines of a markdown file. */
+function extractSummary(content, maxLines) {
+  if (!content) return '';
+  return content.split('\n').filter((l) => l.trim()).slice(0, maxLines).join('\n');
 }
 
-/**
- * Extrait un résumé depuis un fichier markdown (N premières lignes).
- * @param {string} content
- * @param {number} maxLines
- */
-function extractSummary(content, maxLines = 20) {
-  if (!content) return '(aucun contenu)';
-  const lines = content.split('\n').filter(l => l.trim());
-  return lines.slice(0, maxLines).join('\n');
+function emit(sessionContext) {
+  console.log(JSON.stringify({ metadata: { sessionContext } }));
 }
 
 async function main() {
-  try {
-    const [userMemory, handoff] = await Promise.all([
-      readVaultFile('memory/user.md'),
-      readVaultFile('_global/handoff.md'),
-    ]);
-
-    const result = {
-      userMemory: extractSummary(userMemory, 30),
-      handoff: extractSummary(handoff, 30),
-      loaded: !!(userMemory || handoff),
-    };
-
-    console.log(JSON.stringify({ metadata: { sessionContext: result } }));
-  } catch (err) {
-    console.log(JSON.stringify({ metadata: { sessionContext: { error: err.message } } }));
+  if (!configured()) {
+    emit({ loaded: false, skipped: 'OBSIDIAN_API_KEY not set' });
+    return;
   }
+
+  const [userMemory, handoff] = await Promise.all([
+    readVaultFile(USER_MEMORY_PATH),
+    readVaultFile(HANDOFF_PATH),
+  ]);
+
+  // Distinguish "unreachable vault" from "vault reachable, notes absent".
+  if (!userMemory.ok && !handoff.ok) {
+    emit({
+      loaded: false,
+      error: userMemory.error || handoff.error,
+      triedEndpoints: ENDPOINTS,
+    });
+    return;
+  }
+
+  emit({
+    userMemory: extractSummary(userMemory.body, 30),
+    handoff: extractSummary(handoff.body, 30),
+    loaded: Boolean(userMemory.body || handoff.body),
+    missing: [
+      userMemory.ok ? null : USER_MEMORY_PATH,
+      handoff.ok ? null : HANDOFF_PATH,
+    ].filter(Boolean),
+  });
 }
 
-main();
+main().catch((err) => emit({ loaded: false, error: err.message }));
