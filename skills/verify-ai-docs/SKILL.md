@@ -42,7 +42,9 @@ OBSIDIAN_MEMORY_FILE="${OBSIDIAN_MEMORY_FILE:-$OBSIDIAN_PROJECT_DIR/_memory/memo
 OBSIDIAN_LOG_FILE="${OBSIDIAN_LOG_FILE:-LOG.md}"
 CLAUDE_MEMORY_ROOT="${CLAUDE_MEMORY_ROOT:-$HOME/.claude/projects}"
 CLAUDE_MEMORY_KEY="${CLAUDE_MEMORY_KEY:-}"
-SKILLS_DIR="${SKILLS_DIR:-.claude/skills}"
+# Every agent root the stack installs into. Checking only .claude/skills made
+# this tier report "no skills" on a project driven by OpenCode or Codex.
+SKILLS_DIRS="${SKILLS_DIRS:-.claude/skills .agents/skills}"
 ```
 
 **Module discovery** — modules are identified by the presence of `AI_CONTEXT.md`.
@@ -393,21 +395,26 @@ done || echo "KNOWN_FAILURE_PATTERNS MISSING — consider creating docs/KNOWN_FA
 ## TIER 9 — Skills Ecosystem
 
 ```bash
-# Project-local skills
-echo "=== Local skills (.claude/skills/) ==="
-find "$SKILLS_DIR" -name "SKILL.md" 2>/dev/null | sort | while read S; do
-  NAME=$(basename $(dirname "$S"))
-  echo "OK: $NAME ($(wc -l < $S) lines)"
+# Project-local skills, across every agent root the stack installs into
+COUNT=0
+FOUND_VERIFY=0
+for DIR in $SKILLS_DIRS; do
+  [ -d "$DIR" ] || continue
+  echo "=== Local skills ($DIR/) ==="
+  find "$DIR" -name "SKILL.md" 2>/dev/null | sort | while read S; do
+    NAME=$(basename $(dirname "$S"))
+    echo "OK: $NAME ($(wc -l < $S) lines)"
+  done
+  N=$(find "$DIR" -name "SKILL.md" 2>/dev/null | wc -l)
+  COUNT=$((COUNT + N))
+  [ -f "$DIR/verify-ai-docs/SKILL.md" ] && FOUND_VERIFY=1
 done
-
-# Count project skills
-COUNT=$(find "$SKILLS_DIR" -name "SKILL.md" 2>/dev/null | wc -l)
-echo "Total: $COUNT local skill(s)"
+echo "Total: $COUNT local skill(s) across: $SKILLS_DIRS"
 
 # Check for verify-ai-docs itself
-[ -f "$SKILLS_DIR/verify-ai-docs/SKILL.md" ] \
+[ "$FOUND_VERIFY" -eq 1 ] \
   && echo "verify-ai-docs: PRESENT" \
-  || echo "verify-ai-docs: MISSING — copy from ai-native-dev-stack repo"
+  || echo "verify-ai-docs: MISSING — run install.py (or install.sh / install.ps1)"
 ```
 
 ---
