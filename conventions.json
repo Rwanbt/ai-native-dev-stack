@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Machine-readable twin of the size/complexity thresholds declared in AGENTS.md",
+    "(section 'Code structure'). AGENTS.md stays the human-readable source; this file",
+    "is what tooling reads so a rule is never enforced at a value it does not declare.",
+    "scripts/validate_conventions.py fails CI when the two drift apart."
+  ],
+  "schema": 1,
+
+  "file_size": {
+    "_agents_md": "flag >500 LOC new file; propose extraction >800 LOC existing; mandatory refactor >1500 LOC",
+    "new_file_warning": 500,
+    "existing_file_warning": 800,
+    "blocking": 1500
+  },
+
+  "function_size": {
+    "_agents_md": "<=50 LOC target; >100 alert; >200 blocking",
+    "target": 50,
+    "alert": 100,
+    "blocking": 200
+  },
+
+  "cyclomatic_complexity": {
+    "_agents_md": "<=10 target; >15 alert; >25 blocking",
+    "target": 10,
+    "alert": 15,
+    "blocking": 25
+  },
+
+  "scan_extensions": [
+    ".py", ".rs", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".hxx",
+    ".ts", ".tsx", ".js", ".jsx", ".go", ".cs", ".fs", ".swift", ".java", ".kt",
+    ".sh", ".ps1"
+  ],
+
+  "exclude_dirs": [
+    "node_modules", ".git", "target", "build", "dist", "vendor",
+    ".venv", "venv", "__pycache__", ".cache", ".tox", "graphify-out"
+  ]
+}
