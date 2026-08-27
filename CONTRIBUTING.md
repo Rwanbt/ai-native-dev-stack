@@ -18,10 +18,20 @@ tools/ai_docs/         # the executable stack (Python + bash)
   generate_metrics.py  # docs/METRICS.md snapshot
   assemble_context.py  # one-shot context briefing for a source file
   tests/               # zero-dependency unittest suite
-skills/                # Claude Code skills (verify-ai-docs, verify-standards)
+skills/                # first-party skills, installed into every agent root
 templates/             # AI_CONTEXT template + hook settings example
-install.sh             # installs the stack into a target project
+conventions.json       # machine-readable twin of AGENTS.md's thresholds
+install.py             # per-project installer (install.sh / .ps1 are shims)
+scripts/
+  install_agents.py    # machine-level installer (setup-agents.sh / .ps1 shims)
+  validate_conventions.py  # fails when AGENTS.md and conventions.json disagree
+  measure_scope.py     # fails when AGENTS.md's scope table drifts from reality
+  vault_sync.py        # Obsidian vault sync (vault_sync.ps1 / .sh are shims)
 ```
+
+Every installer and check is one cross-platform Python implementation; the
+`.sh` and `.ps1` files only locate an interpreter and delegate. Add behaviour
+to the Python file, never to a shim — two shells means two versions to drift.
 
 ## Running the tests
 

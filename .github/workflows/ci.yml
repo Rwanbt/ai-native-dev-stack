@@ -39,6 +39,12 @@ jobs:
         # and `>200 blocking` function size shipped as nothing at all.
         run: python scripts/validate_conventions.py
 
+      - name: AGENTS.md must describe the repository it ships with
+        # Its scope table claimed 11 files / ~22 000 tokens for ten weeks while
+        # the repo grew to 189 files / ~231 000 — and told every agent to read
+        # the whole thing in one pass.
+        run: python scripts/measure_scope.py
+
   loc-gate:
     name: LOC budget gate
     runs-on: ubuntu-latest

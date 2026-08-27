@@ -168,13 +168,24 @@ Central unread modules (>5 incoming imports): none
 
 ### This project — ai-native-dev-stack
 
-Measured 2026-06-13 via `git ls-files`:
+Measured 2026-08-27 via `git ls-files` (image excluded). Re-measure with
+`python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Full project (source) | ~22 000 | 11 | **Direct read always** — fits in context in one pass |
+| Core stack (excl. anti-debt) | ~101 000 | 71 | **Layered read** — cartography first, then targeted reads |
+| Anti-debt agent | ~130 000 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
+| Whole repo | ~231 000 | 189 | **Multi-phase workflow** — never a single direct read |
 
-The project is small enough that direct read is always the right choice regardless of mode. No clarification round needed unless the request is genuinely ambiguous.
+Do **not** read the whole repo in one pass: at ~231k tokens it does not fit,
+and the strategy table above applies in full. Pick the scope the task needs —
+most work touches only one of the two halves.
+
+> This block said "~22 000 tokens, 11 files, direct read always" until
+> 2026-08-27, measured ten weeks and 178 files earlier. Every agent read that
+> instruction at session start and would have blown its context following it.
+> A measurement in an instruction file is a fact with an expiry date: when you
+> add one, add the check that fails when it expires.
 
 ---
 

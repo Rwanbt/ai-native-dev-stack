@@ -217,7 +217,7 @@ Les skills Claude Code étendent l'assistant avec des commandes domaine-spécifi
 | `/verify-ai-docs` | Bilan de santé complet du stack (10 tiers) |
 | `/verify-standards` | Scorecard qualité — CI, docs, conventions, métriques |
 
-Les skills sont des fichiers `.md` dans `.claude/skills/<nom>/SKILL.md` — versionnés avec le projet, disponibles pour chaque contributeur.
+Les skills sont des fichiers `.md` dans `<racine-agent>/skills/<nom>/SKILL.md` — versionnés avec le projet, disponibles pour chaque contributeur. L'installeur les pose dans chaque racine d'agent : `.claude/skills` pour Claude Code, `.agents/skills` pour Codex, OpenCode et Cursor.
 
 #### gstack — Skills d'ingénierie globaux
 
@@ -285,51 +285,73 @@ Répond à « comment sait-on que ça marche ? » avec des mesures objectives d�
 
 ## Démarrage rapide
 
-### Pour un projet existant
+### Installer sur un projet existant
+
+Un seul point d'entrée, identique sur les trois OS. L'installeur copie
+l'outillage, installe les skills dans **toutes** les racines d'agent
+(`.claude/skills` pour Claude Code, `.agents/skills` pour Codex, OpenCode et
+Cursor), pose `AGENTS.md` et `conventions.json`, puis génère les résumés.
 
 ```bash
-# 1. Copier les scripts dans votre projet
-cp -r tools/ai_docs/ votre-projet/tools/
-cp -r skills/ votre-projet/.claude/
+cd /chemin/vers/votre-projet
 
-# 2. Configurer les chemins machine-spécifiques
-cp tools/ai_docs/config.sh.example votre-projet/tools/ai_docs/config.sh
-# Éditer config.sh : renseigner OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
+# Linux / macOS / Git Bash
+bash /chemin/vers/ai-native-dev-stack/install.sh
 
-# 3. Enregistrer le hook PostToolUse dans .claude/settings.json
-# (voir templates/settings_hook_example.json)
+# Windows, sans Git Bash ni WSL
+pwsh -NoProfile -File C:\chemin\vers\ai-native-dev-stack\install.ps1
 
-# 4. Écrire AI_CONTEXT.md pour chaque module majeur
-# (voir templates/AI_CONTEXT_template.md)
-
-# 5. Générer tous les AI_SUMMARY.md
-python tools/ai_docs/generate_all.py
-
-# 6. Vérifier le stack complet
-# Dans Claude Code : /verify-ai-docs
+# N'importe quel OS, directement
+python /chemin/vers/ai-native-dev-stack/install.py
 ```
 
-### Pour une nouvelle machine / un nouveau contributeur
+Options utiles :
 
 ```bash
-# 1. Cloner le projet (les scripts sont déjà commités)
-git clone <repo-du-projet>
+python install.py --dry-run          # montre ce qui serait fait, n'écrit rien
+python install.py --with-gstack      # installe gstack (code tiers, opt-in)
+python install.py --gstack-ref SHA   # épingle gstack à un commit précis
+```
 
-# 2. Détecter Python
-bash tools/ai_docs/find_python.sh
+gstack n'est **pas** installé par défaut : c'est du code tiers exécuté par
+votre agent. Quand vous l'installez, le commit réellement obtenu est
+enregistré dans `.stack-lock.json` pour que l'installation soit reproductible.
 
-# 3. Copier et éditer la config machine
-cp tools/ai_docs/config.sh.example tools/ai_docs/config.sh
-# Renseigner le chemin du coffre Obsidian, Python, binaire graphify
+Ensuite :
 
-# 4. Enregistrer le hook (une fois)
-# Ajouter dans .claude/settings.json → hooks.PostToolUse → Edit|Write :
-# { "type": "command", "command": "bash /chemin-absolu/tools/ai_docs/run_hook.sh" }
+1. Référencer `AGENTS.md` depuis la config globale de votre agent — une ligne,
+   jamais une copie (`@/chemin/absolu/AGENTS.md`).
+2. Éditer `tools/ai_docs/config.sh` (coffre Obsidian, binaire graphify).
+3. Enregistrer le hook PostToolUse — voir `templates/settings_hook_example.json`.
+4. Écrire un `AI_CONTEXT.md` par module — voir `templates/AI_CONTEXT_template.md`.
+5. Vérifier : `/verify-ai-docs`.
 
-# 5. Générer les summaries
-python tools/ai_docs/generate_all.py
+### Installer la méthode sur la machine (une fois)
 
-# 6. Vérifier → /verify-ai-docs doit afficher OPERATIONAL
+Installe règles, skills et agents dans **chaque CLI IA détecté** — Claude Code,
+Codex, OpenCode, Cursor, MiniMax/Mavis — sous forme de **liens** et non de
+copies, pour qu'un `git pull` mette tout à jour d'un coup.
+
+```bash
+bash scripts/setup-agents.sh                    # Linux / macOS / Git Bash
+pwsh -NoProfile -File scripts/setup-agents.ps1  # Windows
+python scripts/install_agents.py                # n'importe quel OS
+
+python scripts/install_agents.py --check        # vérifier une installation
+python scripts/install_agents.py --dry-run      # prévisualiser
+```
+
+Idempotent : une seconde exécution affiche `0 change(s)`. L'installeur ne
+remplace jamais un fichier qu'il ne gère pas — il le signale `KEEP`. Sous
+Windows, les liens de dossier basculent en jonctions si la création de lien
+symbolique est refusée, donc aucun shell élevé n'est nécessaire.
+
+### Vérifier que tout est cohérent
+
+```bash
+python scripts/validate_conventions.py   # AGENTS.md == conventions.json
+python scripts/measure_scope.py          # les tailles annoncées sont à jour
+python scripts/install_agents.py --check # les liens sont en place
 ```
 
 ---

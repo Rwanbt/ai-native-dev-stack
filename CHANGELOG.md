@@ -26,6 +26,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   paths and private project references.
 - CI now exercises both installers on Linux, macOS and Windows (dry-run, real
   install, idempotent re-run, `--check`), and both memory hooks on all three.
+- `scripts/vault_sync.py` + `vault_sync_once_daily.py` — cross-platform Obsidian
+  vault sync replacing the committed PowerShell placeholder, with `.ps1`/`.sh`
+  shims. Verifies the push by re-reading the remote ref, refuses a non-primary
+  branch, stops on divergence, scans staged content for credentials, and locks
+  inside `.git/`. Covered by a CI job on Linux and Windows.
+- `scripts/measure_scope.py` + a CI job — re-measures the repository and fails
+  when `AGENTS.md`'s scope table drifts from reality.
 
 ### Fixed
 
@@ -59,6 +66,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - OpenCode plugin adapter no longer hardcodes the LOC threshold (it reads
   `conventions.json` at runtime) and no longer assumes `python3` exists, which
   is false on a default Windows install.
+- **`AGENTS.md` misdescribed this repository by an order of magnitude.** Its
+  scope table claimed 11 files and ~22 000 tokens, measured ten weeks and 178
+  files earlier, and told every agent to "direct read always" a repo that is
+  now ~231 000 tokens. Corrected, split by scope, and guarded by CI.
+- **The vault sync reported successes it never performed.** It pushed a
+  hardcoded `master` rather than the checked-out branch and printed
+  "pushed to GitHub (N commits)" without verifying anything; the once-daily
+  wrapper then recorded the day as done. See Added above.
+- `install.py` copied skill trees without pruning, so a file removed upstream
+  stayed in every project that had installed it earlier.
+- The LOC gate applied to any file handed to it, so a long CHANGELOG or dataset
+  blocked an edit. Single-file mode now honours `scan_extensions` and reports
+  the skip rather than staying silent.
+- `README.fr.md` still documented the pre-cross-platform install; it now
+  mirrors `README.md`.
 
 ### Changed
 
