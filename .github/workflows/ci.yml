@@ -26,27 +26,130 @@ jobs:
       - name: Run test suite (stdlib unittest — zero dependencies)
         run: python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
 
+  conventions:
+    name: Conventions declared == conventions enforced
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: AGENTS.md and conventions.json must agree
+        # Without this gate, `>25 blocking` complexity silently shipped as 20
+        # and `>200 blocking` function size shipped as nothing at all.
+        run: python scripts/validate_conventions.py
+
   loc-gate:
     name: LOC budget gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce the stack's own 1500-LOC rule on its own sources
-        # NOTE: uses raw line count (wc -l), not effective LOC (count_loc() strips blanks/comments).
-        # A file at 1600 raw lines typically has ~1000-1200 effective LOC — the 1500 raw-line
-        # threshold is conservative enough to absorb normal comment density.
-        # Future: replace this gate with a Python call to count_loc() for exact alignment.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Enforce the stack's own LOC rule on its own sources
+        # Uses the same run_gate.js the PreToolUse hook uses, reading the same
+        # conventions.json — one implementation, so CI and the hook can never
+        # disagree about what the limit is.
+        run: |
+          set -e
+          for dir in tools skills hooks scripts; do
+            echo "--- $dir"
+            (cd "$dir" && node ../hooks/pretool-loc-gate/run_gate.js --all)
+          done
+
+  installers:
+    name: Installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Global installer — dry-run into a throwaway HOME
         shell: bash
         run: |
-          fail=0
-          while IFS= read -r f; do
-            n=$(wc -l < "$f")
-            if [ "$n" -gt 1500 ]; then
-              echo "OVERSIZED: $f ($n LOC) — refactor before adding (stack rule)"
-              fail=1
-            fi
-          done < <(find tools skills -type f \( -name '*.py' -o -name '*.sh' \) 2>/dev/null)
-          if [ "$fail" -eq 0 ]; then
-            echo "All source files within the 1500-LOC budget."
-          fi
-          exit $fail
+          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" --dry-run
+
+      - name: Global installer — real install, then idempotent re-run
+        shell: bash
+        run: |
+          set -e
+          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome"
+          echo "--- second run must report 0 change(s)"
+          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" | tee /tmp/second.txt
+          grep -q "0 change(s), 0 issue(s)" /tmp/second.txt
+
+      - name: Global installer — --check must pass on a fresh install
+        shell: bash
+        run: python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" --check
+
+      - name: Per-project installer — into a throwaway git repo
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/proj/src"
+          cd "$RUNNER_TEMP/proj"
+          git init -q .
+          git config user.email ci@example.com
+          git config user.name CI
+          echo "print('hi')" > src/main.py
+          git add -A && git commit -qm init
+          cd "$GITHUB_WORKSPACE"
+          python install.py --project-root "$RUNNER_TEMP/proj" --skip-gstack
+          test -f "$RUNNER_TEMP/proj/AGENTS.md"
+          test -f "$RUNNER_TEMP/proj/conventions.json"
+          test -d "$RUNNER_TEMP/proj/.claude/skills/verify-ai-docs"
+          test -d "$RUNNER_TEMP/proj/.agents/skills/verify-ai-docs"
+
+  hooks:
+    name: Hooks run on every OS
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: LOC gate — pass, warn and block tiers
+        shell: bash
+        run: |
+          set -e
+          GATE=hooks/pretool-loc-gate/run_gate.js
+          # Node is the only guaranteed runtime in this job — build the
+          # fixtures with it rather than assuming `python` is on PATH.
+          node -e "require('fs').writeFileSync('big.py','x = 1\n'.repeat(1600))"
+          node -e "require('fs').writeFileSync('mid.py','x = 1\n'.repeat(900))"
+
+          node "$GATE" conventions.json | grep -q '"locGate":"pass"'
+
+          # A warning must carry a `reason` the agent can read, not just metadata.
+          node "$GATE" mid.py | grep -q '"reason"'
+
+          # A blocking file must abort and exit non-zero.
+          if node "$GATE" big.py; then echo "expected exit 1"; exit 1; fi
+          node "$GATE" big.py || true
+          node "$GATE" big.py | grep -q '_abort'
+
+      - name: Memory hooks — must report failure, never fake success
+        shell: bash
+        run: |
+          set -e
+          # With no vault reachable, the hooks must say so rather than
+          # reporting an empty-but-successful load (the old silent failure).
+          OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
+            node hooks/session-start-memory/run.js | grep -q '"loaded":false'
+          OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
+            node hooks/session-end-save/run.js | grep -q 'sessionSaveError'
+          # With no key at all, both must be clean no-ops.
+          node hooks/session-start-memory/run.js | grep -q 'OBSIDIAN_API_KEY not set'
+          node hooks/session-end-save/run.js | grep -q 'OBSIDIAN_API_KEY not set'
