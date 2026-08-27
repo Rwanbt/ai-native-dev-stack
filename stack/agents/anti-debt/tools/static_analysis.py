@@ -23,13 +23,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from finding_common import finding_id  # noqa: E402
+from finding_common import finding_id, load_conventions  # noqa: E402
 
-# --- Thresholds (tunable in `scoring-calibration.md` V1.2) ---
-CC_THRESHOLD = 10         # > 10 = high complexity
-CC_CRITICAL = 20          # > 20 = critical
-FUNC_LINES_WARN = 50      # > 50 lines = medium
-FUNC_LINES_HIGH = 100     # > 100 lines = high
+# --- Thresholds ---
+# Size and complexity ladders come from conventions.json (the machine-readable
+# twin of AGENTS.md) so a rule is never enforced at a value it does not declare.
+# The remaining knobs below have no AGENTS.md counterpart and stay local
+# (tunable in `scoring-calibration.md` V1.2).
+_CONV = load_conventions()
+
+CC_TARGET = _CONV["cyclomatic_complexity"]["target"]        # >= target  -> medium
+CC_ALERT = _CONV["cyclomatic_complexity"]["alert"]          # >= alert   -> high
+CC_BLOCKING = _CONV["cyclomatic_complexity"]["blocking"]    # >= blocking-> critical
+
+FUNC_LINES_TARGET = _CONV["function_size"]["target"]        # >= target  -> medium
+FUNC_LINES_ALERT = _CONV["function_size"]["alert"]          # >= alert   -> high
+FUNC_LINES_BLOCKING = _CONV["function_size"]["blocking"]    # >= blocking-> critical
+
 DUP_MIN_AST_SIZE = 2      # ignore trivially small functions from duplication
 FANOUT_HIGH = 20          # module with > 20 imports = high coupling
 NESTING_HIGH = 4          # > 4 levels deep = high
@@ -190,32 +200,46 @@ def analyze_file(path: Path) -> tuple[list, list]:  # CC-EXCEPTION: see ADR-0025
         })
 
         # CC thresholds — subcategory "complexity" (matches test corpus expectations)
-        if cc >= CC_CRITICAL:
-            findings.append(_finding(path, node.lineno, "code", "complexity", "high",
-                description=f"Function '{node.name}' has cyclomatic complexity {cc} (>= {CC_CRITICAL})",
+        if cc >= CC_BLOCKING:
+            findings.append(_finding(path, node.lineno, "code", "complexity", "critical",
+                description=f"Function '{node.name}' has cyclomatic complexity {cc} (>= {CC_BLOCKING} — AGENTS.md blocking)",
                 evidence=[
                     {"type": "file_location", "value": f"{path}:{node.lineno}"},
                     {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} cc={cc}"},
                 ]))
-        elif cc >= CC_THRESHOLD:
+        elif cc >= CC_ALERT:
+            findings.append(_finding(path, node.lineno, "code", "complexity", "high",
+                description=f"Function '{node.name}' has cyclomatic complexity {cc} (>= {CC_ALERT})",
+                evidence=[
+                    {"type": "file_location", "value": f"{path}:{node.lineno}"},
+                    {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} cc={cc}"},
+                ]))
+        elif cc >= CC_TARGET:
             findings.append(_finding(path, node.lineno, "code", "complexity", "medium",
-                description=f"Function '{node.name}' has cyclomatic complexity {cc} (>= {CC_THRESHOLD})",
+                description=f"Function '{node.name}' has cyclomatic complexity {cc} (>= {CC_TARGET})",
                 evidence=[
                     {"type": "file_location", "value": f"{path}:{node.lineno}"},
                     {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} cc={cc}"},
                 ]))
 
         # Length
-        if n_lines >= FUNC_LINES_HIGH:
-            findings.append(_finding(path, node.lineno, "code", "long_function", "high",
-                description=f"Function '{node.name}' is {n_lines} lines long (>= {FUNC_LINES_HIGH})",
+        if n_lines >= FUNC_LINES_BLOCKING:
+            findings.append(_finding(path, node.lineno, "code", "long_function", "critical",
+                description=f"Function '{node.name}' is {n_lines} lines long (>= {FUNC_LINES_BLOCKING} — AGENTS.md blocking)",
                 evidence=[
                     {"type": "file_location", "value": f"{path}:{node.lineno}"},
                     {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} lines={n_lines}"},
                 ]))
-        elif n_lines >= FUNC_LINES_WARN:
+        elif n_lines >= FUNC_LINES_ALERT:
+            findings.append(_finding(path, node.lineno, "code", "long_function", "high",
+                description=f"Function '{node.name}' is {n_lines} lines long (>= {FUNC_LINES_ALERT})",
+                evidence=[
+                    {"type": "file_location", "value": f"{path}:{node.lineno}"},
+                    {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} lines={n_lines}"},
+                ]))
+        elif n_lines >= FUNC_LINES_TARGET:
             findings.append(_finding(path, node.lineno, "code", "long_function", "medium",
-                description=f"Function '{node.name}' is {n_lines} lines long (>= {FUNC_LINES_WARN})",
+                description=f"Function '{node.name}' is {n_lines} lines long (>= {FUNC_LINES_TARGET})",
                 evidence=[
                     {"type": "file_location", "value": f"{path}:{node.lineno}"},
                     {"type": "ast_metric", "tool": "static-analysis", "value": f"function={node.name} lines={n_lines}"},
