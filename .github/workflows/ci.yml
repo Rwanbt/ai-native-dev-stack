@@ -74,38 +74,40 @@ jobs:
       - name: Global installer — dry-run into a throwaway HOME
         shell: bash
         run: |
-          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" --dry-run
+          python scripts/install_agents.py --home "$HOME/stack-ci/fakehome" --dry-run
 
       - name: Global installer — real install, then idempotent re-run
         shell: bash
         run: |
           set -e
-          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome"
+          mkdir -p "$HOME/stack-ci"
+          python scripts/install_agents.py --home "$HOME/stack-ci/fakehome"
           echo "--- second run must report 0 change(s)"
-          python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" | tee /tmp/second.txt
-          grep -q "0 change(s), 0 issue(s)" /tmp/second.txt
+          python scripts/install_agents.py --home "$HOME/stack-ci/fakehome" \
+            | tee "$HOME/stack-ci/second.txt"
+          grep -q "0 change(s), 0 issue(s)" "$HOME/stack-ci/second.txt"
 
       - name: Global installer — --check must pass on a fresh install
         shell: bash
-        run: python scripts/install_agents.py --home "$RUNNER_TEMP/fakehome" --check
+        run: python scripts/install_agents.py --home "$HOME/stack-ci/fakehome" --check
 
       - name: Per-project installer — into a throwaway git repo
         shell: bash
         run: |
           set -e
-          mkdir -p "$RUNNER_TEMP/proj/src"
-          cd "$RUNNER_TEMP/proj"
+          mkdir -p "$HOME/stack-ci/proj/src"
+          cd "$HOME/stack-ci/proj"
           git init -q .
           git config user.email ci@example.com
           git config user.name CI
           echo "print('hi')" > src/main.py
           git add -A && git commit -qm init
           cd "$GITHUB_WORKSPACE"
-          python install.py --project-root "$RUNNER_TEMP/proj" --skip-gstack
-          test -f "$RUNNER_TEMP/proj/AGENTS.md"
-          test -f "$RUNNER_TEMP/proj/conventions.json"
-          test -d "$RUNNER_TEMP/proj/.claude/skills/verify-ai-docs"
-          test -d "$RUNNER_TEMP/proj/.agents/skills/verify-ai-docs"
+          python install.py --project-root "$HOME/stack-ci/proj" --skip-gstack
+          test -f "$HOME/stack-ci/proj/AGENTS.md"
+          test -f "$HOME/stack-ci/proj/conventions.json"
+          test -d "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs"
+          test -d "$HOME/stack-ci/proj/.agents/skills/verify-ai-docs"
 
   hooks:
     name: Hooks run on every OS
@@ -136,9 +138,8 @@ jobs:
           node "$GATE" mid.py | grep -q '"reason"'
 
           # A blocking file must abort and exit non-zero.
-          if node "$GATE" big.py; then echo "expected exit 1"; exit 1; fi
-          node "$GATE" big.py || true
-          node "$GATE" big.py | grep -q '_abort'
+          if node "$GATE" big.py > gate-out.json; then echo "expected exit 1"; exit 1; fi
+          grep -q '_abort' gate-out.json
 
       - name: Memory hooks — must report failure, never fake success
         shell: bash

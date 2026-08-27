@@ -176,35 +176,8 @@ RUST_FN_RE = re.compile(
 
 
 def _rust_function_blocks(source: str) -> list[tuple[str, int, int, str]]:
-    """Return [(name, start_line, end_line, body)] for each Rust function.
-
-    Brace-matching based — robust to nested braces.
-    """
-    results = []
-    for m in RUST_FN_RE.finditer(source):
-        name = m.group(1)
-        start = source[:m.start()].count("\n") + 1
-        # Find the opening brace after the signature
-        rest = source[m.end():]
-        brace_idx = rest.find("{")
-        if brace_idx < 0:
-            continue
-        # Count braces to find the matching close
-        depth = 0
-        i = brace_idx
-        while i < len(rest):
-            if rest[i] == "{":
-                depth += 1
-            elif rest[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    end = m.end() + i + 1
-                    end_line = source[:end].count("\n") + 1
-                    body = rest[brace_idx:i+1]
-                    results.append((name, start, end_line, body))
-                    break
-            i += 1
-    return results
+    """Return [(name, start_line, end_line, body)] for each Rust function."""
+    return _brace_blocks(source, RUST_FN_RE)
 
 
 def _rust_cc(body: str) -> int:
@@ -269,7 +242,12 @@ JS_FN_RE = re.compile(
 
 
 def _js_function_blocks(source: str) -> list[tuple[str, int, int, str]]:
-    """Best-effort function block extraction for JS/TS."""
+    """Best-effort function block extraction for JS/TS.
+
+    Does not use _brace_blocks: a single-expression arrow function has no
+    braces to match, and the name may come from any of three capture groups.
+    Rust and C/C++ share _brace_blocks; JS is the documented exception.
+    """
     results = []
     for m in JS_FN_RE.finditer(source):
         name = m.group(1) or m.group(2) or m.group(3) or "<anonymous>"
