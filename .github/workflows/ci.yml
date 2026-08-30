@@ -24,7 +24,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run test suite (stdlib unittest — zero dependencies)
-        run: python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
+        run: |
+          python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
+          python -m unittest discover -s scripts/tests -p "test_*.py" -v
 
   conventions:
     name: Conventions declared == conventions enforced
@@ -63,6 +65,31 @@ jobs:
             echo "--- $dir"
             (cd "$dir" && node ../hooks/pretool-loc-gate/run_gate.js --all)
           done
+
+  vault-v4-protocol:
+    name: Vault v4 protocol, sync and hooks
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: v4 protocol — discovery, slug, markers, validator, maintenance
+        run: python -m unittest scripts.tests.test_vault_protocol -v
+      - name: v4 installer — six harness, idempotent, --check, --dry-run
+        run: python -m unittest scripts.tests.test_install_agents_v4 -v
+      - name: v4 sync — maintenance lock, green/red validator, --no-validator-check
+        run: python -m unittest scripts.tests.test_vault_sync_v4 -v
+      - name: v4 hooks — no-op, real error, v4 layout, concurrent ends
+        shell: bash
+        run: python -m unittest discover -s hooks/tests -p "test_*.py" -v
 
   installers:
     name: Installers (${{ matrix.os }})
@@ -127,6 +154,52 @@ jobs:
           if [ -f "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs/OBSOLETE.md" ]; then
             echo "a file removed upstream survived a re-install"; exit 1
           fi
+
+      - name: v4 governance block — six harness get vault block; user content survives
+        # Build a throwaway v4 vault, point the installer at it via
+        # --vault/--project-slug, and verify each harness file has
+        # both the method block and the vault governance block, with
+        # user content outside the markers preserved across a
+        # re-install.
+        shell: bash
+        run: |
+          set -e
+          # Build a minimal v4 vault on disk (no validator call; we
+          # are testing the installer, not the validator).
+          FAKEVAULT="$RUNNER_TEMP/fakev4"
+          mkdir -p "$FAKEVAULT/_system/schemas" "$FAKEVAULT/_system/tooling" "$FAKEVAULT/projects/demo"
+          echo '# vault' > "$FAKEVAULT/AGENTS.md"
+          echo '# system' > "$FAKEVAULT/_system/AGENTS.md"
+          cat > "$FAKEVAULT/_system/schemas/projects.json" <<'JSON'
+          {"schema_version": 4, "projects": [{"slug": "demo", "title": "Demo", "prefix": "DEMO", "source": "Demo", "status": "active"}]}
+          JSON
+          echo 'print("OK")' > "$FAKEVAULT/_system/tooling/vault.py"
+          echo '' > "$FAKEVAULT/_system/tooling/vaultlib.py"
+          python scripts/install_agents.py \
+            --home "$HOME/stack-ci/fakehome" \
+            --vault "$FAKEVAULT" --project-slug demo
+          # Six harness targets, all must have both blocks.
+          for f in \
+            "$HOME/stack-ci/fakehome/.claude/CLAUDE.md" \
+            "$HOME/stack-ci/fakehome/.codex/AGENTS.md" \
+            "$HOME/stack-ci/fakehome/.config/opencode/AGENTS.md" \
+            "$HOME/stack-ci/fakehome/.mavis/agents/mavis/agent.md"; do
+            grep -q "Shared engineering method" "$f"
+            grep -q "Vault governance (v4)" "$f"
+          done
+          # Re-install with a user note appended must preserve it.
+          echo "" >> "$HOME/stack-ci/fakehome/.claude/CLAUDE.md"
+          echo "# USER NOTE" >> "$HOME/stack-ci/fakehome/.claude/CLAUDE.md"
+          python scripts/install_agents.py \
+            --home "$HOME/stack-ci/fakehome" \
+            --vault "$FAKEVAULT" --project-slug demo \
+            | grep -q "0 change(s)"
+          grep -q "USER NOTE" "$HOME/stack-ci/fakehome/.claude/CLAUDE.md"
+          # --check must report 0 issues.
+          python scripts/install_agents.py \
+            --home "$HOME/stack-ci/fakehome" \
+            --vault "$FAKEVAULT" --project-slug demo --check \
+            | grep -q "0 issue(s)"
 
   vault-sync:
     name: Vault sync (${{ matrix.os }})
