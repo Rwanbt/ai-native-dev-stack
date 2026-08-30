@@ -286,8 +286,10 @@ Enforcement:
 - Mavis arch-change-gate skill (loaded on hook trigger)
 - These are the canonical mechanisms — don't duplicate as manual checklists
 
-See also: `D:\Documents\Obsidian\IA_Dev_Brain\Systeme-Agentique\Components\AI-Native-DevStack\AGENTS.md`
-for the full mirror of this section + cross-references to hook/skill implementations.
+See also: `<OBSIDIAN_VAULT>/projects/ai-native-dev-stack/AGENTS.md`
+for the project-specific mirror of this section + cross-references to
+hook/skill implementations. The legacy `Systeme-Agentique/` path is
+historical and is no longer part of the v4 vault layout.
 
 ---
 

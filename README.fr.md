@@ -104,34 +104,52 @@ Le graphe est stocké dans `graphify-out/graph.json` et `GRAPH_REPORT.md`. L'IA 
 
 ### 5. Coffre-fort mémoire Obsidian (Second cerveau)
 
-Un coffre-fort Obsidian sert de **mémoire persistante inter-sessions**. Le coffre a un dossier dédié par projet :
+Un coffre-fort Obsidian sert de **mémoire persistante inter-sessions**.
+Le contrat v4 place un dossier par projet sous `projects/<slug>/`, où
+`<slug>` est un identifiant kebab-case en minuscules enregistré dans
+`<coffre>/_system/schemas/projects.json` :
 
 ```
-Obsidian/MonCoffre/
-├── INDEX.md                  ← hub de navigation central
-├── LOG.md                    ← journal chronologique de sessions (append-only)
-├── SCHEMA.md                 ← conventions de frontmatter et de wikilinks
+<OBSIDIAN_VAULT>/
+├── INDEX.md                    ← hub de navigation central
+├── LOG.md                      ← journal chronologique de sessions (append-only)
+├── SCHEMA.md                   ← conventions de frontmatter et de wikilinks
+├── AGENTS.md                   ← entrée agent au niveau coffre, délègue au contrat
 │
-├── ProjetA/                  ← un dossier par projet
-│   ├── _memory/
-│   │   └── memory.md         ← mémoire IA des sessions (décisions, patterns)
-│   ├── decisions-log.md      ← décisions notables avec [[wikilinks]] ADR
-│   └── architecture/
-│       └── module-notes.md
+├── projects/<slug>/            ← un dossier par projet enregistré
+│   ├── INDEX.md                ← navigation projet
+│   ├── AGENTS.md               ← entrée agent spécifique au projet
+│   ├── BOARD.md                ← board de statut générée (ne pas éditer à la main)
+│   ├── _memory/memory.md       ← mémoire IA des sessions (décisions, patterns)
+│   ├── decisions/              ← ADR, un par fichier
+│   ├── operations/sessions/    ← un fichier par session, écrit par le hook SessionEnd
+│   └── work/                   ← roadmaps, initiatives, runbooks
 │
-├── ProjetB/                  ← autre projet
-│   └── _memory/memory.md
-│
-└── _global/                  ← notes transversales à tous les projets
-    ├── professional-code-standards.md
-    └── handoff/
+├── inbox/                      ← notes non encore triées
+├── archive/                    ← contenu déplacé / superseded
+└── _system/                    ← infrastructure du coffre (contrat, tooling, schémas)
 ```
 
-**Protocole de fin de session (obligatoire) :**
-1. Mettre à jour `ProjetA/_memory/memory.md` avec les faits saillants de la session
-2. Appender une entrée dans `LOG.md` : `## YYYY-MM-DD — [Projet] — résumé 3-5 bullets`
+**Découverte du contrat v4 (tous les harnais) :**
+1. `OBSIDIAN_VAULT` — racine du coffre (argument CLI, puis variable d'env)
+2. `OBSIDIAN_PROJECT_SLUG` — slug du projet actif (doit respecter
+   `[a-z0-9]+(?:-[a-z0-9]+)*`)
+3. `<coffre>/_system/schemas/projects.json` — registre des projets
+4. `<coffre>/_system/tooling/vault.py check` — validateur canonique
 
-La prochaine session démarrera avec le contexte complet — même des semaines plus tard, même sur une autre machine.
+La stack découvre le coffre via le même protocole que chaque harnais
+utilise ; le contrat v4 est mono-source dans le coffre, jamais copié
+dans les fichiers de configuration des harnais.
+
+**Protocole de fin de session (obligatoire, v4) :**
+1. Le hook SessionEnd écrit une note immuable dans
+   `projects/<slug>/operations/sessions/<session-id>.md`
+2. Il appende une ligne dans `LOG.md` (un seul append, jamais de rewrite)
+3. Le hook SessionStart charge `projects/<slug>/AGENTS.md`,
+   `projects/<slug>/BOARD.md`, et l'`AGENTS.md` racine du coffre
+
+La prochaine session démarrera avec le contexte complet — même des
+semaines plus tard, même sur une autre machine.
 
 **Conventions wikilinks :**
 - Chaque note lie vers les notes connexes via `[[wikilinks]]`
@@ -634,3 +652,61 @@ PRs bienvenues pour :
 - Templates de skills supplémentaires
 - Intégrations Obsidian
 - Traductions du README
+
+## Intégration vault v4
+
+La stack cible le contrat v4 du coffre sans le recopier : chaque
+harnais (Claude Code, Codex, OpenCode, Cursor, Gemini, Mavis) découvre
+le même coffre, valide de la même façon, et refuse d'écrire dans un
+coffre qui ne satisfait pas le contrat.
+
+| Concept | Prise en charge par la stack |
+|---|---|
+| Découverte du coffre | Argument `--vault`, puis `$OBSIDIAN_VAULT`. Jamais codé en dur. |
+| Slug du projet | Argument `--project-slug`, puis `$OBSIDIAN_PROJECT_SLUG`, puis validé contre la grammaire v4 `[a-z0-9]+(?:-[a-z0-9]+)*`. |
+| Détection v4 | Le protocole vérifie `_system/schemas/projects.json`, `_system/tooling/vault.py` et l'`AGENTS.md` racine. |
+| Validation | La stack appelle `<coffre>/_system/tooling/vault.py check` (avec fallback `lint`) — elle ne ré-implémente pas le schéma. |
+| Verrou de maintenance | Un sentinel `.git/maintenance.lock` arrête le sync. Ne le supprimer que lorsque l'orchestrateur a terminé. |
+| Bloc par harnais | `scripts/install_agents.py` écrit un bloc « Vault governance » (marqueurs séparés du bloc méthode) pour Claude, Codex, OpenCode, Cursor, Gemini et Mavis. |
+| Boards | Le hook SessionEnd n'écrit jamais dans `BOARD.md` — les boards sont générées, pas éditées à la main. |
+| Sync | `scripts/vault_sync.py` exécute le validateur v4 avant le staging, préserve le scan de secrets, le single-writer, la détection de divergence et la vérification du SHA distant. |
+| Check / rollback | `python scripts/install_agents.py --check --vault <coffre> --project-slug <slug>` rapporte l'état des blocs ; `python scripts/vault_sync.py --no-validator-check` est la *seule* opt-in legacy. |
+
+### Installer, vérifier, rollback, désinstaller
+
+```bash
+# Installer : méthode + bloc « Vault governance » dans chaque harnais supporté
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug>
+
+# Vérifier : 0 changement, 0 issue sur une installation propre
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --check
+
+# Rollback : retirer le bloc « Vault governance » de chaque harnais.
+# Le bloc méthode est aussi un bloc géré, donc le même --dry-run qui
+# l'ajoute le retire à la prochaine installation.
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --no-vault-block
+
+# Redémarrer chaque client IA pour qu'il recharge les règles globales.
+```
+
+### Ce que le contrat v4 n'est PAS
+
+La stack ne fait pas :
+
+- Coder en dur un chemin de coffre. Il n'y a aucune constante
+  `D:\Documents\...` ; l'utilisateur fournit toujours le coffre, et
+  un coffre non configuré est une erreur claire, pas un défaut.
+- Recopier le contrat v4. Chaque bloc est un pointeur vers
+  l'`AGENTS.md` du coffre ; le texte du contrat vit en un seul endroit.
+- Écrire dans le coffre pendant une installation normale.
+  L'installateur écrit dans les répertoires harnais au niveau utilisateur
+  (`~/.claude/`, `~/.codex/`, `~/.config/opencode/`, `~/.mavis/...`) ;
+  le coffre est en lecture seule du point de vue de la stack.
+
+### Écriture locale, commit, push, publication — quatre actions distinctes
+
+La stack ne les confond jamais. Un « push » est toujours une étape
+séparée d'un « write » ou d'un « commit », et seul `scripts/vault_sync.py`
+fait les deux derniers. Les hooks et les installateurs n'écrivent que
+localement ; le sync est l'unique chemin vers le distant, et il
+applique le contrat v4 sur le chemin.

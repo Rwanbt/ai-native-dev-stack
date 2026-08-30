@@ -131,34 +131,52 @@ The graph is stored in `graphify-out/graph.json` and `GRAPH_REPORT.md`. Both the
 
 ### 5. Obsidian Memory Vault (Second Brain)
 
-An Obsidian vault serves as **persistent memory across sessions**. The vault has one dedicated folder per project:
+An Obsidian vault serves as **persistent memory across sessions**. The
+v4 contract places one folder per project under `projects/<slug>/`,
+where `<slug>` is a lowercase kebab-case identifier registered in
+`<vault>/_system/schemas/projects.json`:
 
 ```
-Obsidian/MyVault/
-├── INDEX.md                  ← central navigation hub
-├── LOG.md                    ← chronological session journal (append-only)
-├── SCHEMA.md                 ← frontmatter and wikilink conventions
+<OBSIDIAN_VAULT>/
+├── INDEX.md                    ← central navigation hub
+├── LOG.md                      ← chronological session journal (append-only)
+├── SCHEMA.md                   ← frontmatter and wikilink conventions
+├── AGENTS.md                   ← vault-level agent entry, delegates to contract
 │
-├── ProjectA/                 ← one folder per project
-│   ├── _memory/
-│   │   └── memory.md         ← AI session memory (decisions, patterns)
-│   ├── decisions-log.md      ← notable decisions with [[wikilinks]] to ADRs
-│   └── architecture/
-│       └── module-notes.md
+├── projects/<slug>/            ← one folder per registered project
+│   ├── INDEX.md                ← project navigation
+│   ├── AGENTS.md               ← project-specific agent entry
+│   ├── BOARD.md                ← generated status board (do not hand-edit)
+│   ├── _memory/memory.md       ← AI session memory (decisions, patterns)
+│   ├── decisions/              ← ADRs, one per file
+│   ├── operations/sessions/    ← one file per session, written by SessionEnd hook
+│   └── work/                   ← roadmaps, initiatives, runbooks
 │
-├── ProjectB/                 ← another project
-│   └── _memory/memory.md
-│
-└── _global/                  ← cross-project notes
-    ├── professional-code-standards.md
-    └── handoff/
+├── inbox/                      ← unchecked notes
+├── archive/                    ← content that has been moved/superseded
+└── _system/                    ← vault infrastructure (contract, tooling, schemas)
 ```
 
-**End-of-session protocol (mandatory):**
-1. Update `ProjectA/_memory/memory.md` with the session's key findings
-2. Append an entry to `LOG.md`: `## YYYY-MM-DD — [Project] — 3-5 bullet summary`
+**v4 contract discovery (every harness):**
+1. `OBSIDIAN_VAULT` — the vault root (CLI arg, then env var)
+2. `OBSIDIAN_PROJECT_SLUG` — the active project slug (must match
+   `[a-z0-9]+(?:-[a-z0-9]+)*`)
+3. `<vault>/_system/schemas/projects.json` — project registry
+4. `<vault>/_system/tooling/vault.py check` — canonical validator
 
-The next session will start with full context — even weeks later, even on a different machine.
+The stack discovers the vault via the same protocol every harness
+uses; the v4 contract is single-sourced in the vault, never copied
+into harness configuration files.
+
+**End-of-session protocol (mandatory, v4):**
+1. The SessionEnd hook writes one immutable note to
+   `projects/<slug>/operations/sessions/<session-id>.md`
+2. It appends one line to `LOG.md` (a single append, never a rewrite)
+3. The SessionStart hook loads `projects/<slug>/AGENTS.md`,
+   `projects/<slug>/BOARD.md`, and the vault-level `AGENTS.md`
+
+The next session will start with full context — even weeks later, even
+on a different machine.
 
 **Wikilink conventions:**
 - Every note links to related notes via `[[wikilinks]]`
@@ -713,3 +731,61 @@ PRs welcome for:
 - Additional skill templates
 - Obsidian integrations
 - README translations
+
+## v4 vault integration
+
+The stack targets the v4 vault contract without copying it: every
+harness (Claude Code, Codex, OpenCode, Cursor, Gemini, Mavis) discovers
+the same vault, validates the same way, and refuses to write into a
+vault that fails the contract.
+
+| Concept | How the stack handles it |
+|---|---|
+| Vault discovery | `--vault` argument, then `$OBSIDIAN_VAULT`. Never hard-coded. |
+| Project slug | `--project-slug` argument, then `$OBSIDIAN_PROJECT_SLUG`, then validated against the v4 grammar `[a-z0-9]+(?:-[a-z0-9]+)*`. |
+| v4 detection | The protocol checks for `_system/schemas/projects.json`, `_system/tooling/vault.py`, and the root `AGENTS.md`. |
+| Validation | The stack calls `<vault>/_system/tooling/vault.py check` (with `lint` fallback) — it does not re-implement the schema. |
+| Maintenance lock | A `.git/maintenance.lock` sentinel halts the sync. Remove it only when the orchestrator is done. |
+| Per-harness block | `scripts/install_agents.py` writes a "Vault governance" block (separate markers from the engineering method) to Claude, Codex, OpenCode, Cursor, Gemini and Mavis. |
+| Boards | The SessionEnd hook never writes to `BOARD.md` — boards are generated, not hand-edited. |
+| Sync | `scripts/vault_sync.py` runs the v4 validator before staging, preserves secret scan, single-writer, divergence detection and remote SHA verification. |
+| Check / rollback | `python scripts/install_agents.py --check --vault <vault> --project-slug <slug>` reports block state; `python scripts/vault_sync.py --no-validator-check` is the *only* legacy opt-in. |
+
+### Install, check, rollback, uninstall
+
+```bash
+# Install: method + vault governance block into every supported harness
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug>
+
+# Check: 0 changes, 0 issues on a clean install
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --check
+
+# Rollback: remove the "Vault governance" block from every harness.
+# The method block is also a managed block, so the same --dry-run path
+# that adds it is the one that removes it on the next install.
+python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --no-vault-block
+
+# Restart every AI client so it reloads the global rules.
+```
+
+### What the v4 contract is NOT
+
+The stack does not:
+
+- Hard-code any vault path. There is no `D:\Documents\...` constant
+  anywhere; the user always supplies the vault, and an unconfigured
+  vault is a clear error, not a default.
+- Copy the v4 contract. Every block is a pointer to the vault's own
+  `AGENTS.md`; the contract text lives in one place only.
+- Write into the vault during a normal install. The installer writes
+  to user-level harness directories (`~/.claude/`, `~/.codex/`,
+  `~/.config/opencode/`, `~/.mavis/...`); the vault is read-only
+  from the stack's perspective.
+
+### Local write, commit, push, publish — four distinct actions
+
+The stack never conflates them. A "push" is always a separate step
+from a "write" or a "commit", and only `scripts/vault_sync.py` does
+the former two. The hooks and installers only write locally; the
+sync is the only path to the remote, and it enforces the v4 contract
+on the way.
