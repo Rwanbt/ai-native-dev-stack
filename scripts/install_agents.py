@@ -214,21 +214,23 @@ class Installer:
         through the same single path.
         """
         rel_root = (vault / "AGENTS.md").as_posix()
-        rel_project = f"projects/{slug}/AGENTS.md"
-        rel_board = f"projects/{slug}/BOARD.md"
+        registry = (vault / "_system" / "schemas" / "projects.json").as_posix()
         block = (
             f"{VAULT_BEGIN}\n"
             "## Vault governance (v4)\n\n"
             f"This session is bound to the v4 vault at `{vault}`.\n\n"
-            f"- Read `{rel_root}` and `{rel_project}` first.\n"
-            f"- The board (`{rel_board}`) is a generated navigation view; canonical "
-            "initiative/task cards are the authority for project status.\n"
+            f"- Read `{rel_root}` first.\n"
+            f"- Resolve the current project slug from the checkout's `AGENTS.md` or "
+            f"an explicit per-session `$OBSIDIAN_PROJECT_SLUG`, then validate it in "
+            f"`{registry}`. Never reuse a slug from another checkout.\n"
+            f"- Only then read `projects/<slug>/AGENTS.md` and the generated "
+            "`projects/<slug>/BOARD.md`; canonical initiative/task cards are the "
+            "authority for project status.\n"
             f"- Never edit generated `BOARD.md`/`BOARD.json` projections directly. "
             "Only change `_system/` when the task explicitly targets vault governance. "
             "If canonical entries are missing, create a `needs-triage` card and stop.\n"
-            f"- Vault location, project slug and validator status are "
-            "discovered via `$OBSIDIAN_VAULT` and `$OBSIDIAN_PROJECT_SLUG`. "
-            "If either is missing, ask the user before proceeding.\n"
+            f"- Vault location and validator status use `$OBSIDIAN_VAULT`. A project "
+            "slug is session-local; if it cannot be resolved safely, ask the user.\n"
             f"{VAULT_END}"
         )
         self._write_managed_block(path, block, VAULT_BEGIN, VAULT_END, "vault block")

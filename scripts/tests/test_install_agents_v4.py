@@ -127,6 +127,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn("<!-- END AI-NATIVE-DEV-STACK -->", body)
         self.assertIn("<!-- BEGIN AI-NATIVE-DEV-STACK VAULT -->", body)
         self.assertIn("<!-- END AI-NATIVE-DEV-STACK VAULT -->", body)
+        self.assertIn("projects/<slug>/AGENTS.md", body)
+        self.assertNotIn("projects/demo/AGENTS.md", body)
 
     def test_user_content_outside_markers_survives_reinstall(self) -> None:
         result = _run(["--home", str(self._tmp_home)], env=self.env)
