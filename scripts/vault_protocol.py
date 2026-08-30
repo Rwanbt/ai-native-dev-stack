@@ -304,7 +304,8 @@ def run_validator(vault: Path, timeout: int = DEFAULT_VALIDATOR_TIMEOUT,
             [sys.executable, str(validator), "--help"],
             capture_output=True, text=True, timeout=timeout,
         )
-        if help_result.returncode == 0 and "check " not in (help_result.stdout + " "):
+        help_text = help_result.stdout + help_result.stderr
+        if help_result.returncode == 0 and not re.search(r"(?<![\w-])check(?![\w-])", help_text):
             chosen = "lint"
 
     completed = subprocess.run(

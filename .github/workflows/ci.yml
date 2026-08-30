@@ -183,6 +183,8 @@ jobs:
             "$HOME/stack-ci/fakehome/.claude/CLAUDE.md" \
             "$HOME/stack-ci/fakehome/.codex/AGENTS.md" \
             "$HOME/stack-ci/fakehome/.config/opencode/AGENTS.md" \
+            "$HOME/stack-ci/fakehome/.cursor/rules/ai-native-dev-stack.mdc" \
+            "$HOME/stack-ci/fakehome/.gemini/GEMINI.md" \
             "$HOME/stack-ci/fakehome/.mavis/agents/mavis/agent.md"; do
             grep -q "Shared engineering method" "$f"
             grep -q "Vault governance (v4)" "$f"

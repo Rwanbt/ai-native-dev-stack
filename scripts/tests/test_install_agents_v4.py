@@ -186,6 +186,19 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, msg=result.stdout)
         self.assertIn("DUPLICATE", result.stdout)
 
+    def test_check_detects_two_balanced_method_blocks(self) -> None:
+        _run(["--home", str(self._tmp_home)], env=self.env)
+        claude_md = self._tmp_home / ".claude" / "CLAUDE.md"
+        body = claude_md.read_text(encoding="utf-8")
+        begin = body.index("<!-- BEGIN AI-NATIVE-DEV-STACK -->")
+        end_marker = "<!-- END AI-NATIVE-DEV-STACK -->"
+        end = body.index(end_marker, begin) + len(end_marker)
+        with claude_md.open("a", encoding="utf-8") as handle:
+            handle.write("\n\n" + body[begin:end] + "\n")
+        result = _run(["--home", str(self._tmp_home), "--check"], env=self.env)
+        self.assertEqual(result.returncode, 1, msg=result.stdout)
+        self.assertIn("DUPLICATE", result.stdout)
+
     # --- six harness support -------------------------------------------
 
     def test_all_six_harnesses_get_both_blocks(self) -> None:
@@ -195,6 +208,8 @@ class InstallTests(unittest.TestCase):
             self._tmp_home / ".claude" / "CLAUDE.md",
             self._tmp_home / ".codex" / "AGENTS.md",
             self._tmp_home / ".config" / "opencode" / "AGENTS.md",
+            self._tmp_home / ".cursor" / "rules" / "ai-native-dev-stack.mdc",
+            self._tmp_home / ".gemini" / "GEMINI.md",
             self._tmp_home / ".mavis" / "agents" / "mavis" / "agent.md",
         ]
         for path in targets:
@@ -203,6 +218,17 @@ class InstallTests(unittest.TestCase):
                 body = path.read_text(encoding="utf-8")
                 self.assertIn("Shared engineering method", body)
                 self.assertIn("Vault governance", body)
+        cursor = targets[3].read_text(encoding="utf-8")
+        self.assertIn("alwaysApply: true", cursor)
+
+    def test_unknown_registry_slug_is_rejected(self) -> None:
+        result = _run(
+            ["--home", str(self._tmp_home), "--vault", str(self.vault),
+             "--project-slug", "missing-project"], isolated=True,
+        )
+        self.assertEqual(result.returncode, 2, msg=result.stdout)
+        self.assertIn("unknown-slug", result.stderr)
+        self.assertFalse((self._tmp_home / ".claude" / "CLAUDE.md").exists())
 
     # --- --no-vault-block ----------------------------------------------
 
@@ -216,6 +242,21 @@ class InstallTests(unittest.TestCase):
         body = claude_md.read_text(encoding="utf-8")
         self.assertIn("Shared engineering method", body)
         self.assertNotIn("Vault governance", body)
+
+    def test_no_vault_block_removes_existing_governance(self) -> None:
+        first = _run(["--home", str(self._tmp_home)], env=self.env)
+        self.assertEqual(first.returncode, 0, msg=first.stderr)
+        claude_md = self._tmp_home / ".claude" / "CLAUDE.md"
+        with claude_md.open("a", encoding="utf-8") as handle:
+            handle.write("\n# USER CONTENT\n")
+        result = _run(
+            ["--home", str(self._tmp_home), "--no-vault-block"], env=self.env,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        body = claude_md.read_text(encoding="utf-8")
+        self.assertIn("Shared engineering method", body)
+        self.assertNotIn("Vault governance", body)
+        self.assertIn("# USER CONTENT", body)
 
     # --- invalid slug --------------------------------------------------
 

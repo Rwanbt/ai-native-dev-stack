@@ -184,3 +184,14 @@ python scripts/vault_sync.py --vault "<OBSIDIAN_VAULT>" --no-validator-check
 - **push** : **non**
 - **merge** : **non**
 - **release** : **non**
+
+## Correction post-merge — revue indépendante
+
+La Gate R.9 a identifié puis corrigé quatre écarts entre ce rapport initial et
+l'implémentation : Cursor et Gemini n'avaient pas de cible propre, le rollback
+`--no-vault-block` ne supprimait pas un bloc existant, un slug syntaxiquement
+valide mais absent du registre pouvait laisser une installation partielle, et
+deux blocs équilibrés n'étaient pas reconnus comme doublons. Les cibles réelles
+sont désormais `~/.cursor/rules/ai-native-dev-stack.mdc` et
+`~/.gemini/GEMINI.md`; la paire vault/slug est validée intégralement avant la
+première écriture et le rollback préserve le contenu utilisateur hors marqueurs.

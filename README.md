@@ -746,8 +746,8 @@ vault that fails the contract.
 | v4 detection | The protocol checks for `_system/schemas/projects.json`, `_system/tooling/vault.py`, and the root `AGENTS.md`. |
 | Validation | The stack calls `<vault>/_system/tooling/vault.py check` (with `lint` fallback) — it does not re-implement the schema. |
 | Maintenance lock | A `.git/maintenance.lock` sentinel halts the sync. Remove it only when the orchestrator is done. |
-| Per-harness block | `scripts/install_agents.py` writes a "Vault governance" block (separate markers from the engineering method) to Claude, Codex, OpenCode, Cursor, Gemini and Mavis. |
-| Boards | The SessionEnd hook never writes to `BOARD.md` — boards are generated, not hand-edited. |
+| Per-harness block | `scripts/install_agents.py` writes a "Vault governance" block to Claude (`~/.claude/CLAUDE.md`), Codex, OpenCode, Cursor (`~/.cursor/rules/ai-native-dev-stack.mdc`), Gemini (`~/.gemini/GEMINI.md`) and Mavis. |
+| Boards | The SessionEnd hook never writes to `BOARD.md` — boards are generated navigation views; canonical cards hold status. |
 | Sync | `scripts/vault_sync.py` runs the v4 validator before staging, preserves secret scan, single-writer, divergence detection and remote SHA verification. |
 | Check / rollback | `python scripts/install_agents.py --check --vault <vault> --project-slug <slug>` reports block state; `python scripts/vault_sync.py --no-validator-check` is the *only* legacy opt-in. |
 
@@ -761,8 +761,7 @@ python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug
 python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --check
 
 # Rollback: remove the "Vault governance" block from every harness.
-# The method block is also a managed block, so the same --dry-run path
-# that adds it is the one that removes it on the next install.
+# The shared engineering method block is preserved.
 python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --no-vault-block
 
 # Restart every AI client so it reloads the global rules.
@@ -779,7 +778,7 @@ The stack does not:
   `AGENTS.md`; the contract text lives in one place only.
 - Write into the vault during a normal install. The installer writes
   to user-level harness directories (`~/.claude/`, `~/.codex/`,
-  `~/.config/opencode/`, `~/.mavis/...`); the vault is read-only
+  `~/.config/opencode/`, `~/.cursor/rules/`, `~/.gemini/`, `~/.mavis/...`); the vault is read-only
   from the stack's perspective.
 
 ### Local write, commit, push, publish — four distinct actions

@@ -667,8 +667,8 @@ coffre qui ne satisfait pas le contrat.
 | Détection v4 | Le protocole vérifie `_system/schemas/projects.json`, `_system/tooling/vault.py` et l'`AGENTS.md` racine. |
 | Validation | La stack appelle `<coffre>/_system/tooling/vault.py check` (avec fallback `lint`) — elle ne ré-implémente pas le schéma. |
 | Verrou de maintenance | Un sentinel `.git/maintenance.lock` arrête le sync. Ne le supprimer que lorsque l'orchestrateur a terminé. |
-| Bloc par harnais | `scripts/install_agents.py` écrit un bloc « Vault governance » (marqueurs séparés du bloc méthode) pour Claude, Codex, OpenCode, Cursor, Gemini et Mavis. |
-| Boards | Le hook SessionEnd n'écrit jamais dans `BOARD.md` — les boards sont générées, pas éditées à la main. |
+| Bloc par harnais | `scripts/install_agents.py` écrit un bloc « Vault governance » pour Claude (`~/.claude/CLAUDE.md`), Codex, OpenCode, Cursor (`~/.cursor/rules/ai-native-dev-stack.mdc`), Gemini (`~/.gemini/GEMINI.md`) et Mavis. |
+| Boards | Le hook SessionEnd n'écrit jamais dans `BOARD.md` — les boards sont des vues générées ; les cartes canoniques portent le statut. |
 | Sync | `scripts/vault_sync.py` exécute le validateur v4 avant le staging, préserve le scan de secrets, le single-writer, la détection de divergence et la vérification du SHA distant. |
 | Check / rollback | `python scripts/install_agents.py --check --vault <coffre> --project-slug <slug>` rapporte l'état des blocs ; `python scripts/vault_sync.py --no-validator-check` est la *seule* opt-in legacy. |
 
@@ -682,8 +682,7 @@ python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug
 python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --check
 
 # Rollback : retirer le bloc « Vault governance » de chaque harnais.
-# Le bloc méthode est aussi un bloc géré, donc le même --dry-run qui
-# l'ajoute le retire à la prochaine installation.
+# Le bloc de méthode d'ingénierie partagé est conservé.
 python scripts/install_agents.py --vault "<OBSIDIAN_VAULT>" --project-slug <slug> --no-vault-block
 
 # Redémarrer chaque client IA pour qu'il recharge les règles globales.

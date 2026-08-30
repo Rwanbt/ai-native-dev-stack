@@ -56,6 +56,18 @@ VALIDATOR_LINT_ONLY = (
     "    sys.exit(0)\n"
 )
 
+VALIDATOR_CHECK_AND_RED_LINT = (
+    "import argparse, sys\n"
+    "p = argparse.ArgumentParser()\n"
+    "p.add_argument('--root', default='.')\n"
+    "sub = p.add_subparsers(dest='cmd', required=True)\n"
+    "sub.add_parser('check')\n"
+    "sub.add_parser('lint')\n"
+    "args = p.parse_args()\n"
+    "if args.cmd == 'check': print('OK'); sys.exit(0)\n"
+    "sys.stderr.write('lint must not run'); sys.exit(1)\n"
+)
+
 VALIDATOR_RED = "import sys\nsys.stderr.write('red'); sys.exit(1)\n"
 
 VALIDATOR_SLOW = (
@@ -314,6 +326,15 @@ class ValidatorTests(unittest.TestCase):
                                          validator_subcommand="check",
                                          validator_timeout=10)
         self.assertEqual(result.status, "ok", msg=result.detail)
+
+    def test_check_subcommand_is_detected_in_argparse_choice_list(self) -> None:
+        _build_v4_vault(self.root, validator=VALIDATOR_CHECK_AND_RED_LINT)
+        result = vault_protocol.discover(
+            str(self.root), "demo", run_validation=True,
+            validator_subcommand="check", validator_timeout=10,
+        )
+        self.assertEqual(result.status, "ok", msg=result.detail)
+        self.assertEqual(result.detail, "validator=check")
 
 
 if __name__ == "__main__":

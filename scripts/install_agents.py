@@ -191,7 +191,8 @@ class Installer:
         separator = "\n\n" if text.strip() else ""
         return text.rstrip() + separator + new_block + "\n"
 
-    def managed_method_block(self, path: Path, heading: str) -> None:
+    def managed_method_block(self, path: Path, heading: str,
+                             preamble: str = "") -> None:
         block = (
             f"{METHOD_BEGIN}\n"
             f"## {heading}\n\n"
@@ -199,7 +200,9 @@ class Installer:
             "as mandatory shared engineering instructions.\n"
             f"{METHOD_END}"
         )
-        self._write_managed_block(path, block, METHOD_BEGIN, METHOD_END, "method block")
+        self._write_managed_block(
+            path, block, METHOD_BEGIN, METHOD_END, "method block", preamble=preamble,
+        )
 
     def managed_vault_block(self, path: Path, vault: Path, slug: str) -> None:
         """Install the vault-governance block.
@@ -218,10 +221,11 @@ class Installer:
             "## Vault governance (v4)\n\n"
             f"This session is bound to the v4 vault at `{vault}`.\n\n"
             f"- Read `{rel_root}` and `{rel_project}` first.\n"
-            f"- The board (`{rel_board}`) is the authority for project status.\n"
-            f"- Never write into `_system/`, never edit `BOARD.md` directly, "
-            "and never invent project context: if the entries are missing, "
-            "create a `needs-triage` card and stop.\n"
+            f"- The board (`{rel_board}`) is a generated navigation view; canonical "
+            "initiative/task cards are the authority for project status.\n"
+            f"- Never edit generated `BOARD.md`/`BOARD.json` projections directly. "
+            "Only change `_system/` when the task explicitly targets vault governance. "
+            "If canonical entries are missing, create a `needs-triage` card and stop.\n"
             f"- Vault location, project slug and validator status are "
             "discovered via `$OBSIDIAN_VAULT` and `$OBSIDIAN_PROJECT_SLUG`. "
             "If either is missing, ask the user before proceeding.\n"
@@ -230,19 +234,23 @@ class Installer:
         self._write_managed_block(path, block, VAULT_BEGIN, VAULT_END, "vault block")
 
     def _write_managed_block(self, path: Path, block: str,
-                             begin: str, end: str, label: str) -> None:
+                             begin: str, end: str, label: str,
+                             preamble: str = "") -> None:
         current = path.read_text(encoding="utf-8") if path.exists() else ""
-        balanced = self._block_count(current, begin, end)
-        duplicates = current.count(begin) - balanced
-
-        if duplicates > 0:
-            # Two BEGIN markers with only one END: the block is broken.
-            # Refuse to write — auto-rewriting a half-formed block is
-            # exactly the kind of silent corruption this installer
-            # exists to prevent.
+        begin_count = current.count(begin)
+        end_count = current.count(end)
+        if begin_count != end_count or begin_count > 1:
+            # Refuse malformed and fully duplicated blocks alike. Replacing
+            # only one balanced pair would leave contradictory instructions.
             self.errors += 1
-            self.report("DUPLICATE", path, f"{label}: {duplicates + 1} BEGIN without END")
+            self.report(
+                "DUPLICATE", path,
+                f"{label}: {begin_count} BEGIN marker(s), {end_count} END marker(s)",
+            )
             return
+
+        if not current and preamble:
+            current = preamble.rstrip() + "\n"
 
         wanted = (
             self._replace_block(current, begin, end, block)
@@ -263,6 +271,37 @@ class Installer:
         else:
             path.write_text(wanted, encoding="utf-8")
             self.report("UPDATED", path)
+
+    def remove_managed_block(self, path: Path, begin: str, end: str,
+                             label: str) -> None:
+        """Remove exactly one managed block while preserving user content."""
+        if not path.exists():
+            self.report("OK", path, f"{label} absent")
+            return
+        current = path.read_text(encoding="utf-8")
+        begin_count = current.count(begin)
+        end_count = current.count(end)
+        if begin_count == 0 and end_count == 0:
+            self.report("OK", path, f"{label} absent")
+            return
+        if begin_count != 1 or end_count != 1:
+            self.errors += 1
+            self.report(
+                "DUPLICATE", path,
+                f"{label}: {begin_count} BEGIN marker(s), {end_count} END marker(s)",
+            )
+            return
+        wanted = self._replace_block(current, begin, end, "")
+        if self.check:
+            self.errors += 1
+            self.report("STALE", path, f"{label} should be absent")
+            return
+        self.changes += 1
+        if self.dry_run:
+            self.report("REMOVE", path, label)
+            return
+        path.write_text(wanted, encoding="utf-8")
+        self.report("UPDATED", path, f"{label} removed")
 
     def rendered_file(self, template: Path, target: Path) -> None:
         wanted = template.read_text(encoding="utf-8")
@@ -336,10 +375,11 @@ def resolve_vault_pair(args: argparse.Namespace) -> tuple[Path | None, str | Non
     vault_path = protocol.resolve_vault_path(args.vault)
     if vault_path is None:
         return (None, None, "no vault path from --vault, positional, or OBSIDIAN_VAULT")
-    slug = protocol.validate_slug(args.project_slug or protocol.resolve_project_slug(args.project_slug))
-    if slug is None:
-        return (None, None, f"invalid project slug {args.project_slug!r}")
-    return (vault_path, slug, None)
+    slug_value = protocol.resolve_project_slug(args.project_slug)
+    status = protocol.discover(vault_path, slug_value, run_validation=True)
+    if status.status != "ok":
+        return (None, None, f"vault discovery failed ({status.status}): {status.detail}")
+    return (status.vault, status.slug, None)
 
 
 def main() -> int:
@@ -352,9 +392,16 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    # Resolve and validate the complete vault/slug pair before touching any
+    # user profile. A bad registry entry must never leave a partial install.
+    vault, slug, vault_err = resolve_vault_pair(args)
+    if vault_err:
+        print(f"ERROR: {vault_err}", file=sys.stderr)
+        return 2
+
     stack = Path(__file__).resolve().parent.parent
     installer = Installer(stack, args.home, args.dry_run, args.check,
-                          None, None)
+                          vault, slug)
 
     generic_skills = sorted((stack / "skills").glob("*/SKILL.md"))
     debt_skills = sorted((stack / "stack/agents/anti-debt/skills").glob("*/SKILL.md"))
@@ -367,25 +414,34 @@ def main() -> int:
             installer.link(source, root / source.name)
 
     # Shared engineering method: every supported harness gets a copy.
+    cursor_preamble = (
+        "---\n"
+        "description: AI Native Dev Stack and Obsidian vault governance\n"
+        "alwaysApply: true\n"
+        "---\n"
+    )
     method_targets = [
-        args.home / ".claude" / "CLAUDE.md",
-        args.home / ".codex" / "AGENTS.md",
-        args.home / ".config" / "opencode" / "AGENTS.md",
-        args.home / ".mavis" / "agents" / "mavis" / "agent.md",
+        (args.home / ".claude" / "CLAUDE.md", ""),
+        (args.home / ".codex" / "AGENTS.md", ""),
+        (args.home / ".config" / "opencode" / "AGENTS.md", ""),
+        (args.home / ".cursor" / "rules" / "ai-native-dev-stack.mdc", cursor_preamble),
+        (args.home / ".gemini" / "GEMINI.md", ""),
+        (args.home / ".mavis" / "agents" / "mavis" / "agent.md", ""),
     ]
-    for path in method_targets:
-        installer.managed_method_block(path, "Shared engineering method")
+    for path, preamble in method_targets:
+        installer.managed_method_block(
+            path, "Shared engineering method", preamble=preamble,
+        )
 
     # Vault governance: every supported harness gets a second, separate
     # block. We resolve once and reuse, so a bad --vault surfaces as one
     # error rather than six.
-    vault, slug, vault_err = resolve_vault_pair(args)
-    if vault_err:
-        print(f"ERROR: {vault_err}", file=sys.stderr)
-        return 2
     if vault is not None and slug is not None:
-        for path in method_targets:
+        for path, _preamble in method_targets:
             installer.managed_vault_block(path, vault, slug)
+    elif args.no_vault_block:
+        for path, _preamble in method_targets:
+            installer.remove_managed_block(path, VAULT_BEGIN, VAULT_END, "vault block")
 
     installer.link(
         stack / "stack/agents/anti-debt", args.home / ".mavis/agents/anti-debt"
