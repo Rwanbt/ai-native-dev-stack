@@ -157,9 +157,14 @@ class SessionEndTests(unittest.TestCase):
         for label, result in (("a", a), ("b", b)):
             with self.subTest(session=label):
                 self.assertEqual(result.returncode, 0, msg=result.stderr)
-                # The error is a transport error (HTTP 401), not a
-                # log-truncation / silent-loss artifact.
-                self.assertIn("HTTP", result.stdout)
+                payload = json.loads(result.stdout.strip().splitlines()[0])
+                metadata = payload["metadata"]
+                # With no Obsidian server in CI this is a transport failure;
+                # the invariant is independent persistence reporting, not a
+                # particular HTTP status.
+                self.assertIn("sessionSaveError", metadata)
+                self.assertEqual(metadata.get("needsTriage"), True)
+                self.assertIn(label[-1] * 4, metadata.get("notePath", ""))
 
 
 if __name__ == "__main__":
