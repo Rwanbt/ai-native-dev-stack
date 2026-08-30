@@ -41,14 +41,51 @@ import sys
 import time
 from pathlib import Path
 
+# v4 integration. Imported lazily inside `run_v4_check` so the file stays
+# usable on a checkout that doesn't ship the protocol module yet (e.g. a
+# stack pinned to a tag from before this commit). The v4 enforcement is
+# a contract check, not a build-time dependency.
+_vault_protocol = None  # populated by _load_vault_protocol()
+
 # The lock lives inside .git/, never in the working tree: a lock file next to
 # the notes makes `git status` permanently dirty, so the vault is never "already
 # in sync" and the lock ends up committed and pushed with the notes.
 LOCK_NAME = "vault-sync.lock"
 LOCK_STALE_SECONDS = 900  # 15 min — a sync that long has failed, not stalled
 
+# v4 maintenance sentinel. Distinct from LOCK_NAME: maintenance is a
+# human-set signal that says "stay out, the orchestrator is rebuilding
+# the vault"; the sync lock is a short-lived single-writer claim.
+# Confusing the two would let a long sync trip the maintenance guard
+# the orchestrator put in place.
+MAINTENANCE_LOCK = Path(".git") / "maintenance.lock"
+
+# How long the v4 validator is allowed to take before the sync gives
+# up. The validator is short and local, so this is purely a guard
+# against an accidental hang — not a tight budget.
+V4_VALIDATOR_TIMEOUT = 30
+
 # Reuse the stack's single owner of credential patterns when it is reachable.
 _ANTI_DEBT_TOOLS = Path(__file__).resolve().parent.parent / "stack" / "agents" / "anti-debt" / "tools"
+
+
+def _load_vault_protocol():
+    """Return the protocol module, importing it lazily.
+
+    The protocol ships in the same directory as this script. We import
+    on demand so a stack pinned to a tag from before the protocol
+    existed still loads — the v4 enforcement is then just absent, not
+    broken.
+    """
+    global _vault_protocol
+    if _vault_protocol is not None:
+        return _vault_protocol
+    try:
+        import vault_protocol  # type: ignore  # noqa: PLC0415
+    except ImportError:
+        return None
+    _vault_protocol = vault_protocol
+    return _vault_protocol
 
 
 def _load_secret_patterns() -> list:
@@ -79,11 +116,17 @@ class SyncError(Exception):
 
 class VaultSync:
     def __init__(self, vault: Path, dry_run: bool, allow_branch: bool,
-                 skip_secret_scan: bool = False) -> None:
+                 skip_secret_scan: bool = False,
+                 skip_validator_check: bool = False) -> None:
         self.vault = vault
         self.dry_run = dry_run
         self.allow_branch = allow_branch
         self.skip_secret_scan = skip_secret_scan
+        # `--no-validator-check` is the *only* way to bypass the v4
+        # contract guard. It is meant for tests and migration tooling,
+        # not daily use; the option name makes the intent obvious in
+        # the eventual audit log.
+        self.skip_validator_check = skip_validator_check
         self.lock_path = vault / ".git" / LOCK_NAME
 
     # --- git plumbing -----------------------------------------------------
@@ -175,6 +218,79 @@ class VaultSync:
         lowered = matched.lower()
         return any(marker in lowered for marker in markers)
 
+    def _is_v4_vault(self) -> bool:
+        """True when the vault exposes the v4 contract surface.
+
+        Detection is cheap and version-stable: we only look for the
+        schema registry and the validator entry point. If those two
+        files exist, the rest of the v4 contract is in force and the
+        sync must enforce it.
+        """
+        return (self.vault / "_system" / "schemas" / "projects.json").is_file() \
+           and (self.vault / "_system" / "tooling" / "vault.py").is_file()
+
+    def maintenance_locked(self) -> bool:
+        """True when the orchestrator's maintenance sentinel is present.
+
+        The sentinel is an empty file at `.git/maintenance.lock`. The
+        orchestrator puts it there during Gate 0 to keep two agents
+        from racing on the same checkout. The sync must back off until
+        the lock is removed, not race past it.
+        """
+        return (self.vault / MAINTENANCE_LOCK).is_file()
+
+    def run_v4_check(self) -> None:
+        """Invoke the vault's v4 validator and refuse to commit on red.
+
+        Mirrors the secret-scan guarantee: a non-zero exit raises a
+        `SyncError`, the staged index is reset to its prior state, and
+        the user gets the validator's own output so the cause is
+        debuggable. The function is a no-op on a non-v4 vault — older
+        vaults have no validator to call, and silently skipping would
+        erase the contract that distinguishes a v4 sync from any
+        other backup.
+        """
+        if not self._is_v4_vault():
+            return
+        protocol = _load_vault_protocol()
+        if protocol is None:
+            # Stack is older than the protocol layer; the user has
+            # configured a v4 vault but the sync cannot enforce it.
+            # Failing loud is the only safe option.
+            raise SyncError(
+                "vault is v4 but the stack does not ship vault_protocol.py — "
+                "upgrade the stack before syncing a v4 vault."
+            )
+
+        status = protocol.check_vault(
+            str(self.vault),
+            run_validation=True,
+            validator_subcommand="check",
+            validator_timeout=V4_VALIDATOR_TIMEOUT,
+        )
+        if status.status == "ok":
+            return
+        if status.status == "maintenance":
+            raise SyncError(
+                f"v4 maintenance lock present at {MAINTENANCE_LOCK} — refusing "
+                "to sync. Remove the lock when the orchestrator's Gate is done."
+            )
+        if status.status == "timeout":
+            raise SyncError(
+                f"v4 validator exceeded {V4_VALIDATOR_TIMEOUT}s — refusing to "
+                "commit. The vault is in an unexpected state; investigate before retry."
+            )
+        if status.status == "validator-down":
+            raise SyncError(
+                "v4 validator is missing or not executable — refusing to commit. "
+                f"Detail: {status.detail}"
+            )
+        # status == "validator-red" (or any other failure): bail out.
+        raise SyncError(
+            f"v4 validator refused the vault (status={status.status}): "
+            f"{status.detail}"
+        )
+
     def scan_for_secrets(self) -> list[str]:
         """Look for credentials in what is about to be committed."""
         patterns = _load_secret_patterns()
@@ -207,6 +323,21 @@ class VaultSync:
         if not (self.vault / ".git").exists():
             print(f"vault: not a git repository ({self.vault}) — skip")
             return 0
+
+        # v4 maintenance check first. It costs one stat() and refuses the
+        # whole sync before any fetch or remote access — exactly the
+        # behaviour the orchestrator's Gate 0 expects.
+        if self.maintenance_locked():
+            raise SyncError(
+                f"v4 maintenance lock present at {MAINTENANCE_LOCK} — refusing "
+                "to sync. Remove the lock when the orchestrator is done."
+            )
+
+        # v4 validator runs only when the vault is v4 and the operator
+        # has not asked for a legacy run. The function is a no-op on
+        # older vaults, so the existing behaviour is preserved.
+        if not self.skip_validator_check:
+            self.run_v4_check()
 
         branch = self.git("rev-parse", "--abbrev-ref", "HEAD")
         if branch == "HEAD":
@@ -304,6 +435,10 @@ def parse_args() -> argparse.Namespace:
                         help="permit syncing a non-primary branch")
     parser.add_argument("--skip-secret-scan", action="store_true",
                         help="bypass the credential guard for this run only")
+    parser.add_argument("--no-validator-check", dest="skip_validator_check",
+                        action="store_true",
+                        help="bypass the v4 vault validator for legacy fixtures "
+                             "and tests; never use in production.")
     return parser.parse_args()
 
 
@@ -320,7 +455,8 @@ def main() -> int:
         return 0
 
     sync = VaultSync(vault.resolve(), args.dry_run, args.allow_branch,
-                     args.skip_secret_scan)
+                     args.skip_secret_scan,
+                     skip_validator_check=args.skip_validator_check)
     try:
         sync.acquire_lock()
         return sync.run()
