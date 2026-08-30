@@ -675,7 +675,7 @@ Auto-discovery is based on the presence of `AI_CONTEXT.md`. No hardcoded list to
 Copy `tools/ai_docs/config.sh.example` to `config.sh` and fill in:
 - `GRAPHIFY_BIN` — path to the graphify binary
 - `OBSIDIAN_VAULT` — root of your Obsidian vault
-- `OBSIDIAN_PROJECT_DIR` — subfolder for this project
+- `OBSIDIAN_PROJECT_SLUG` — canonical kebab-case slug for this project (for example, `ai-native-dev-stack`)
 - `CLAUDE_MEMORY_KEY` — subfolder name in `~/.claude/projects/`
 
 ### 3. `AI_CONTEXT.md`
