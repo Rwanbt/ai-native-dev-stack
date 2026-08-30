@@ -316,18 +316,21 @@ def resolve_vault_pair(args: argparse.Namespace) -> tuple[Path | None, str | Non
     Returning a single error string (instead of raising) keeps the caller
     in charge of how a configuration problem is reported. The string
     describes the smallest fix the user can apply.
+
+    A user who has not configured a vault gets `(None, None, None)` —
+    the method block is still installed; the vault governance block is
+    simply skipped. An error is only returned when the user *asked*
+    for a vault (via env or argument) but the configuration is broken.
     """
     if args.no_vault_block:
         return (None, None, None)
+    env_vault = os.environ.get("OBSIDIAN_VAULT")
+    env_slug = os.environ.get("OBSIDIAN_PROJECT_SLUG")
+    if not args.vault and not env_vault and not env_slug and not args.project_slug:
+        return (None, None, None)
+
     protocol = _import_protocol()
     if protocol is None:
-        # No protocol module — refuse to invent a vault path, even from
-        # the environment. A user wanting vault governance must be on a
-        # checkout that ships the protocol layer.
-        env_vault = os.environ.get("OBSIDIAN_VAULT")
-        env_slug = os.environ.get("OBSIDIAN_PROJECT_SLUG")
-        if not env_vault and not env_slug:
-            return (None, None, None)
         return (None, None, "vault requested but vault_protocol.py is missing from this checkout")
 
     vault_path = protocol.resolve_vault_path(args.vault)
