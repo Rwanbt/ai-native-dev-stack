@@ -33,3 +33,13 @@ class SnapshotTests(unittest.TestCase):
                 outside.unlink(missing_ok=True)
             with self.assertRaisesRegex(Exception, "CASE_COLLISION"):
                 snapshot_files(root, ["Foo.ts", "foo.ts"])
+
+    def test_special_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fifo"
+            try:
+                os.mkfifo(path)
+            except (AttributeError, NotImplementedError, OSError):
+                self.skipTest("special file creation unavailable")
+            with self.assertRaisesRegex(SnapshotError, "SECURITY_REJECTED"):
+                snapshot_files(directory, ["fifo"])

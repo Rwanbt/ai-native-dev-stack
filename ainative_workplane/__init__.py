@@ -10,6 +10,7 @@ from .traceability import Gap, TraceabilityResult, analyze
 from .runner import RunResult, RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, snapshot_files
+from .cli import main as cli_main
 
 __all__ = [
     "ContractError",
@@ -28,6 +29,7 @@ __all__ = [
     "stall_fingerprint",
     "SnapshotError",
     "snapshot_files",
+    "cli_main",
     "canonical_digest",
     "canonical_json_bytes",
     "canonical_path",
