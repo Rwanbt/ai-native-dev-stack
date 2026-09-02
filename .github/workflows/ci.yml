@@ -117,6 +117,14 @@ jobs:
       - name: CLI, integrations and local pilot harnesses
         run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix -v
 
+      - name: The package installs and exposes its console entry point
+        shell: bash
+        run: |
+          set -e
+          python -m pip install --disable-pip-version-check --no-deps -e .
+          ainative work --help > /dev/null
+          ainative converge --help > /dev/null
+
       - name: Deterministic gates must also reproduce outside the test runner
         # bash, not the Windows default shell: PowerShell only propagates the
         # exit code of the last line, which would hide a failure in the first

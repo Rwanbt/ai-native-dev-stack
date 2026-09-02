@@ -1,10 +1,14 @@
-"""Deterministic contracts for the Verified Work Plane V2.
+"""Verified Work Plane V2 runtime.
 
-This package deliberately contains data contracts only. Runtime mutation,
-command execution, and convergence are implemented in later PRs.
+Work contracts are written by one controller, verification is observed by a
+constrained runner, and convergence is decided deterministically from bound
+evidence. Narrative artifacts and language models propose; nothing here lets
+them decide.
 """
 
-from .contracts import ContractError, canonical_digest, canonical_json_bytes, canonical_path, generate_uid, validate_artifact
+__version__ = "0.1.0"
+
+from .contracts import SUPPORTED_SCHEMA_VERSIONS, ContractError, canonical_digest, canonical_json_bytes, canonical_path, generate_uid, validate_artifact
 from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
@@ -20,6 +24,8 @@ from .integrations import ReadOnlyFinding, collect_findings, memory_summary
 from .metrics import PilotMetrics
 
 __all__ = [
+    "__version__",
+    "SUPPORTED_SCHEMA_VERSIONS",
     "ContractError",
     "ControllerError",
     "WorkController",

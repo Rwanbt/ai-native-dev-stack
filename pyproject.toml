@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ainative-workplane"
+description = "Verified Work Plane V2 — deterministic work contracts, bound verification evidence, and convergence verdicts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dynamic = ["version"]
+dependencies = []
+
+# The runtime version is the package's own. It is deliberately not the
+# repository VERSION file and not SCHEMA_VERSION: a stack release, a runtime
+# release and an artifact schema change are three different events.
+[tool.setuptools.dynamic]
+version = { attr = "ainative_workplane.__version__" }
+
+[project.scripts]
+ainative = "ainative_workplane.cli:main"
+
+[tool.setuptools]
+packages = ["ainative_workplane"]
