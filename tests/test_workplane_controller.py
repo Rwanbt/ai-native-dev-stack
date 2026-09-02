@@ -1,4 +1,8 @@
 import json
+import os
+import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,13 +36,46 @@ class WorkControllerTests(unittest.TestCase):
             with self.assertRaisesRegex(ControllerError, "WORK_ALREADY_EXISTS"):
                 controller.create({"tasks": {"done": True}})
 
+    def hold_lock(self, controller, *, pid, host):
+        controller.root.mkdir(parents=True, exist_ok=True)
+        controller.lock_path.write_text(json.dumps({"pid": pid, "host": host, "created_at": "2026-09-02T00:00:00Z", "transaction_id": "held"}), encoding="utf-8")
+
     def test_concurrent_writer_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             controller = WorkController(directory)
-            controller.root.mkdir(parents=True, exist_ok=True)
-            (controller.root / ".controller.lock").write_text("held", encoding="utf-8")
+            self.hold_lock(controller, pid=os.getpid(), host=socket.gethostname())
             with self.assertRaisesRegex(ControllerError, "CONCURRENT_WRITER"):
                 controller.create({"tasks": {"done": False}})
+
+    def test_dead_writer_lock_is_reclaimed_but_live_and_foreign_locks_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = WorkController(directory)
+            controller.create({"tasks": {"revision": 1}})
+
+            crashed = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+            crashed.kill()
+            crashed.wait()
+            self.hold_lock(controller, pid=crashed.pid, host=socket.gethostname())
+            self.assertEqual(2, controller.mutate(1, {"tasks": {"revision": 2}})["revision"])
+            self.assertFalse(controller.lock_path.exists())
+
+            self.hold_lock(controller, pid=os.getpid(), host="another-machine")
+            with self.assertRaisesRegex(ControllerError, "CONCURRENT_WRITER"):
+                controller.mutate(2, {"tasks": {"revision": 3}})
+
+            live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+            try:
+                self.hold_lock(controller, pid=live.pid, host=socket.gethostname())
+                with self.assertRaisesRegex(ControllerError, "CONCURRENT_WRITER"):
+                    controller.mutate(2, {"tasks": {"revision": 3}})
+            finally:
+                live.kill()
+                live.wait()
+
+            controller.lock_path.write_text("not a lock record", encoding="utf-8")
+            with self.assertRaisesRegex(ControllerError, "INVALID_LOCK"):
+                controller.mutate(2, {"tasks": {"revision": 3}})
+            self.assertEqual(2, WorkController(directory).read()["revision"])
 
     def test_crash_before_manifest_preserves_previous_authority(self):
         with tempfile.TemporaryDirectory() as directory:

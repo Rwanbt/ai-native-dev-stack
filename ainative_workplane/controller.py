@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import ctypes
+from datetime import datetime, timezone
 import json
 import os
 import secrets
 import shutil
+import socket
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -15,6 +18,38 @@ from .contracts import ContractError, canonical_json_bytes, canonical_path, dige
 
 class ControllerError(RuntimeError):
     """A failed controller operation; committed state remains authoritative."""
+
+
+def process_is_alive(pid: int) -> bool:
+    """Report whether a PID is running on this host.
+
+    WHY: a recycled PID reads as alive and a permission error reads as alive.
+    Both err toward refusing to reclaim a lock, which is the fail-closed side.
+    """
+
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    query_limited_information = 0x1000
+    still_active = 259
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(query_limited_information, False, pid)
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 class WorkController:
@@ -32,13 +67,40 @@ class WorkController:
         if self.failure_injector:
             self.failure_injector(name)
 
-    def _lock(self):
+    def _lock(self) -> int:
         self.root.mkdir(parents=True, exist_ok=True)
         try:
-            handle = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            return self._acquire()
+        except FileExistsError:
+            pass
+        if not self._reclaim_dead_lock():
+            raise ControllerError("CONCURRENT_WRITER")
+        try:
+            return self._acquire()
         except FileExistsError as exc:
             raise ControllerError("CONCURRENT_WRITER") from exc
+
+    def _acquire(self) -> int:
+        handle = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        owner = {"pid": os.getpid(), "host": socket.gethostname(), "created_at": datetime.now(timezone.utc).isoformat(), "transaction_id": uuid.uuid4().hex}
+        os.write(handle, canonical_json_bytes(owner))
         return handle
+
+    def _reclaim_dead_lock(self) -> bool:
+        """Reclaim only a lock this host owns whose writer no longer exists."""
+
+        try:
+            owner = json.loads(self.lock_path.read_text(encoding="utf-8"))
+            pid = int(owner["pid"])
+            host = owner["host"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise ControllerError("INVALID_LOCK") from exc
+        # WHY: a writer on another machine cannot be observed from here, so age
+        # alone never justifies breaking its lock.
+        if host != socket.gethostname() or process_is_alive(pid):
+            return False
+        self.lock_path.unlink(missing_ok=True)
+        return True
 
     def _unlock(self, handle: int) -> None:
         os.close(handle)
