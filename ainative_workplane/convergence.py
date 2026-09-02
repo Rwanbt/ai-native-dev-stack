@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .traceability import Gap, TraceabilityResult
@@ -16,6 +19,12 @@ class ConvergenceVerdict:
     verdict: str
     gaps: tuple[Gap, ...]
     reason: str
+    fingerprint: str = ""
+
+
+def stall_fingerprint(gaps: Iterable[Gap]) -> str:
+    payload = [{"code": gap.code, "uid": gap.uid, "detail": gap.detail} for gap in gaps]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def converge(traceability: TraceabilityResult, runs: Iterable[Mapping[str, Any]], *, freshness: Iterable[str] = ()) -> ConvergenceVerdict:
@@ -25,10 +34,20 @@ def converge(traceability: TraceabilityResult, runs: Iterable[Mapping[str, Any]]
         gaps.append(Gap(state, None, "blocking freshness state"))
     run_list = list(runs)
     if not run_list:
-        return ConvergenceVerdict("INVALID", tuple(gaps), "no verification run is available")
+        return ConvergenceVerdict("INVALID", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
     for run in run_list:
         if run.get("status") not in {"PASS", "pass"}:
             gaps.append(Gap("VERIFICATION_FAILED", run.get("uid"), "selected verification did not pass"))
     if gaps:
-        return ConvergenceVerdict("BLOCKED", tuple(gaps), "structural, freshness, or verification gaps remain")
-    return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied")
+        return ConvergenceVerdict("BLOCKED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
+    return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
+
+
+def append_convergence(path: str | Path, verdict: ConvergenceVerdict, *, work_uid: str, engine_version: str) -> None:
+    """Append a historical convergence fact; never overwrite an earlier run."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = {"work_uid": work_uid, "verdict": verdict.verdict, "reason": verdict.reason, "fingerprint": verdict.fingerprint, "engine_version": engine_version}
+    with target.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")

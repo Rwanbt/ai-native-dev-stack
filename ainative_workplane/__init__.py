@@ -8,7 +8,7 @@ from .contracts import ContractError, canonical_digest, canonical_json_bytes, ca
 from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .runner import RunResult, RunnerError, VerificationRunner, load_registry
-from .convergence import ConvergenceVerdict, converge
+from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, snapshot_files
 
 __all__ = [
@@ -24,6 +24,8 @@ __all__ = [
     "load_registry",
     "ConvergenceVerdict",
     "converge",
+    "append_convergence",
+    "stall_fingerprint",
     "SnapshotError",
     "snapshot_files",
     "canonical_digest",
