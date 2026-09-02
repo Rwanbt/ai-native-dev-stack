@@ -11,6 +11,8 @@ from .runner import RunResult, RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, snapshot_files
 from .cli import main as cli_main
+from .integrations import ReadOnlyFinding, collect_findings, memory_summary
+from .metrics import PilotMetrics
 
 __all__ = [
     "ContractError",
@@ -30,6 +32,10 @@ __all__ = [
     "SnapshotError",
     "snapshot_files",
     "cli_main",
+    "ReadOnlyFinding",
+    "collect_findings",
+    "memory_summary",
+    "PilotMetrics",
     "canonical_digest",
     "canonical_json_bytes",
     "canonical_path",
