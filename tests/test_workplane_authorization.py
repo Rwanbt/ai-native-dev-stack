@@ -121,7 +121,7 @@ class AuthorizationTests(unittest.TestCase):
             [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": DIGEST}]}],
             [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": DIGEST}, "verification_specifications": [{"uid": specification, "digest": DIGEST}]}],
             [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": DIGEST}]}],
-            [{"uid": specification}],
+            [{"uid": specification, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]}],
         )
         fresh = FreshnessResult(frozenset())
         trusted = TrustVerdict(True, "TRUSTED")

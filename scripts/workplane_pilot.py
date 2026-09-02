@@ -39,7 +39,7 @@ def run() -> dict[str, object]:
         [{"uid": "req-pilot", "acceptance_criteria": [{"uid": "ac-pilot", "digest": digest}]}],
         [{"uid": "ac-pilot", "requirement": {"uid": "req-pilot", "digest": digest}, "verification_specifications": [{"uid": specification_uid, "digest": digest}]}],
         [{"uid": "task-pilot", "requirements": [{"uid": "req-pilot", "digest": digest}]}],
-        [{"uid": specification_uid}],
+        [{"uid": specification_uid, "relationship": "black_box", "covered_implementation_paths": ["src/**"], "execution_scope": ["tests/**"]}],
     )
 
     def binding() -> dict[str, object]:

@@ -161,7 +161,7 @@ class RunnerConvergenceTests(unittest.TestCase):
             [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": digest}]}],
             [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": digest}, "verification_specifications": [{"uid": declared, "digest": digest}]}],
             [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": digest}]}],
-            [{"uid": declared}],
+            [{"uid": declared, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]}],
         )
         self.assertEqual((), graph.gaps)
         trusted = TrustVerdict(True, "TRUSTED")
@@ -190,7 +190,7 @@ class RunnerConvergenceTests(unittest.TestCase):
             [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": digest}]}],
             [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": digest}, "verification_specifications": [{"uid": declared, "digest": digest}]}],
             [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": digest}]}],
-            [{"uid": declared}],
+            [{"uid": declared, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]}],
         )
         fresh = FreshnessResult(frozenset())
         trusted = TrustVerdict(True, "TRUSTED")

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from typing import Any, Iterable, Mapping
 
-from .contracts import ContractError, validate_artifact
+from .contracts import RELATIONSHIP_MODES, ContractError, validate_artifact
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,54 @@ def _refs(item: Mapping[str, Any], field: str) -> tuple[str, ...]:
             raise ContractError("BROKEN_REFERENCE", f"{field} contains a malformed reference")
         result.append(reference["uid"])
     return tuple(result)
+
+
+def _covers(patterns: Iterable[str], path: str) -> bool:
+    """Match a declared coverage pattern against one implementation path."""
+
+    for pattern in patterns:
+        if pattern == path or fnmatchcase(path, pattern):
+            return True
+        prefix = pattern[:-3] if pattern.endswith("/**") else None
+        if prefix is not None and (path == prefix or path.startswith(prefix + "/")):
+            return True
+    return False
+
+
+def _scope_gaps(specs: Mapping[str, Mapping[str, Any]], spec_requirements: Mapping[str, set[str]], requirement_paths: Mapping[str, tuple[str, ...]]) -> list[Gap]:
+    """Check each specification against the coverage its relationship demands."""
+
+    gaps: list[Gap] = []
+    for uid, spec in specs.items():
+        relationship = spec.get("relationship")
+        if relationship not in RELATIONSHIP_MODES:
+            gaps.append(Gap("INVALID_VERIFICATION_RELATIONSHIP", uid, "verification relationship is missing or outside the closed enum"))
+            continue
+        covered = tuple(spec.get("covered_implementation_paths") or ())
+        dependencies = tuple(spec.get("dependencies") or ())
+        if relationship == "human_approval":
+            if not isinstance(spec.get("approval_predicate"), Mapping):
+                gaps.append(Gap("HUMAN_APPROVAL_WITHOUT_PREDICATE", uid, "human approval verification declares no mechanically checkable predicate"))
+            continue
+        if relationship == "external_artifact" and not dependencies:
+            gaps.append(Gap("INSUFFICIENT_VERIFICATION_SCOPE", uid, "external artifact verification declares no provenance dependencies"))
+            continue
+        if relationship == "black_box" and not covered and not dependencies:
+            gaps.append(Gap("INSUFFICIENT_VERIFICATION_SCOPE", uid, "black box verification declares neither covered paths nor dependencies"))
+            continue
+        if relationship != "direct_scope":
+            continue
+        expected: list[str] = []
+        for requirement_uid in sorted(spec_requirements.get(uid, ())):
+            expected.extend(requirement_paths.get(requirement_uid, ()))
+        if not covered and expected:
+            gaps.append(Gap("INSUFFICIENT_VERIFICATION_SCOPE", uid, "direct verification declares no covered implementation paths"))
+            continue
+        for path in sorted(set(expected)):
+            if not _covers(covered, path):
+                gaps.append(Gap("INSUFFICIENT_VERIFICATION_SCOPE", uid, f"implementation path {path} is not covered by this verification"))
+                break
+    return gaps
 
 
 def _index(items: Iterable[Mapping[str, Any]], kind: str) -> tuple[dict[str, Mapping[str, Any]], list[Gap]]:
@@ -109,6 +158,17 @@ def analyze(requirements: Iterable[Mapping[str, Any]], acceptance_criteria: Iter
                 gaps.append(Gap("BROKEN_REFERENCE", uid, f"requirement {req_uid} does not exist"))
         if req_refs and not any(req_uid in verified_requirements for req_uid in req_refs):
             gaps.append(Gap("TASK_WITHOUT_VERIFICATION", uid, "task has no requirement with verification"))
+    spec_requirements: dict[str, set[str]] = {}
+    for criterion_uid, spec_uid in ac_verify:
+        requirement_ref = acs[criterion_uid].get("requirement")
+        if isinstance(requirement_ref, Mapping) and isinstance(requirement_ref.get("uid"), str):
+            spec_requirements.setdefault(spec_uid, set()).add(requirement_ref["uid"])
+    requirement_paths: dict[str, tuple[str, ...]] = {}
+    for uid, task in task_map.items():
+        paths = tuple(task.get("implementation_paths") or ())
+        for req_uid in _refs(task, "requirements"):
+            requirement_paths[req_uid] = requirement_paths.get(req_uid, ()) + paths
+    gaps.extend(_scope_gaps(specs, spec_requirements, requirement_paths))
     for req_uid in reqs:
         if req_uid not in task_incoming:
             gaps.append(Gap("REQ_WITHOUT_TASK", req_uid, "requirement has no task"))
