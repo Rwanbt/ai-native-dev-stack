@@ -14,7 +14,15 @@ from .traceability import Gap, TraceabilityResult
 from .trust import TrustVerdict
 
 
-BLOCKING_FRESHNESS = frozenset({"STALE_CONTRACT", "STALE_SCOPE", "STALE_DEPENDENCY", "COMMAND_REGISTRY_CHANGED", "POLICY_CHANGED"})
+BLOCKING_FRESHNESS = frozenset({
+    "FRESHNESS_UNAVAILABLE",
+    "STALE_CONTRACT",
+    "STALE_SCOPE",
+    "STALE_DEPENDENCY",
+    "COMMAND_REGISTRY_CHANGED",
+    "POLICY_CHANGED",
+    "ROOT_OF_TRUST_CHANGED",
+})
 
 
 @dataclass(frozen=True)
@@ -32,6 +40,8 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
 
 def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None) -> ConvergenceVerdict:
     gaps = list(traceability.gaps)
+    if traceability.requirement_count == 0:
+        gaps.append(Gap("NO_MEANINGFUL_REQUIREMENTS", None, "a work contract requires at least one requirement"))
     states = set(freshness.states) if freshness is not None else {"FRESHNESS_UNAVAILABLE"}
     for state in sorted(states & BLOCKING_FRESHNESS):
         gaps.append(Gap(state, None, "blocking freshness state"))
@@ -41,14 +51,15 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
         gaps.append(Gap(trust.code, None, "evidence authority is insufficient"))
     run_list = list(runs)
     if not run_list:
-        return ConvergenceVerdict("INVALID", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
+        gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
+        return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
     for run in run_list:
         if not isinstance(run, VerificationEvidence):
             gaps.append(Gap("INVALID_VERIFICATION_EVIDENCE", None, "selected run is not validated evidence"))
         elif run.result != "PASS":
             gaps.append(Gap("VERIFICATION_FAILED", run.uid, "selected verification did not pass"))
     if gaps:
-        return ConvergenceVerdict("BLOCKED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
+        return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
     return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
 
 

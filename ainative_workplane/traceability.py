@@ -17,6 +17,7 @@ class Gap:
 
 @dataclass(frozen=True)
 class TraceabilityResult:
+    requirement_count: int
     requirement_to_acceptance: tuple[tuple[str, str], ...]
     acceptance_to_verification: tuple[tuple[str, str], ...]
     requirement_to_task: tuple[tuple[str, str], ...]
@@ -117,4 +118,4 @@ def analyze(requirements: Iterable[Mapping[str, Any]], acceptance_criteria: Iter
     for spec_uid in specs:
         if spec_uid not in spec_incoming:
             gaps.append(Gap("ORPHAN_VERIFICATION_SPEC", spec_uid, "verification specification is not linked from an acceptance criterion"))
-    return TraceabilityResult(tuple(req_ac), tuple(ac_verify), tuple(req_task), tuple(gaps))
+    return TraceabilityResult(len(reqs), tuple(req_ac), tuple(ac_verify), tuple(req_task), tuple(gaps))

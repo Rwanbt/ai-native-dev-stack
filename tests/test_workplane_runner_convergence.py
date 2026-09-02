@@ -61,12 +61,16 @@ class RunnerConvergenceTests(unittest.TestCase):
 
     def test_convergence_ignores_narrative_and_blocks_failures(self):
         graph = analyze([], [], [], [])
-        self.assertEqual("INVALID", converge(graph, []).verdict)
+        missing = converge(graph, [])
+        self.assertEqual("NOT_CONVERGED", missing.verdict)
+        self.assertIn("NO_MEANINGFUL_REQUIREMENTS", [gap.code for gap in missing.gaps])
+        self.assertIn("FRESHNESS_UNAVAILABLE", [gap.code for gap in missing.gaps])
+        self.assertIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in missing.gaps])
         graph = analyze([], [], [], [])
         forged = converge(graph, [{"uid": "run-1", "status": "PASS"}])
-        self.assertEqual("BLOCKED", forged.verdict)
+        self.assertEqual("NOT_CONVERGED", forged.verdict)
         self.assertIn("INVALID_VERIFICATION_EVIDENCE", [gap.code for gap in forged.gaps])
-        self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=FreshnessResult(frozenset({"POLICY_CHANGED"}))).verdict)
+        self.assertEqual("NOT_CONVERGED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=FreshnessResult(frozenset({"POLICY_CHANGED"}))).verdict)
 
     def test_missing_root_fails_closed(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
