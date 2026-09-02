@@ -16,6 +16,7 @@ from ainative_workplane.convergence import converge
 from ainative_workplane.metrics import PilotMetrics
 from ainative_workplane.runner import VerificationRunner
 from ainative_workplane.traceability import analyze
+from ainative_workplane.trust import evaluate_trust
 
 
 def run() -> dict[str, object]:
@@ -26,10 +27,12 @@ def run() -> dict[str, object]:
     completed = 0
     digest = "a" * 64
     registry_digest = canonical_digest(registry)
+    policy = {"schema_name": "project_policy", "schema_version": 1, "approval_predicate": {"predicate_id": "local"}, "success_condition_mutation_provenance": "LOCAL_UNTRUSTED", "verification_evidence_provenance": "LOCAL_UNTRUSTED", "waiver_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "human_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "promotion_policy": "explicit"}
+    approval_root = {"schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"), "root_digest": digest, "root_provenance": "LOCAL_UNTRUSTED", "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "pilot"}}
 
     def binding() -> dict[str, object]:
         reference = lambda prefix: {"uid": generate_uid(prefix), "digest": digest}
-        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": reference("verify"), "command_registry_digest": registry_digest, "policy_digest": digest, "approval_root": reference("root"), "repository_snapshot": reference("snapshot"), "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
+        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": reference("verify"), "command_registry_digest": registry_digest, "policy_digest": digest, "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]}, "repository_snapshot": reference("snapshot"), "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
     with tempfile.TemporaryDirectory(prefix="workplane-pilot-") as directory:
         root = Path(directory)
         for index, kind in enumerate(kinds, 1):
@@ -41,7 +44,7 @@ def run() -> dict[str, object]:
             if result.result != "PASS":
                 raise RuntimeError(f"pilot verification failed for {kind}: {result.result}")
             completed += 1
-        verdict = converge(analyze([], [], [], []), [result])
+        verdict = converge(analyze([], [], [], []), [result], trust=evaluate_trust(result, policy=policy, approval_root=approval_root))
         if verdict.verdict != "CONVERGED":
             raise RuntimeError(f"pilot convergence failed: {verdict.verdict}")
         elapsed = int((time.monotonic() - started) * 1000)

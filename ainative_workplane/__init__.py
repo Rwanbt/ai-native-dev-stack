@@ -8,6 +8,7 @@ from .contracts import ContractError, canonical_digest, canonical_json_bytes, ca
 from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
+from .trust import TrustVerdict, evaluate_trust
 from .runner import RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, snapshot_files
@@ -24,6 +25,8 @@ __all__ = [
     "analyze",
     "VerificationEvidence",
     "EvidenceError",
+    "TrustVerdict",
+    "evaluate_trust",
     "RunnerError",
     "VerificationRunner",
     "load_registry",

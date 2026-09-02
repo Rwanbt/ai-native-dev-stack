@@ -6,6 +6,7 @@ from ainative_workplane.convergence import converge
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
+from ainative_workplane.trust import evaluate_trust
 
 
 class RunnerConvergenceTests(unittest.TestCase):
@@ -65,3 +66,9 @@ class RunnerConvergenceTests(unittest.TestCase):
         self.assertEqual("BLOCKED", forged.verdict)
         self.assertIn("INVALID_VERIFICATION_EVIDENCE", [gap.code for gap in forged.gaps])
         self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=["POLICY_CHANGED"]).verdict)
+
+    def test_missing_root_fails_closed(self):
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = VerificationRunner(registry).run("check", cwd=directory, binding=self.binding(registry))
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(evidence, policy=None, approval_root=None).code)

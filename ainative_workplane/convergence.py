@@ -10,6 +10,7 @@ from typing import Iterable
 
 from .evidence import VerificationEvidence
 from .traceability import Gap, TraceabilityResult
+from .trust import TrustVerdict
 
 
 BLOCKING_FRESHNESS = frozenset({"STALE_CONTRACT", "STALE_SCOPE", "STALE_DEPENDENCY", "COMMAND_REGISTRY_CHANGED", "POLICY_CHANGED"})
@@ -28,11 +29,15 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: Iterable[str] = ()) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: Iterable[str] = (), trust: TrustVerdict | None = None) -> ConvergenceVerdict:
     gaps = list(traceability.gaps)
     states = set(freshness)
     for state in sorted(states & BLOCKING_FRESHNESS):
         gaps.append(Gap(state, None, "blocking freshness state"))
+    if trust is None:
+        gaps.append(Gap("ROOT_OF_TRUST_INVALID", None, "no trust evaluation is available"))
+    elif not trust.trusted:
+        gaps.append(Gap(trust.code, None, "evidence authority is insufficient"))
     run_list = list(runs)
     if not run_list:
         return ConvergenceVerdict("INVALID", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
