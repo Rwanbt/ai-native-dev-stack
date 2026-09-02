@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -73,7 +74,15 @@ class VerificationRunner:
         return result
 
     def _run_bounded(self, definition: Mapping[str, Any], cwd: str | Path) -> tuple[subprocess.Popen[bytes], bytes, bytes]:
-        process = subprocess.Popen(definition["argv"], cwd=cwd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            definition["argv"],
+            cwd=cwd,
+            shell=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            start_new_session=os.name != "nt",
+        )
         queue: Queue[tuple[str, bytes]] = Queue()
 
         def drain(name: str, stream: Any) -> None:
@@ -91,17 +100,41 @@ class VerificationRunner:
         limit = definition.get("max_output_bytes", 1_000_000)
         while any(thread.is_alive() for thread in threads) or not queue.empty():
             if time.monotonic() >= deadline:
-                process.kill()
-                process.wait()
+                self._terminate_process_tree(process)
                 raise subprocess.TimeoutExpired(definition["argv"], definition.get("timeout_seconds", 30))
             try:
                 name, chunk = queue.get(timeout=0.02)
             except Empty:
                 continue
             if len(output["stdout"]) + len(output["stderr"]) + len(chunk) > limit:
-                process.kill()
-                process.wait()
+                self._terminate_process_tree(process)
                 raise RunnerError("OUTPUT_LIMIT_EXCEEDED")
             output[name].extend(chunk)
         process.wait()
         return process, bytes(output["stdout"]), bytes(output["stderr"])
+
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+        """Terminate the isolated command group so children cannot outlive evidence."""
+
+        if process.poll() is not None:
+            return
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=5,
+            )
+        else:
+            try:
+                os.killpg(process.pid, 9)
+            except ProcessLookupError:
+                pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()

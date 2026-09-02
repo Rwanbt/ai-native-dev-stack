@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import time
 import unittest
 
 from ainative_workplane.convergence import converge
@@ -66,6 +67,17 @@ class RunnerConvergenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(RunnerError, "COMMAND_REGISTRY_BINDING_MISMATCH"):
                 VerificationRunner(registry).run("slow", cwd=directory, binding=binding)
+
+    def test_runner_timeout_terminates_child_process_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = __import__("pathlib").Path(directory) / "child-survived.txt"
+            child = "import pathlib,time; time.sleep(2); pathlib.Path(r'%s').write_text('survived')" % str(marker).replace("\\", "\\\\")
+            parent = "import subprocess,sys,time; subprocess.Popen([sys.executable, '-c', %r]); time.sleep(5)" % child
+            registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"tree": {"argv": [sys.executable, "-c", parent], "timeout_seconds": 1}}}
+            result = VerificationRunner(registry).run("tree", cwd=directory, binding=self.binding(registry))
+            self.assertEqual("TIMEOUT", result.result)
+            time.sleep(2.5)
+            self.assertFalse(marker.exists())
 
     def test_runner_rejects_output_exceeding_configured_limit(self):
         registry = {
