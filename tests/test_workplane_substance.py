@@ -21,7 +21,7 @@ def binding(command_registry):
         "command_registry_digest": canonical_digest(command_registry),
         "policy_digest": DIGEST, "approval_root": reference("root"),
         "repository_snapshot": reference("snapshot"), "snapshot_content_digest": DIGEST,
-        "snapshot_dependency_digest": DIGEST, "producer": "test", "producer_version": "1",
+        "snapshot_dependency_digest": DIGEST, "snapshot_head": "0" * 40, "producer": "test", "producer_version": "1",
         "evidence_provenance": "LOCAL_UNTRUSTED",
     }
 

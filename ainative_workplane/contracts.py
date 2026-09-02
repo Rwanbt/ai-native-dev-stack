@@ -43,12 +43,18 @@ _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:")
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
-@dataclass(frozen=True)
 class ContractError(ValueError):
-    """A deterministic invalid-contract result suitable for a later runtime."""
+    """A deterministic invalid-contract result suitable for a later runtime.
 
-    code: str
-    message: str
+    WHY not a frozen dataclass: Python assigns __traceback__ on an exception
+    as it propagates, and a frozen instance refuses that assignment, which
+    breaks any runner that inspects the raised error.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(code, message)
+        self.code = code
+        self.message = message
 
     def __str__(self) -> str:
         return f"{self.code}: {self.message}"
@@ -367,6 +373,8 @@ def _validate_verification_run(value: Mapping[str, Any]) -> None:
     _reference(_required(value, "repository_snapshot"), "repository_snapshot", "snapshot")
     for field in ("producer", "producer_version", "result", "started_at", "finished_at", "substance_metadata", "command"):
         _required(value, field)
+    if not isinstance(_required(value, "snapshot_head"), str) or not value["snapshot_head"]:
+        _fail("INVALID_FIELD", "snapshot_head must be the non-empty checkout head the run observed")
     if value["result"] not in {"PASS", "FAIL", "TIMEOUT", "SUSPICIOUS_VERIFICATION"}:
         _fail("INVALID_ENUM", "verification result is invalid")
     exit_code = _required(value, "exit_code")

@@ -23,6 +23,7 @@ BLOCKING_FRESHNESS = frozenset({
     "COMMAND_REGISTRY_CHANGED",
     "POLICY_CHANGED",
     "ROOT_OF_TRUST_CHANGED",
+    "VERIFICATION_SPEC_CHANGED",
 })
 
 # Gaps that mean the engine could not evaluate the question, as opposed to

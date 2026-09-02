@@ -14,7 +14,7 @@ class FreshnessResult:
     states: frozenset[str]
 
 
-def evaluate_freshness(evidence: VerificationEvidence, *, current_contract_digest: str, current_snapshot: Mapping[str, Any], current_registry_digest: str, current_policy_digest: str, current_approval_root: Mapping[str, Any]) -> FreshnessResult:
+def evaluate_freshness(evidence: VerificationEvidence, *, current_contract_digest: str, current_snapshot: Mapping[str, Any], current_registry_digest: str, current_policy_digest: str, current_approval_root: Mapping[str, Any], current_specification_digest: str | None = None, current_head: str | None = None) -> FreshnessResult:
     """Compare current normative identities without interpreting narrative state."""
 
     record = evidence.artifact
@@ -27,6 +27,12 @@ def evaluate_freshness(evidence: VerificationEvidence, *, current_contract_diges
         states.add("POLICY_CHANGED")
     if record["approval_root"] != current_approval_root:
         states.add("ROOT_OF_TRUST_CHANGED")
+    if current_specification_digest is not None and record["verification_specification"]["digest"] != current_specification_digest:
+        states.add("VERIFICATION_SPEC_CHANGED")
+    # A commit that touches nothing in scope or in the dependency set is
+    # information, not a reason to invalidate evidence.
+    if current_head is not None and record["snapshot_head"] != current_head:
+        states.add("STALE_REPO")
     prior_snapshot = record["repository_snapshot"]
     if prior_snapshot["uid"] != current_snapshot.get("uid") or prior_snapshot["digest"] != current_snapshot.get("digest"):
         states.add("STALE_SCOPE")
@@ -43,6 +49,7 @@ def evaluate_checkout_freshness(
     current_registry_digest: str,
     current_policy_digest: str,
     current_approval_root: Mapping[str, Any],
+    current_specification_digest: str | None = None,
 ) -> FreshnessResult:
     """Recompute the evidence snapshot from the checkout before deciding freshness."""
 
@@ -62,6 +69,8 @@ def evaluate_checkout_freshness(
         current_registry_digest=current_registry_digest,
         current_policy_digest=current_policy_digest,
         current_approval_root=current_approval_root,
+        current_specification_digest=current_specification_digest,
+        current_head=current["head"],
     )
     states = set(baseline.states)
     if evidence.artifact["snapshot_content_digest"] != current["content_digest"]:

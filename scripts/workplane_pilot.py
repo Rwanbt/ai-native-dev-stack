@@ -44,7 +44,7 @@ def run() -> dict[str, object]:
 
     def binding() -> dict[str, object]:
         reference = lambda prefix: {"uid": generate_uid(prefix), "digest": digest}
-        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": {"uid": specification_uid, "digest": digest}, "command_registry_digest": registry_digest, "policy_digest": policy_digest, "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]}, "repository_snapshot": reference("snapshot"), "snapshot_content_digest": digest, "snapshot_dependency_digest": digest, "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
+        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": {"uid": specification_uid, "digest": digest}, "command_registry_digest": registry_digest, "policy_digest": policy_digest, "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]}, "repository_snapshot": reference("snapshot"), "snapshot_content_digest": digest, "snapshot_dependency_digest": digest, "snapshot_head": "0" * 40, "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
     with tempfile.TemporaryDirectory(prefix="workplane-pilot-") as directory:
         root = Path(directory)
         for index, kind in enumerate(kinds, 1):
