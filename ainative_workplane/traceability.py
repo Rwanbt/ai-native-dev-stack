@@ -71,8 +71,12 @@ def analyze(requirements: Iterable[Mapping[str, Any]], acceptance_criteria: Iter
     ac_incoming: set[str] = set()
     task_incoming: set[str] = set()
     spec_incoming: set[str] = set()
+    verified_requirements: set[str] = set()
     for uid, requirement in reqs.items():
-        for ac_uid in _refs(requirement, "acceptance_criteria"):
+        acceptance_refs = _refs(requirement, "acceptance_criteria")
+        if not acceptance_refs:
+            gaps.append(Gap("REQ_WITHOUT_ACCEPTANCE", uid, "requirement has no acceptance criterion"))
+        for ac_uid in acceptance_refs:
             req_ac.append((uid, ac_uid))
             ac_incoming.add(ac_uid)
             if ac_uid not in acs:
@@ -84,6 +88,10 @@ def analyze(requirements: Iterable[Mapping[str, Any]], acceptance_criteria: Iter
         verify_refs = _refs(criterion, "verification_specifications")
         if not verify_refs:
             gaps.append(Gap("UNVERIFIABLE_ACCEPTANCE", uid, "acceptance criterion has no verification specification"))
+        else:
+            requirement_ref = criterion.get("requirement")
+            if isinstance(requirement_ref, Mapping) and isinstance(requirement_ref.get("uid"), str):
+                verified_requirements.add(requirement_ref["uid"])
         for spec_uid in verify_refs:
             ac_verify.append((uid, spec_uid))
             spec_incoming.add(spec_uid)
@@ -98,6 +106,8 @@ def analyze(requirements: Iterable[Mapping[str, Any]], acceptance_criteria: Iter
             task_incoming.add(req_uid)
             if req_uid not in reqs:
                 gaps.append(Gap("BROKEN_REFERENCE", uid, f"requirement {req_uid} does not exist"))
+        if req_refs and not any(req_uid in verified_requirements for req_uid in req_refs):
+            gaps.append(Gap("TASK_WITHOUT_VERIFICATION", uid, "task has no requirement with verification"))
     for req_uid in reqs:
         if req_uid not in task_incoming:
             gaps.append(Gap("REQ_WITHOUT_TASK", req_uid, "requirement has no task"))

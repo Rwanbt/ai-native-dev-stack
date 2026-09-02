@@ -27,6 +27,8 @@ class TraceabilityTests(unittest.TestCase):
         )
         codes = [gap.code for gap in result.gaps]
         self.assertIn("UNVERIFIABLE_ACCEPTANCE", codes)
+        self.assertIn("REQ_WITHOUT_ACCEPTANCE", codes)
+        self.assertIn("TASK_WITHOUT_VERIFICATION", codes)
         self.assertIn("REQ_WITHOUT_TASK", codes)
         self.assertIn("BROKEN_REFERENCE", codes)
         self.assertIn("ORPHAN_VERIFICATION_SPEC", codes)
