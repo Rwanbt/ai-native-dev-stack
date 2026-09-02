@@ -8,7 +8,8 @@ from .contracts import ContractError, canonical_digest, canonical_json_bytes, ca
 from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
-from .trust import TrustVerdict, evaluate_trust
+from .trust import TRUST_LEVELS, TrustVerdict, evaluate_trust
+from .authorization import UNWAIVABLE, apply_authorizations
 from .freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
 from .runner import RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
@@ -28,6 +29,9 @@ __all__ = [
     "EvidenceError",
     "TrustVerdict",
     "evaluate_trust",
+    "TRUST_LEVELS",
+    "UNWAIVABLE",
+    "apply_authorizations",
     "FreshnessResult",
     "evaluate_freshness",
     "evaluate_checkout_freshness",

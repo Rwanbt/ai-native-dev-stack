@@ -9,7 +9,7 @@ from .contracts import ContractError, canonical_digest, validate_artifact
 from .evidence import VerificationEvidence
 
 
-_TRUST_LEVEL = {
+TRUST_LEVELS = {
     "UNTRACKED": 0,
     "GIT_DIRTY": 0,
     "LOCAL_UNTRUSTED": 0,
@@ -70,7 +70,7 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required_l
             return False
         if current.get("root_digest") != approval_root_commitment(current):
             return False
-        if _TRUST_LEVEL[current["root_provenance"]] < required_level:
+        if TRUST_LEVELS[current["root_provenance"]] < required_level:
             return False
         seen.add(uid)
         predecessor = current.get("predecessor")
@@ -104,8 +104,8 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
     if record["policy_digest"] != commitment or approval_root["policy_digest"] != commitment:
         return TrustVerdict(False, "POLICY_CHANGED")
     required = policy["verification_evidence_provenance"]
-    if _TRUST_LEVEL[record["evidence_provenance"]] < _TRUST_LEVEL[required]:
+    if TRUST_LEVELS[record["evidence_provenance"]] < TRUST_LEVELS[required]:
         return TrustVerdict(False, "INSUFFICIENT_EVIDENCE_PROVENANCE")
-    if not _valid_root_chain(approval_root, policy_digest=commitment, required_level=_TRUST_LEVEL[required], approval_chain=approval_chain):
+    if not _valid_root_chain(approval_root, policy_digest=commitment, required_level=TRUST_LEVELS[required], approval_chain=approval_chain):
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
     return TrustVerdict(True, "TRUSTED")

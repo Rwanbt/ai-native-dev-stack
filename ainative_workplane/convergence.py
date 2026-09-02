@@ -6,8 +6,9 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
+from .authorization import apply_authorizations
 from .evidence import VerificationEvidence
 from .freshness import FreshnessResult
 from .traceability import Gap, TraceabilityResult
@@ -31,6 +32,10 @@ UNEVALUABLE = frozenset({
     "ROOT_OF_TRUST_INVALID",
     "POLICY_COMMITMENT_INVALID",
     "INVALID_VERIFICATION_EVIDENCE",
+    "INVALID_WAIVER",
+    "INVALID_HUMAN_APPROVAL",
+    "UNAUTHORIZED_WAIVER",
+    "UNAUTHORIZED_HUMAN_APPROVAL",
 })
 
 VERDICT_EXIT_CODES = {"CONVERGED": 0, "NOT_CONVERGED": 1, "INVALID": 2, "INTERNAL_ERROR": 3}
@@ -49,12 +54,14 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = ()) -> ConvergenceVerdict:
     """Decide convergence from bound evidence only.
 
     @contract Evidence supports convergence only when its verification
     specification is declared by the contract graph, and every declared
     specification carries passing evidence.
+    @contract A waiver or human approval suppresses a gap only when the
+    policy in force authorizes it; otherwise it adds its own rejection gap.
     @returns CONVERGED, NOT_CONVERGED, INVALID (inputs could not be
     evaluated) or INTERNAL_ERROR (the engine itself failed). Only CONVERGED
     is a success.
@@ -62,6 +69,7 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
 
     try:
         gaps = _collect_gaps(traceability, runs, freshness, trust)
+        gaps = apply_authorizations(gaps, policy=policy, waivers=waivers, human_approvals=human_approvals)
     except Exception as error:  # WHY: an engine failure must surface as a verdict, never as a success or a traceback in the caller.
         return ConvergenceVerdict("INTERNAL_ERROR", (), f"convergence engine failed: {type(error).__name__}", "")
     if not gaps:
