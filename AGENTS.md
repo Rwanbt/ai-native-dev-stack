@@ -175,9 +175,9 @@ Measured 2026-08-30 via `git ls-files` (image excluded). Re-measure with
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~127 000 | 75 | **Layered read** — cartography first, then targeted reads |
+| Core stack (excl. anti-debt) | ~153 159 | 97 | **Layered read** — cartography first, then targeted reads |
 | Anti-debt agent | ~130 000 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
-| Whole repo | ~246 000 | 191 | **Multi-phase workflow** — never a single direct read |
+| Whole repo | ~282 808 | 215 | **Multi-phase workflow** — never a single direct read |
 
 Do **not** read the whole repo in one pass: at ~246k tokens it does not fit,
 and the strategy table above applies in full. Pick the scope the task needs —
