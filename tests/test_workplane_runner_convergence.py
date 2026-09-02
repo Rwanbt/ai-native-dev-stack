@@ -17,10 +17,16 @@ class RunnerConvergenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "SHELL_COMMAND_FORBIDDEN"):
             load_registry({"schema_name": "command_registry", "schema_version": 1, "commands": {"bad": {"argv": ["echo"], "shell": True}}})
 
+    def test_runner_marks_timeout_and_rejects_registry_drift(self):
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"slow": {"argv": [sys.executable, "-c", "import time; time.sleep(2)"], "timeout_seconds": 1, "max_output_bytes": 100}}}
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual("TIMEOUT", VerificationRunner(registry).run("slow", cwd=directory).status)
+        with self.assertRaisesRegex(RunnerError, "COMMAND_REGISTRY_CHANGED"):
+            load_registry(registry, expected_digest="b" * 64)
+
     def test_convergence_ignores_narrative_and_blocks_failures(self):
         graph = analyze([], [], [], [])
         self.assertEqual("INVALID", converge(graph, []).verdict)
         graph = analyze([], [], [], [])
         self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "FAIL"}]).verdict)
         self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=["POLICY_CHANGED"]).verdict)
-

@@ -8,7 +8,7 @@ import secrets
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .contracts import ContractError, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 
@@ -20,12 +20,17 @@ class ControllerError(RuntimeError):
 class WorkController:
     """Sole normative writer for one work directory."""
 
-    def __init__(self, work_dir: str | os.PathLike[str]):
+    def __init__(self, work_dir: str | os.PathLike[str], *, failure_injector: Callable[[str], None] | None = None):
         self.root = Path(work_dir)
         self.manifest_path = self.root / "manifest.json"
         self.revisions = self.root / "revisions"
         self.staging = self.root / ".staging"
         self.lock_path = self.root / ".controller.lock"
+        self.failure_injector = failure_injector
+
+    def _step(self, name: str) -> None:
+        if self.failure_injector:
+            self.failure_injector(name)
 
     def _lock(self):
         self.root.mkdir(parents=True, exist_ok=True)
@@ -76,6 +81,7 @@ class WorkController:
         revision_dir = self.revisions / str(revision)
         stage.mkdir(parents=True)
         try:
+            self._step("before_artifact_write")
             pointers: dict[str, dict[str, str]] = {}
             for name, value in artifacts.items():
                 if not isinstance(name, str) or not name:
@@ -86,14 +92,18 @@ class WorkController:
                 staged = stage / filename
                 self._write_json(staged, value)
                 pointers[name] = {"path": f"revisions/{revision}/{filename}", "digest": digest_bytes(staged.read_bytes())}
+                self._step("after_staged_file")
             revision_dir.parent.mkdir(parents=True, exist_ok=True)
             if revision_dir.exists():
                 raise ControllerError("REVISION_ALREADY_EXISTS")
             shutil.move(str(stage), str(revision_dir))
+            self._step("after_promotion_before_manifest")
             manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers}
             temporary = self.root / f".manifest.{secrets.token_hex(8)}.tmp"
             self._write_json(temporary, manifest)
+            self._step("before_manifest_replace")
             os.replace(temporary, self.manifest_path)
+            self._step("after_manifest_commit")
             return manifest
         finally:
             if stage.exists():

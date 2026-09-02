@@ -40,6 +40,16 @@ class WorkControllerTests(unittest.TestCase):
             with self.assertRaisesRegex(ControllerError, "CONCURRENT_WRITER"):
                 controller.create({"tasks": {"done": False}})
 
+    def test_crash_before_manifest_preserves_previous_authority(self):
+        with tempfile.TemporaryDirectory() as directory:
+            WorkController(directory).create({"tasks": {"revision": 1}})
+            def crash(step):
+                if step == "after_promotion_before_manifest":
+                    raise RuntimeError("injected crash")
+            with self.assertRaisesRegex(RuntimeError, "injected crash"):
+                WorkController(directory, failure_injector=crash).mutate(1, {"tasks": {"revision": 2}})
+            self.assertEqual(1, WorkController(directory).read()["revision"])
+
 
 if __name__ == "__main__":
     unittest.main()
