@@ -34,7 +34,7 @@ def run(harness_id: str) -> dict[str, object]:
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True).stdout.strip()
     gates = (
         _run([sys.executable, "-m", "unittest", *TESTS, "-q"]),
-        _run([sys.executable, "scripts/workplane_historical_validation.py"]),
+        _run([sys.executable, "scripts/workplane_structural_regression.py"]),
         _run([sys.executable, "scripts/workplane_harness_matrix.py"]),
         _run([sys.executable, "scripts/workplane_pilot.py"]),
     )

@@ -1,5 +1,7 @@
 # Verified Work Plane V2 — Contract Sketches
 
+> **Historical packet.** This is the PR-01 contract sketches, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
+
 These sketches are PR-00 design input, not implemented schemas.
 
 ```json

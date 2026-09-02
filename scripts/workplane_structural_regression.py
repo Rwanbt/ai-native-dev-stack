@@ -1,4 +1,11 @@
-"""Blind historical validation scenarios for the V2 structural core."""
+"""Two synthetic structural regressions for the V2 core.
+
+This is NOT the blind historical validation the plan requires in section 44.
+It asserts a synthetic REQ_WITHOUT_TASK gap and a direct-mutation detection,
+neither of which is a historical incident. The real protocol, and the fact
+that no run of it exists, are recorded in
+docs/verified-work-plane-v2-historical-validation-protocol.md.
+"""
 
 from __future__ import annotations
 

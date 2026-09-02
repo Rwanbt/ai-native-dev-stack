@@ -32,6 +32,36 @@ system, or protection against an actor controlling the host, checkout, and Git h
 | Crash during a mutation | Previous valid contract lost | Stage, promote immutable artifacts, atomically replace manifest last |
 | Long-running command or prompt text in `spec.md` | Denial of service or injected execution | Timeout, output limits, and non-normative prose with registered `argv` only |
 
+## Trusted computing base
+
+Everything a verdict depends on, and nothing else:
+
+| In the TCB | Why |
+| --- | --- |
+| `ainative_workplane/` runtime modules | They compute the verdict |
+| The Python interpreter and its standard library | The runtime has no third-party dependency |
+| The project policy and approval root in force | They decide what authority means |
+| The command registry | It decides what may execute |
+| The Git checkout the snapshot reads | It decides what was verified |
+| The operating system's process, filesystem and job primitives | They bound execution |
+
+| Deliberately outside | Consequence |
+| --- | --- |
+| The vault, Graphify, anti-debt, ADRs, memory, `spec.md` prose | May inform, never decide; a verdict must be reproducible with all of them absent |
+| Any language model | May propose requirements, gaps or waivers; a proposal carries no authority until a controller writes it and a policy authorizes it |
+| The CLI | Thin: it loads JSON and prints what the engine returned |
+
+## Controls implemented on this branch
+
+Every row of the threat table above is exercised by `tests/test_workplane_adversarial.py`,
+which maps cases A01-A53. Two rows carry a known residual risk, stated rather than
+implied:
+
+- PID reuse: the stale-lock recovery treats an unreadable or foreign lock as held, and
+  a recycled PID reads as alive, so it errs toward refusing to reclaim.
+- Secret redaction is pattern-based defense in depth. Persisted evidence keeps digests
+  and a bounded preview rather than full logs precisely because redaction can miss.
+
 ## Non-goals
 
 V2 does not protect against root compromise, compromised kernels, malicious CI

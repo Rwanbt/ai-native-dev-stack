@@ -1,5 +1,7 @@
 # Review Packet — Verified Work Plane V2 / PR-00
 
+> **Historical packet.** This is the PR-00 review packet, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
+
 **Audience:** an external AI reviewer without repository access.  
 **Branch:** `spec`, based on `main` commit `0d2f8b683816ca714718bda45017c0b43848575f`.  
 **Change class:** architecture documentation only. No V2 runtime, schema, CLI, runner,

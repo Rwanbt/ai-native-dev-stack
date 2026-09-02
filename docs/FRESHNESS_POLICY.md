@@ -16,6 +16,10 @@ command-registry digest, and a canonical content digest.
 | `STALE_REPO` | Repository changed outside declared scope and dependencies | Warning or information; does not force a full rerun |
 | `COMMAND_REGISTRY_CHANGED` | Registered command definition differs from its approved baseline | Blocking; result cannot be presented as approved |
 | `POLICY_CHANGED` | Project policy digest differs from the snapshot baseline | Blocking; re-evaluate convergence under the new policy |
+| `ROOT_OF_TRUST_CHANGED` | The approval root the evidence bound is not the current one | Blocking; authority must be re-established |
+| `VERIFICATION_SPEC_CHANGED` | The verification specification the evidence bound was rewritten | Blocking; the run no longer describes what is now required |
+| `STALE_CONTRACT` | The work contract digest moved under the evidence | Blocking; the run describes an earlier contract |
+| `FRESHNESS_UNAVAILABLE` | No freshness evaluation was supplied | `INVALID`; absence of evaluation is never freshness |
 
 ## Canonicalisation rules
 
@@ -34,5 +38,9 @@ command-registry digest, and a canonical content digest.
 ## Practical consequence
 
 Changing `src/auth/token.ts` after a verification that scoped it invalidates the run.
-Changing an unrelated README does not. Changing a declared dependency such as
-`pyproject.toml` does, even where no scoped source file changed.
+Changing an unrelated README does not — it yields `STALE_REPO`, which is outside
+`BLOCKING_FRESHNESS` by design. Changing a declared dependency such as
+`pyproject.toml` does invalidate, even where no scoped source file changed.
+
+Every outcome in the table above is emitted by `ainative_workplane/freshness.py`
+and asserted in `tests/test_workplane_adversarial.py` (cases A21-A28).

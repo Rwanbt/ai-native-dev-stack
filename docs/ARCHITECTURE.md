@@ -2,10 +2,36 @@
 
 ## Purpose
 
-The Verified Work Plane (V2) will let an agent or developer represent declared work,
-run approved verification independently, and decide deterministic convergence for one
-repository state. This document records the PR-00 boundary; it does not add runtime
-behaviour or make a future component authoritative yet.
+The Verified Work Plane (V2) lets an agent or developer represent declared work, run
+approved verification independently, and decide deterministic convergence for one
+repository state.
+
+This document records the PR-00 boundary and, in "Implemented runtime" below, what
+the branch actually contains today. Where the two disagree, the runtime and its tests
+are the authority; PR-00 prose is historical.
+
+## Implemented runtime
+
+| Module | Responsibility |
+| --- | --- |
+| `contracts.py` | Twelve versioned schemas, prefixed ULIDs, canonical JSON and digests, portable paths |
+| `controller.py` | Sole normative writer: immutable revisions, manifest-last commit, crash and stale-lock recovery |
+| `snapshot.py` | Scoped, security-checked repository snapshots bound to a checkout head |
+| `runner.py` | Argv-only execution with timeout, bounded streaming output, redaction, append-only runs |
+| `isolation.py` | OS container per command so nothing it spawns outlives the run |
+| `substance.py` | Adapters that decide whether output contains what was required |
+| `evidence.py` | The single validated `verification_run` convergence accepts |
+| `trust.py` | Fail-closed policy commitment, approval-root chain and provenance evaluation |
+| `freshness.py` | Contract, scope, dependency, registry, policy, root, specification and repository drift |
+| `traceability.py` | Structural graph, deterministic gaps, relationship scope coverage |
+| `authorization.py` | Waivers and human approvals, effective only under the policy that configured them |
+| `convergence.py` | `CONVERGED`, `NOT_CONVERGED`, `INVALID`, `INTERNAL_ERROR` and their exit codes |
+| `cli.py` | Thin headless facade: `work`, `verify`, `converge` |
+
+Known limitations, stated rather than implied: no blind historical validation has
+been run ([protocol](verified-work-plane-v2-historical-validation-protocol.md)), and
+no pilot has been driven by two actual AI harnesses. See
+[the definition of done](VERIFIED-WORK-PLANE-V2-DOD.md).
 
 ## What exists today
 

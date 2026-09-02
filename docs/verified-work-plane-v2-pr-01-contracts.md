@@ -1,5 +1,7 @@
 # Verified Work Plane V2 — PR-01 Contract Boundary
 
+> **Historical packet.** This is the PR-01 contract report, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
+
 PR-01 provides only deterministic, versioned data contracts in
 `ainative_workplane`. It has no controller, CLI, repository collector, command
 runner, freshness evaluator, convergence engine, or provider integration.

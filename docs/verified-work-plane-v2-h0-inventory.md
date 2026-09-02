@@ -1,5 +1,7 @@
 # Verified Work Plane V2 — H0 Inventory
 
+> **Historical packet.** This is the H0 inventory, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
+
 **Status:** Verified baseline inventory  
 **Scope:** `spec` at `7c034db`  
 **Method:** Direct read of all 11 V2 runtime modules, 10 V2 test modules, and

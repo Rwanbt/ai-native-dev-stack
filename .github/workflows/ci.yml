@@ -135,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          python scripts/workplane_historical_validation.py
+          python scripts/workplane_structural_regression.py
           python scripts/workplane_harness_matrix.py
           python scripts/workplane_pilot.py
 
