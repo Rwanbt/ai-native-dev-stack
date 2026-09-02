@@ -6,6 +6,8 @@ import json
 import re
 import subprocess
 import time
+from queue import Empty, Queue
+from threading import Thread
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -55,10 +57,7 @@ class VerificationRunner:
             raise RunnerError("COMMAND_REGISTRY_BINDING_MISMATCH")
         started = time.monotonic()
         try:
-            completed = subprocess.run(definition["argv"], cwd=cwd, shell=False, capture_output=True, timeout=definition.get("timeout_seconds", 30), check=False)
-            stdout_bytes, stderr_bytes = completed.stdout, completed.stderr
-            if len(stdout_bytes) + len(stderr_bytes) > definition.get("max_output_bytes", 1_000_000):
-                raise RunnerError("OUTPUT_LIMIT_EXCEEDED")
+            completed, stdout_bytes, stderr_bytes = self._run_bounded(definition, cwd)
             stdout = _SECRET.sub(r"\1=[REDACTED]", stdout_bytes.decode("utf-8", errors="replace"))
             stderr = _SECRET.sub(r"\1=[REDACTED]", stderr_bytes.decode("utf-8", errors="replace"))
             status = "PASS" if completed.returncode == 0 else "FAIL"
@@ -72,3 +71,37 @@ class VerificationRunner:
             path = self.runs_dir / f"{result.uid}.json"
             path.write_text(json.dumps(result.to_record(), sort_keys=True, separators=(",", ":")), encoding="utf-8")
         return result
+
+    def _run_bounded(self, definition: Mapping[str, Any], cwd: str | Path) -> tuple[subprocess.Popen[bytes], bytes, bytes]:
+        process = subprocess.Popen(definition["argv"], cwd=cwd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        queue: Queue[tuple[str, bytes]] = Queue()
+
+        def drain(name: str, stream: Any) -> None:
+            try:
+                while chunk := stream.read(8192):
+                    queue.put((name, chunk))
+            finally:
+                stream.close()
+
+        threads = [Thread(target=drain, args=("stdout", process.stdout), daemon=True), Thread(target=drain, args=("stderr", process.stderr), daemon=True)]
+        for thread in threads:
+            thread.start()
+        output = {"stdout": bytearray(), "stderr": bytearray()}
+        deadline = time.monotonic() + definition.get("timeout_seconds", 30)
+        limit = definition.get("max_output_bytes", 1_000_000)
+        while any(thread.is_alive() for thread in threads) or not queue.empty():
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait()
+                raise subprocess.TimeoutExpired(definition["argv"], definition.get("timeout_seconds", 30))
+            try:
+                name, chunk = queue.get(timeout=0.02)
+            except Empty:
+                continue
+            if len(output["stdout"]) + len(output["stderr"]) + len(chunk) > limit:
+                process.kill()
+                process.wait()
+                raise RunnerError("OUTPUT_LIMIT_EXCEEDED")
+            output[name].extend(chunk)
+        process.wait()
+        return process, bytes(output["stdout"]), bytes(output["stderr"])
