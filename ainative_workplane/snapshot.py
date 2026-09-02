@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
-from .contracts import canonical_path, validate_case_collisions
+from .contracts import canonical_digest, canonical_path, generate_uid, validate_case_collisions, validate_artifact
 
 
 class SnapshotError(RuntimeError):
@@ -42,3 +43,54 @@ def snapshot_files(root: str | os.PathLike[str], paths: Iterable[str]) -> dict[s
             raise SnapshotError("SECURITY_REJECTED")
         result[relative] = _digest_file(path)
     return dict(sorted(result.items()))
+
+
+def _git_state(root: Path) -> tuple[str, bool]:
+    try:
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True, timeout=5).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain"], check=True, capture_output=True, text=True, timeout=5).stdout != ""
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SnapshotError("REPOSITORY_STATE_UNAVAILABLE") from exc
+    if not head:
+        raise SnapshotError("REPOSITORY_STATE_UNAVAILABLE")
+    return head, dirty
+
+
+def build_repository_snapshot(
+    root: str | os.PathLike[str],
+    *,
+    scope: Iterable[str],
+    dependency_paths: Iterable[str],
+    command_registry_digest: str,
+    policy_digest: str,
+    uid: str | None = None,
+) -> dict[str, Any]:
+    """Collect a validated, content-bound repository snapshot from one checkout."""
+
+    base = Path(root).resolve()
+    scope_paths = validate_case_collisions([canonical_path(path) for path in scope])
+    dependency_list = validate_case_collisions([canonical_path(path) for path in dependency_paths])
+    head, dirty = _git_state(base)
+    snapshot = {
+        "schema_name": "repository_snapshot",
+        "schema_version": 1,
+        "uid": uid or generate_uid("snapshot"),
+        "head": head,
+        "dirty": dirty,
+        "scope": list(scope_paths),
+        "dependency_paths": list(dependency_list),
+        "dependencies": [],
+        "content_digest": canonical_digest(snapshot_files(base, scope_paths)),
+        "dependency_digest": canonical_digest(snapshot_files(base, dependency_list)),
+        "command_registry_digest": command_registry_digest,
+        "policy_digest": policy_digest,
+    }
+    validate_artifact(snapshot)
+    return snapshot
+
+
+def snapshot_reference(snapshot: dict[str, Any]) -> dict[str, str]:
+    """Return the immutable reference used to bind a verification run."""
+
+    validate_artifact(snapshot)
+    return {"uid": snapshot["uid"], "digest": canonical_digest(snapshot)}

@@ -9,10 +9,10 @@ from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
 from .trust import TrustVerdict, evaluate_trust
-from .freshness import FreshnessResult, evaluate_freshness
+from .freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
 from .runner import RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
-from .snapshot import SnapshotError, snapshot_files
+from .snapshot import SnapshotError, build_repository_snapshot, snapshot_files, snapshot_reference
 from .cli import main as cli_main
 from .integrations import ReadOnlyFinding, collect_findings, memory_summary
 from .metrics import PilotMetrics
@@ -30,6 +30,7 @@ __all__ = [
     "evaluate_trust",
     "FreshnessResult",
     "evaluate_freshness",
+    "evaluate_checkout_freshness",
     "RunnerError",
     "VerificationRunner",
     "load_registry",
@@ -39,6 +40,8 @@ __all__ = [
     "stall_fingerprint",
     "SnapshotError",
     "snapshot_files",
+    "build_repository_snapshot",
+    "snapshot_reference",
     "cli_main",
     "ReadOnlyFinding",
     "collect_findings",

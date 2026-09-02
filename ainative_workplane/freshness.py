@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
+from .contracts import canonical_digest
 from .evidence import VerificationEvidence
+from .snapshot import build_repository_snapshot, snapshot_reference
 
 
 @dataclass(frozen=True)
@@ -30,3 +32,35 @@ def evaluate_freshness(evidence: VerificationEvidence, *, current_contract_diges
     if prior_snapshot["uid"] != current_snapshot.get("uid") or prior_snapshot["digest"] != current_snapshot.get("digest"):
         states.add("STALE_SCOPE")
     return FreshnessResult(frozenset(states))
+
+
+def evaluate_checkout_freshness(
+    evidence: VerificationEvidence,
+    *,
+    repository_root: str,
+    scope: Iterable[str],
+    dependency_paths: Iterable[str],
+    current_contract_digest: str,
+    current_registry_digest: str,
+    current_policy_digest: str,
+    current_approval_root: Mapping[str, Any],
+) -> FreshnessResult:
+    """Recompute the evidence snapshot from the checkout before deciding freshness."""
+
+    previous = evidence.artifact["repository_snapshot"]
+    current = build_repository_snapshot(
+        repository_root,
+        scope=scope,
+        dependency_paths=dependency_paths,
+        command_registry_digest=current_registry_digest,
+        policy_digest=current_policy_digest,
+        uid=previous["uid"],
+    )
+    return evaluate_freshness(
+        evidence,
+        current_contract_digest=current_contract_digest,
+        current_snapshot=snapshot_reference(current),
+        current_registry_digest=current_registry_digest,
+        current_policy_digest=current_policy_digest,
+        current_approval_root=current_approval_root,
+    )

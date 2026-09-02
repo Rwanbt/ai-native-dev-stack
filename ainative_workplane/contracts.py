@@ -347,6 +347,7 @@ def _validate_repository_snapshot(value: Mapping[str, Any]) -> None:
     if not isinstance(_required(value, "dirty"), bool):
         _fail("INVALID_FIELD", "dirty must be boolean")
     _paths(_required(value, "scope"), "scope")
+    _paths(_required(value, "dependency_paths"), "dependency_paths")
     for dependency in _list(_required(value, "dependencies"), "dependencies"):
         _reference(dependency, "dependencies[]")
     for field in ("content_digest", "dependency_digest", "command_registry_digest", "policy_digest"):
