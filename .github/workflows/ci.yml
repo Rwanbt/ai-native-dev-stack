@@ -91,6 +91,43 @@ jobs:
         shell: bash
         run: python -m unittest discover -s hooks/tests -p "test_*.py" -v
 
+  workplane-v2:
+    name: Verified Work Plane V2 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      # The V2 kernel shipped its whole hardening sequence with no CI job at
+      # all: every gate was a local run on one machine, on one OS, on one
+      # Python. A verdict engine that only ever ran where it was written has
+      # no evidence it is deterministic anywhere else.
+      - name: Contracts, controller and snapshot
+        run: python -m unittest tests.test_workplane_contracts tests.test_workplane_controller tests.test_workplane_snapshot -v
+
+      - name: Runner, trust, freshness, traceability and convergence
+        run: python -m unittest tests.test_workplane_runner_convergence tests.test_workplane_traceability tests.test_workplane_convergence_history -v
+
+      - name: CLI, integrations and local pilot harnesses
+        run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix -v
+
+      - name: Deterministic gates must also reproduce outside the test runner
+        # bash, not the Windows default shell: PowerShell only propagates the
+        # exit code of the last line, which would hide a failure in the first
+        # two commands.
+        shell: bash
+        run: |
+          set -e
+          python scripts/workplane_historical_validation.py
+          python scripts/workplane_harness_matrix.py
+          python scripts/workplane_pilot.py
+
   installers:
     name: Installers (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
