@@ -6,7 +6,7 @@
 - Continue autonomously through PR-03 to PR-05 | The user explicitly authorized the full plan implementation | Claiming full completion before historical/pilot gates are executed | active
 
 ### UNCERTAINTIES        (P0 blocks correctness | P1 blocks completeness | P2 cosmetic)
-- P2: Review PR-02 crash/concurrency behavior before PR-03 | PR-02 has focused tests but no adversarial crash-injection or parallel-process test matrix yet | Extend the controller tests with deterministic crash points and stale-writer scenarios
+- P1: Obtain real external harness evidence and final GO/STOP decision | Local API/CLI pilots are green but the plan requires production-harness evidence and operational metrics | Run the five-item pilot on two real harnesses and record measured metrics
 
 ### VERIFIED FINDINGS
 - Repository is `D:/App/ai-native-dev-stack`, on clean `main...origin/main` | location: Git worktree root | proof: `git rev-parse --show-toplevel; git status --short --branch` -> root shown and no dirty paths | confirmed
@@ -27,4 +27,5 @@
 - Full targeted regression after PR-02 is green | location: tests/test_workplane_controller.py and existing suites | proof: `python -m unittest tests.test_workplane_contracts tests.test_workplane_controller scripts.tests.test_vault_protocol scripts.tests.test_vault_sync_v4 hooks.tests.test_hooks_v4 -q` -> 43 tests, OK; py_compile, measure_scope, validate_conventions and git diff --check -> OK | confirmed
 - PR-03 adds deterministic structural traceability and gap detection for REQ→AC→Verification Spec and REQ→TASK edges, without LLM semantics | location: ainative_workplane/traceability.py | proof: `python -m unittest tests.test_workplane_traceability -q` -> 2 tests, OK | confirmed
 - PR-04 adds a constrained argv-only runner with registry validation, timeout, output limits, redaction and append-only run files; PR-05 adds deterministic convergence over traceability, freshness and run results | location: ainative_workplane/runner.py, ainative_workplane/convergence.py | proof: `python -m unittest tests.test_workplane_runner_convergence -q` -> 2 tests, OK | confirmed
-- PR-03/04/05 implementation is not yet the complete plan gate: crash injection matrix, full snapshot/security adversarial suite, historical validation, real pilot, metrics, PR-06 facade and PR-07 integrations remain unverified or absent | location: plan sections 92, 98, 107-117 | proof: direct plan read and current repository inventory | confirmed
+- Earlier PR-03/04/05 incompleteness finding is superseded by later local implementation; external pilot and GO/STOP evidence remain open | location: docs/VERIFIED-WORK-PLANE-V2-DOD.md | proof: later commits and current repository inventory | superseded
+- Current local implementation covers the deterministic core through the PR-06 minimal facade and PR-07 read-only integration shapes; remaining gaps are external-evidence gates only | location: docs/VERIFIED-WORK-PLANE-V2-DOD.md | proof: direct read plus 54+ focused tests and local five-item/two-harness runs | confirmed
