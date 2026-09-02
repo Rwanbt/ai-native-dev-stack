@@ -290,9 +290,7 @@ def _validate_verification_specification(value: Mapping[str, Any]) -> None:
 
 
 def _validate_project_policy(value: Mapping[str, Any]) -> None:
-    predicate = _mapping(_required(value, "approval_predicate"), "approval_predicate")
-    if not isinstance(_required(predicate, "predicate_id"), str) or not predicate["predicate_id"]:
-        _fail("INVALID_PREDICATE", "approval_predicate.predicate_id must be non-empty")
+    _predicate_reference(_required(value, "approval_predicate"), "approval_predicate")
     for field in ("success_condition_mutation_provenance", "verification_evidence_provenance"):
         _provenance(_required(value, field), field)
     _predicate_reference(_required(value, "waiver_approval_rule"), "waiver_approval_rule")
@@ -304,10 +302,13 @@ def _validate_project_policy(value: Mapping[str, Any]) -> None:
 def _validate_approval_root(value: Mapping[str, Any]) -> None:
     _uid_field(value, "root")
     _digest(_required(value, "root_digest"), "root_digest")
+    _digest(_required(value, "policy_digest"), "policy_digest")
     _provenance(_required(value, "root_provenance"), "root_provenance")
     bootstrap = _mapping(_required(value, "bootstrap"), "bootstrap")
     if not isinstance(_required(bootstrap, "initialized_at"), str) or not isinstance(_required(bootstrap, "initialized_by"), str):
         _fail("INVALID_FIELD", "bootstrap metadata must include initialized_at and initialized_by")
+    if "predecessor" in value:
+        _reference(value["predecessor"], "predecessor", "root")
 
 
 def _validate_waiver(value: Mapping[str, Any]) -> None:

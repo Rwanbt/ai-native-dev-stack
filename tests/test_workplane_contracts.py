@@ -72,8 +72,8 @@ class WorkPlaneContractsTests(unittest.TestCase):
             artifact("acceptance_criteria", uid=uid("ac"), requirement=reference("req"), criterion="works", verification_specifications=[reference("verify")]),
             artifact("tasks", uid=uid("task"), requirements=[reference("req")], implementation_paths=["src/module.py"], status="planned"),
             artifact("verification_specification", uid=uid("verify"), acceptance_criteria=[reference("ac")], command_registry=reference("root"), relationship="black_box", execution_scope=["tests"], covered_implementation_paths=["src/module.py"], dependencies=[], substance_requirement="test result", required_evidence_provenance="GIT_REVIEWED"),
-            artifact("project_policy", approval_predicate={"predicate_id": "review-v1"}, success_condition_mutation_provenance="GIT_REVIEWED", verification_evidence_provenance="CI_APPROVED", waiver_approval_rule={"predicate_id": "waiver-v1", "policy_digest": DIGEST}, human_approval_rule={"predicate_id": "human-v1", "policy_digest": DIGEST}, promotion_policy="explicit"),
-            artifact("approval_root", uid=uid("root"), root_digest=DIGEST, root_provenance="GIT_REVIEWED", bootstrap={"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "owner"}),
+            artifact("project_policy", approval_predicate={"predicate_id": "review-v1", "policy_digest": DIGEST}, success_condition_mutation_provenance="GIT_REVIEWED", verification_evidence_provenance="CI_APPROVED", waiver_approval_rule={"predicate_id": "waiver-v1", "policy_digest": DIGEST}, human_approval_rule={"predicate_id": "human-v1", "policy_digest": DIGEST}, promotion_policy="explicit"),
+            artifact("approval_root", uid=uid("root"), root_digest=DIGEST, policy_digest=DIGEST, root_provenance="GIT_REVIEWED", bootstrap={"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "owner"}),
             artifact("waiver", uid=uid("waiver"), target=reference("gap"), reason="accepted risk", scope="one AC", approved_by="owner", approved_at="2026-09-02T00:00:00Z", state="proposed", approval_provenance="UNTRACKED", approval_predicate={"predicate_id": "waiver-v1", "policy_digest": DIGEST}, policy_digest=DIGEST),
             artifact("human_approval", uid=uid("approval"), target=reference("ac"), approved_by="owner", approved_at="2026-09-02T00:00:00Z", approval_provenance="GIT_REVIEWED", approval_predicate={"predicate_id": "human-v1", "policy_digest": DIGEST}, policy_digest=DIGEST),
             artifact("repository_snapshot", uid=uid("snapshot"), head="abc123", dirty=False, scope=["src/module.py"], dependencies=[], content_digest=DIGEST, dependency_digest=DIGEST, command_registry_digest=DIGEST, policy_digest=DIGEST),
@@ -97,7 +97,7 @@ class WorkPlaneContractsTests(unittest.TestCase):
         self.assert_invalid("INVALID_PROVENANCE", invalid)
 
     def test_trust_models_fail_closed(self):
-        malformed_root = artifact("approval_root", uid=uid("root"), root_digest="bad", root_provenance="GIT_REVIEWED", bootstrap={"initialized_at": "now", "initialized_by": "owner"})
+        malformed_root = artifact("approval_root", uid=uid("root"), root_digest="bad", policy_digest=DIGEST, root_provenance="GIT_REVIEWED", bootstrap={"initialized_at": "now", "initialized_by": "owner"})
         self.assert_invalid("INVALID_DIGEST", malformed_root)
         invalid_waiver = artifact("waiver", uid=uid("waiver"), target=reference("gap"), reason="risk", scope="x", approved_by="agent", approved_at="now", state="effective", approval_provenance="UNTRACKED", approval_predicate={"predicate_id": "p", "policy_digest": DIGEST}, policy_digest=DIGEST)
         self.assert_invalid("INVALID_WAIVER_AUTHORITY", invalid_waiver)

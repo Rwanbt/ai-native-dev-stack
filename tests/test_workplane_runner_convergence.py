@@ -6,7 +6,7 @@ from ainative_workplane.convergence import converge
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
-from ainative_workplane.trust import evaluate_trust
+from ainative_workplane.trust import approval_root_commitment, evaluate_trust, policy_commitment
 from ainative_workplane.freshness import FreshnessResult, evaluate_freshness
 
 
@@ -21,6 +21,30 @@ class RunnerConvergenceTests(unittest.TestCase):
             "approval_root": reference("root"), "repository_snapshot": reference("snapshot"),
             "producer": "test", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED",
         }
+
+    def authorization(self, registry):
+        placeholder = "a" * 64
+        policy = {
+            "schema_name": "project_policy", "schema_version": 1,
+            "approval_predicate": {"predicate_id": "review", "policy_digest": placeholder},
+            "success_condition_mutation_provenance": "GIT_REVIEWED",
+            "verification_evidence_provenance": "GIT_REVIEWED",
+            "waiver_approval_rule": {"predicate_id": "waiver", "policy_digest": placeholder},
+            "human_approval_rule": {"predicate_id": "human", "policy_digest": placeholder},
+            "promotion_policy": "explicit",
+        }
+        digest = policy_commitment(policy)
+        for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
+            policy[field]["policy_digest"] = digest
+        root = {
+            "schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"),
+            "root_digest": placeholder, "policy_digest": digest, "root_provenance": "GIT_REVIEWED",
+            "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "test"},
+        }
+        root["root_digest"] = approval_root_commitment(root)
+        binding = self.binding(registry)
+        binding.update({"policy_digest": digest, "approval_root": {"uid": root["uid"], "digest": root["root_digest"]}, "evidence_provenance": "GIT_REVIEWED"})
+        return policy, root, binding
 
     def test_runner_uses_argv_timeout_and_substance(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"], "timeout_seconds": 3, "max_output_bytes": 100}}}
@@ -77,6 +101,31 @@ class RunnerConvergenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             evidence = VerificationRunner(registry).run("check", cwd=directory, binding=self.binding(registry))
         self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(evidence, policy=None, approval_root=None).code)
+
+    def test_trust_binds_policy_and_requires_complete_root_chain(self):
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
+        policy, root, binding = self.authorization(registry)
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = VerificationRunner(registry).run("check", cwd=directory, binding=binding)
+        self.assertEqual("TRUSTED", evaluate_trust(evidence, policy=policy, approval_root=root).code)
+
+        parent = dict(root)
+        parent["uid"] = generate_uid("root")
+        parent["root_digest"] = approval_root_commitment(parent)
+        chained_root = dict(root)
+        chained_root["predecessor"] = {"uid": parent["uid"], "digest": parent["root_digest"]}
+        chained_root["root_digest"] = approval_root_commitment(chained_root)
+        chained_binding = dict(binding)
+        chained_binding["approval_root"] = {"uid": chained_root["uid"], "digest": chained_root["root_digest"]}
+        with tempfile.TemporaryDirectory() as directory:
+            chained_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=chained_binding)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root).code)
+        self.assertEqual("TRUSTED", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root, approval_chain=[parent]).code)
+
+        invalid_policy = dict(policy)
+        invalid_policy["approval_predicate"] = dict(policy["approval_predicate"])
+        invalid_policy["approval_predicate"]["policy_digest"] = "b" * 64
+        self.assertEqual("POLICY_COMMITMENT_INVALID", evaluate_trust(evidence, policy=invalid_policy, approval_root=root).code)
 
     def test_freshness_detects_changed_contract_registry_policy_root_and_snapshot(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
