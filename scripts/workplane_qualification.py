@@ -19,6 +19,7 @@ TESTS = (
     "tests.test_workplane_contracts tests.test_workplane_integrations_metrics "
     "tests.test_workplane_pilot tests.test_workplane_harness_matrix "
     "tests.test_workplane_authorization tests.test_workplane_substance "
+    "tests.test_workplane_adversarial "
     "scripts.tests.test_vault_protocol scripts.tests.test_vault_sync_v4 hooks.tests.test_hooks_v4"
 ).split()
 

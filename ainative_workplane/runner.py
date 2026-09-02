@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from .contracts import canonical_digest
 from .evidence import VerificationEvidence, build_verification_evidence
+from .isolation import IsolatedProcess, spawn
 from .substance import SubstanceError, evaluate as evaluate_substance, validate_contract as validate_substance
 
 
@@ -37,6 +38,7 @@ _REDACTIONS = (
 )
 
 PREVIEW_CHARS = 512
+READ_CHUNK = 8192
 
 
 def redact(text: str) -> str:
@@ -105,20 +107,27 @@ class VerificationRunner:
         return result
 
     def _run_bounded(self, definition: Mapping[str, Any], cwd: str | Path) -> tuple[subprocess.Popen[bytes], bytes, bytes]:
-        process = subprocess.Popen(
-            definition["argv"],
-            cwd=cwd,
-            shell=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-            start_new_session=os.name != "nt",
-        )
+        try:
+            isolated = spawn(definition["argv"], cwd)
+        except OSError as error:
+            # A command the operating system refuses to start is a registry
+            # fact, not evidence about the work under verification.
+            raise RunnerError("COMMAND_NOT_EXECUTABLE") from error
+        try:
+            return self._collect(isolated, definition)
+        finally:
+            isolated.close()
+
+    def _collect(self, isolated: IsolatedProcess, definition: Mapping[str, Any]) -> tuple[subprocess.Popen[bytes], bytes, bytes]:
+        process = isolated.process
         queue: Queue[tuple[str, bytes]] = Queue()
 
         def drain(name: str, stream: Any) -> None:
             try:
-                while chunk := stream.read(8192):
+                # read1, not read: read blocks until the full buffer is filled,
+                # so a command that prints under one buffer and then keeps
+                # running would defeat the output bound entirely.
+                while chunk := stream.read1(READ_CHUNK):
                     queue.put((name, chunk))
             finally:
                 stream.close()
@@ -131,41 +140,15 @@ class VerificationRunner:
         limit = definition.get("max_output_bytes", 1_000_000)
         while any(thread.is_alive() for thread in threads) or not queue.empty():
             if time.monotonic() >= deadline:
-                self._terminate_process_tree(process)
+                isolated.terminate_tree()
                 raise subprocess.TimeoutExpired(definition["argv"], definition.get("timeout_seconds", 30))
             try:
                 name, chunk = queue.get(timeout=0.02)
             except Empty:
                 continue
             if len(output["stdout"]) + len(output["stderr"]) + len(chunk) > limit:
-                self._terminate_process_tree(process)
+                isolated.terminate_tree()
                 raise RunnerError("OUTPUT_LIMIT_EXCEEDED")
             output[name].extend(chunk)
         process.wait()
         return process, bytes(output["stdout"]), bytes(output["stderr"])
-
-    @staticmethod
-    def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
-        """Terminate the isolated command group so children cannot outlive evidence."""
-
-        if process.poll() is not None:
-            return
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=5,
-            )
-        else:
-            try:
-                os.killpg(process.pid, 9)
-            except ProcessLookupError:
-                pass
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()

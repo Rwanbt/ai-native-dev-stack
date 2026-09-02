@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 from datetime import datetime, timezone
 import json
 import os
@@ -39,12 +40,21 @@ def process_is_alive(pid: int) -> bool:
         return True
     query_limited_information = 0x1000
     still_active = 259
-    kernel32 = ctypes.windll.kernel32
+    # WHY declare the signatures: without them ctypes marshals the returned
+    # HANDLE as a 32-bit int, so a live process reads as dead and its lock
+    # would be reclaimed underneath it.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
     handle = kernel32.OpenProcess(query_limited_information, False, pid)
     if not handle:
         return False
     try:
-        code = ctypes.c_ulong()
+        code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
             return True
         return code.value == still_active
