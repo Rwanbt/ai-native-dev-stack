@@ -9,6 +9,7 @@ from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .runner import RunResult, RunnerError, VerificationRunner, load_registry
 from .convergence import ConvergenceVerdict, converge
+from .snapshot import SnapshotError, snapshot_files
 
 __all__ = [
     "ContractError",
@@ -23,6 +24,8 @@ __all__ = [
     "load_registry",
     "ConvergenceVerdict",
     "converge",
+    "SnapshotError",
+    "snapshot_files",
     "canonical_digest",
     "canonical_json_bytes",
     "canonical_path",
