@@ -18,3 +18,7 @@ the plan (two features, one bugfix, one refactor and one hotfix) remains pending
 argv verification and emits metrics. Its output is explicitly marked
 `external_harness: false`; it is a deterministic local gate, not a claim of
 production-harness success.
+
+`python scripts/workplane_harness_matrix.py` exercises the same five-item shape
+through two independent local harnesses (direct API and CLI facade). Both pass;
+the result remains explicitly marked `external_harness: false`.
