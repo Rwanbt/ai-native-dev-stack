@@ -12,3 +12,9 @@ real production pilot; no external harness was executed.
 
 Both scenarios pass against the current `spec` branch. The real pilot required by
 the plan (two features, one bugfix, one refactor and one hotfix) remains pending.
+
+`python scripts/workplane_pilot.py` now executes the five-item local pilot shape
+(two features, one bugfix, one refactor and one hotfix) through create → mutate →
+argv verification and emits metrics. Its output is explicitly marked
+`external_harness: false`; it is a deterministic local gate, not a claim of
+production-harness success.
