@@ -20,6 +20,7 @@ class RunnerConvergenceTests(unittest.TestCase):
             "contract_digest": digest, "verification_specification": reference("verify"),
             "command_registry_digest": canonical_digest(registry), "policy_digest": digest,
             "approval_root": reference("root"), "repository_snapshot": reference("snapshot"),
+            "snapshot_content_digest": digest, "snapshot_dependency_digest": digest,
             "producer": "test", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED",
         }
 

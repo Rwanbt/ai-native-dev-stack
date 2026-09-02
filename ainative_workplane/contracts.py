@@ -360,7 +360,7 @@ def _validate_verification_run(value: Mapping[str, Any]) -> None:
     revision = _required(value, "contract_revision")
     if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
         _fail("INVALID_FIELD", "contract_revision must be a positive integer")
-    for field in ("contract_digest", "command_registry_digest", "policy_digest"):
+    for field in ("contract_digest", "command_registry_digest", "policy_digest", "snapshot_content_digest", "snapshot_dependency_digest"):
         _digest(_required(value, field), field)
     _reference(_required(value, "verification_specification"), "verification_specification", "verify")
     _reference(_required(value, "approval_root"), "approval_root", "root")

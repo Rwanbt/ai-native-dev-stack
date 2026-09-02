@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from .contracts import canonical_digest
 from .evidence import VerificationEvidence
 from .snapshot import build_repository_snapshot, snapshot_reference
 
@@ -56,11 +55,17 @@ def evaluate_checkout_freshness(
         policy_digest=current_policy_digest,
         uid=previous["uid"],
     )
-    return evaluate_freshness(
+    baseline = evaluate_freshness(
         evidence,
         current_contract_digest=current_contract_digest,
-        current_snapshot=snapshot_reference(current),
+        current_snapshot=previous,
         current_registry_digest=current_registry_digest,
         current_policy_digest=current_policy_digest,
         current_approval_root=current_approval_root,
     )
+    states = set(baseline.states)
+    if evidence.artifact["snapshot_content_digest"] != current["content_digest"]:
+        states.add("STALE_SCOPE")
+    if evidence.artifact["snapshot_dependency_digest"] != current["dependency_digest"]:
+        states.add("STALE_DEPENDENCY")
+    return FreshnessResult(frozenset(states))

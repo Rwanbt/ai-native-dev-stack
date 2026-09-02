@@ -64,7 +64,8 @@ class SnapshotTests(unittest.TestCase):
                     "work": reference("work"), "contract_revision": 1, "contract_digest": "c" * 64,
                     "verification_specification": reference("verify"), "command_registry_digest": "a" * 64,
                     "policy_digest": "b" * 64, "approval_root": reference("root"),
-                    "repository_snapshot": snapshot_reference(first), "producer": "test", "producer_version": "1",
+                    "repository_snapshot": snapshot_reference(first), "snapshot_content_digest": first["content_digest"],
+                    "snapshot_dependency_digest": first["dependency_digest"], "producer": "test", "producer_version": "1",
                     "evidence_provenance": "LOCAL_UNTRUSTED",
                 },
                 command="check", result="PASS", exit_code=0, stdout=b"ok", stderr=b"", duration_ms=1, substance_metadata={},
@@ -78,6 +79,25 @@ class SnapshotTests(unittest.TestCase):
                 current_approval_root=evidence.artifact["approval_root"],
             )
             self.assertIn("STALE_SCOPE", freshness.states)
+            self.assertNotIn("STALE_DEPENDENCY", freshness.states)
+            dependency_evidence = build_verification_evidence(
+                {
+                    "work": reference("work"), "contract_revision": 1, "contract_digest": "c" * 64,
+                    "verification_specification": reference("verify"), "command_registry_digest": "a" * 64,
+                    "policy_digest": "b" * 64, "approval_root": reference("root"),
+                    "repository_snapshot": snapshot_reference(changed_scope), "snapshot_content_digest": changed_scope["content_digest"],
+                    "snapshot_dependency_digest": changed_scope["dependency_digest"], "producer": "test", "producer_version": "1",
+                    "evidence_provenance": "LOCAL_UNTRUSTED",
+                },
+                command="check", result="PASS", exit_code=0, stdout=b"ok", stderr=b"", duration_ms=1, substance_metadata={},
+            )
             (root / "requirements.lock").write_text("two", encoding="utf-8")
             changed_dependency = build_repository_snapshot(directory, **common)
             self.assertNotEqual(snapshot_reference(changed_scope)["digest"], snapshot_reference(changed_dependency)["digest"])
+            dependency_freshness = evaluate_checkout_freshness(
+                dependency_evidence, repository_root=directory, scope=["src/app.py"], dependency_paths=["requirements.lock"],
+                current_contract_digest="c" * 64, current_registry_digest="a" * 64, current_policy_digest="b" * 64,
+                current_approval_root=dependency_evidence.artifact["approval_root"],
+            )
+            self.assertIn("STALE_DEPENDENCY", dependency_freshness.states)
+            self.assertNotIn("STALE_SCOPE", dependency_freshness.states)
