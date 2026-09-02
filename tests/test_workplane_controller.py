@@ -49,6 +49,19 @@ class WorkControllerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "injected crash"):
                 WorkController(directory, failure_injector=crash).mutate(1, {"tasks": {"revision": 2}})
             self.assertEqual(1, WorkController(directory).read()["revision"])
+            recovered = WorkController(directory).recover_staging()
+            self.assertEqual(1, recovered)
+            self.assertFalse((Path(directory) / "revisions" / "2").exists())
+
+    def test_recovery_discards_orphan_revision_before_first_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orphan = root / "revisions" / "1"
+            orphan.mkdir(parents=True)
+            (orphan / "tasks.json").write_text('{"orphan":true}', encoding="utf-8")
+            manifest = WorkController(directory).create({"tasks": {"fresh": True}})
+            self.assertEqual(1, manifest["revision"])
+            self.assertEqual({"fresh": True}, json.loads((root / "revisions" / "1" / "tasks.json").read_text(encoding="utf-8")))
 
 
 if __name__ == "__main__":

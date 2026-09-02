@@ -112,6 +112,7 @@ class WorkController:
     def create(self, artifacts: Mapping[str, Any]) -> dict[str, Any]:
         handle = self._lock()
         try:
+            self._recover_interrupted()
             if self.manifest_path.exists():
                 raise ControllerError("WORK_ALREADY_EXISTS")
             return self._commit(None, artifacts)
@@ -121,6 +122,7 @@ class WorkController:
     def mutate(self, expected_revision: int, artifacts: Mapping[str, Any]) -> dict[str, Any]:
         handle = self._lock()
         try:
+            self._recover_interrupted()
             current = self._load_manifest()
             if expected_revision != current["revision"]:
                 raise ControllerError("STALE_REVISION")
@@ -129,11 +131,30 @@ class WorkController:
             self._unlock(handle)
 
     def recover_staging(self) -> int:
-        if not self.staging.exists():
-            return 0
+        handle = self._lock()
+        try:
+            return self._recover_interrupted()
+        finally:
+            self._unlock(handle)
+
+    def _recover_interrupted(self) -> int:
+        """Discard files that cannot be authoritative without a matching manifest."""
+
         removed = 0
-        for child in self.staging.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
-                removed += 1
+        if self.staging.exists():
+            for child in self.staging.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+                    removed += 1
+        for temporary in self.root.glob(".manifest.*.tmp"):
+            temporary.unlink(missing_ok=True)
+            removed += 1
+        committed_revision = 0
+        if self.manifest_path.exists():
+            committed_revision = self._load_manifest()["revision"]
+        if self.revisions.exists():
+            for child in self.revisions.iterdir():
+                if child.is_dir() and child.name.isdigit() and int(child.name) > committed_revision:
+                    shutil.rmtree(child)
+                    removed += 1
         return removed
