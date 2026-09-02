@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ainative_workplane.controller import WorkController
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.convergence import converge
+from ainative_workplane.freshness import evaluate_freshness
 from ainative_workplane.metrics import PilotMetrics
 from ainative_workplane.runner import VerificationRunner
 from ainative_workplane.traceability import analyze
@@ -44,7 +45,8 @@ def run() -> dict[str, object]:
             if result.result != "PASS":
                 raise RuntimeError(f"pilot verification failed for {kind}: {result.result}")
             completed += 1
-        verdict = converge(analyze([], [], [], []), [result], trust=evaluate_trust(result, policy=policy, approval_root=approval_root))
+        freshness = evaluate_freshness(result, current_contract_digest=digest, current_snapshot=result.artifact["repository_snapshot"], current_registry_digest=registry_digest, current_policy_digest=digest, current_approval_root=result.artifact["approval_root"])
+        verdict = converge(analyze([], [], [], []), [result], freshness=freshness, trust=evaluate_trust(result, policy=policy, approval_root=approval_root))
         if verdict.verdict != "CONVERGED":
             raise RuntimeError(f"pilot convergence failed: {verdict.verdict}")
         elapsed = int((time.monotonic() - started) * 1000)

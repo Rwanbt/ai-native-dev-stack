@@ -7,6 +7,7 @@ from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
 from ainative_workplane.trust import evaluate_trust
+from ainative_workplane.freshness import FreshnessResult, evaluate_freshness
 
 
 class RunnerConvergenceTests(unittest.TestCase):
@@ -65,10 +66,21 @@ class RunnerConvergenceTests(unittest.TestCase):
         forged = converge(graph, [{"uid": "run-1", "status": "PASS"}])
         self.assertEqual("BLOCKED", forged.verdict)
         self.assertIn("INVALID_VERIFICATION_EVIDENCE", [gap.code for gap in forged.gaps])
-        self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=["POLICY_CHANGED"]).verdict)
+        self.assertEqual("BLOCKED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=FreshnessResult(frozenset({"POLICY_CHANGED"}))).verdict)
 
     def test_missing_root_fails_closed(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
         with tempfile.TemporaryDirectory() as directory:
             evidence = VerificationRunner(registry).run("check", cwd=directory, binding=self.binding(registry))
         self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(evidence, policy=None, approval_root=None).code)
+
+    def test_freshness_detects_changed_contract_registry_policy_root_and_snapshot(self):
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
+        binding = self.binding(registry)
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = VerificationRunner(registry).run("check", cwd=directory, binding=binding)
+        current_snapshot = {"uid": binding["repository_snapshot"]["uid"], "digest": binding["repository_snapshot"]["digest"]}
+        fresh = evaluate_freshness(evidence, current_contract_digest=binding["contract_digest"], current_snapshot=current_snapshot, current_registry_digest=binding["command_registry_digest"], current_policy_digest=binding["policy_digest"], current_approval_root=binding["approval_root"])
+        self.assertEqual(frozenset(), fresh.states)
+        stale = evaluate_freshness(evidence, current_contract_digest="b" * 64, current_snapshot={"uid": "other", "digest": "b" * 64}, current_registry_digest="b" * 64, current_policy_digest="b" * 64, current_approval_root={"uid": "other", "digest": "b" * 64})
+        self.assertTrue({"STALE_CONTRACT", "STALE_SCOPE", "COMMAND_REGISTRY_CHANGED", "POLICY_CHANGED", "ROOT_OF_TRUST_CHANGED"}.issubset(stale.states))

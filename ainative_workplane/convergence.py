@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .evidence import VerificationEvidence
+from .freshness import FreshnessResult
 from .traceability import Gap, TraceabilityResult
 from .trust import TrustVerdict
 
@@ -29,9 +30,9 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: Iterable[str] = (), trust: TrustVerdict | None = None) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None) -> ConvergenceVerdict:
     gaps = list(traceability.gaps)
-    states = set(freshness)
+    states = set(freshness.states) if freshness is not None else {"FRESHNESS_UNAVAILABLE"}
     for state in sorted(states & BLOCKING_FRESHNESS):
         gaps.append(Gap(state, None, "blocking freshness state"))
     if trust is None:
