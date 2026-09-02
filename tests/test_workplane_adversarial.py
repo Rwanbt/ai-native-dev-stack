@@ -70,7 +70,10 @@ def registry(argv, **definition):
 
 
 def run_command(command_registry, **kwargs):
-    with tempfile.TemporaryDirectory() as directory:
+    # ignore_cleanup_errors: this directory is the killed command's cwd, and
+    # Windows refuses to remove a directory a process still has open. The test
+    # is about the verdict, not about the temp directory.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
         return VerificationRunner(command_registry).run("check", cwd=directory, binding=binding(registry_digest=canonical_digest(command_registry)), **kwargs)
 
 
@@ -216,7 +219,7 @@ class VerificationAdversarialTests(unittest.TestCase):
         # The case a PID walk cannot reach: the command exits at once, its
         # child keeps the inherited pipe open, and the timeout fires with no
         # parent left to walk from.
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             marker = Path(directory) / "orphan.txt"
             child = "import pathlib,time; time.sleep(3); pathlib.Path(r'%s').write_text('survived')" % str(marker).replace("\\", "\\\\")
             parent = "import subprocess,sys; subprocess.Popen([sys.executable, '-c', %r])" % child
