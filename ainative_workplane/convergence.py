@@ -24,6 +24,17 @@ BLOCKING_FRESHNESS = frozenset({
     "ROOT_OF_TRUST_CHANGED",
 })
 
+# Gaps that mean the engine could not evaluate the question, as opposed to
+# gaps that mean the work is not finished. Both block; only these are INVALID.
+UNEVALUABLE = frozenset({
+    "FRESHNESS_UNAVAILABLE",
+    "ROOT_OF_TRUST_INVALID",
+    "POLICY_COMMITMENT_INVALID",
+    "INVALID_VERIFICATION_EVIDENCE",
+})
+
+VERDICT_EXIT_CODES = {"CONVERGED": 0, "NOT_CONVERGED": 1, "INVALID": 2, "INTERNAL_ERROR": 3}
+
 
 @dataclass(frozen=True)
 class ConvergenceVerdict:
@@ -44,8 +55,23 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
     @contract Evidence supports convergence only when its verification
     specification is declared by the contract graph, and every declared
     specification carries passing evidence.
+    @returns CONVERGED, NOT_CONVERGED, INVALID (inputs could not be
+    evaluated) or INTERNAL_ERROR (the engine itself failed). Only CONVERGED
+    is a success.
     """
 
+    try:
+        gaps = _collect_gaps(traceability, runs, freshness, trust)
+    except Exception as error:  # WHY: an engine failure must surface as a verdict, never as a success or a traceback in the caller.
+        return ConvergenceVerdict("INTERNAL_ERROR", (), f"convergence engine failed: {type(error).__name__}", "")
+    if not gaps:
+        return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
+    if any(gap.code in UNEVALUABLE for gap in gaps):
+        return ConvergenceVerdict("INVALID", tuple(gaps), "required authority or evidence could not be evaluated", stall_fingerprint(gaps))
+    return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
+
+
+def _collect_gaps(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], freshness: FreshnessResult | None, trust: TrustVerdict | None) -> list[Gap]:
     gaps = list(traceability.gaps)
     if traceability.requirement_count == 0:
         gaps.append(Gap("NO_MEANINGFUL_REQUIREMENTS", None, "a work contract requires at least one requirement"))
@@ -59,7 +85,6 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
     run_list = list(runs)
     if not run_list:
         gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
-        return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
     declared_specs = {spec_uid for _, spec_uid in traceability.acceptance_to_verification}
     passed_specs: set[str] = set()
     for run in run_list:
@@ -75,9 +100,7 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
             passed_specs.add(spec_uid)
     for spec_uid in sorted(declared_specs - passed_specs):
         gaps.append(Gap("UNVERIFIED_SPECIFICATION", spec_uid, "declared verification specification has no passing evidence"))
-    if gaps:
-        return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
-    return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
+    return gaps
 
 
 def append_convergence(path: str | Path, verdict: ConvergenceVerdict, *, work_uid: str, engine_version: str) -> None:

@@ -3,7 +3,7 @@ import tempfile
 import time
 import unittest
 
-from ainative_workplane.convergence import converge
+from ainative_workplane.convergence import VERDICT_EXIT_CODES, converge
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
@@ -99,15 +99,15 @@ class RunnerConvergenceTests(unittest.TestCase):
     def test_convergence_ignores_narrative_and_blocks_failures(self):
         graph = analyze([], [], [], [])
         missing = converge(graph, [])
-        self.assertEqual("NOT_CONVERGED", missing.verdict)
+        self.assertEqual("INVALID", missing.verdict)
         self.assertIn("NO_MEANINGFUL_REQUIREMENTS", [gap.code for gap in missing.gaps])
         self.assertIn("FRESHNESS_UNAVAILABLE", [gap.code for gap in missing.gaps])
         self.assertIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in missing.gaps])
-        graph = analyze([], [], [], [])
         forged = converge(graph, [{"uid": "run-1", "status": "PASS"}])
-        self.assertEqual("NOT_CONVERGED", forged.verdict)
+        self.assertEqual("INVALID", forged.verdict)
         self.assertIn("INVALID_VERIFICATION_EVIDENCE", [gap.code for gap in forged.gaps])
-        self.assertEqual("NOT_CONVERGED", converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=FreshnessResult(frozenset({"POLICY_CHANGED"}))).verdict)
+        stale = converge(graph, [{"uid": "run-1", "status": "PASS"}], freshness=FreshnessResult(frozenset({"POLICY_CHANGED"})))
+        self.assertNotEqual("CONVERGED", stale.verdict)
 
     def test_missing_root_fails_closed(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
@@ -180,3 +180,34 @@ class RunnerConvergenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             bound = VerificationRunner(registry).run("check", cwd=directory, binding=bound_binding)
         self.assertEqual("CONVERGED", converge(graph, [bound], freshness=fresh, trust=trusted).verdict)
+
+
+    def test_verdicts_separate_unevaluable_inputs_from_unfinished_work(self):
+        digest = "a" * 64
+        declared = generate_uid("verify")
+        graph = analyze(
+            [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": digest}]}],
+            [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": digest}, "verification_specifications": [{"uid": declared, "digest": digest}]}],
+            [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": digest}]}],
+            [{"uid": declared}],
+        )
+        fresh = FreshnessResult(frozenset())
+        trusted = TrustVerdict(True, "TRUSTED")
+
+        unfinished = converge(graph, [], freshness=fresh, trust=trusted)
+        self.assertEqual("NOT_CONVERGED", unfinished.verdict)
+        self.assertIn("UNVERIFIED_SPECIFICATION", [gap.code for gap in unfinished.gaps])
+
+        self.assertEqual("INVALID", converge(graph, [], freshness=fresh, trust=None).verdict)
+        self.assertEqual("INVALID", converge(graph, [], freshness=None, trust=trusted).verdict)
+
+        def exploding():
+            raise MemoryError("simulated engine failure")
+            yield
+
+        broken = converge(graph, exploding(), freshness=fresh, trust=trusted)
+        self.assertEqual("INTERNAL_ERROR", broken.verdict)
+        self.assertIn("MemoryError", broken.reason)
+        self.assertEqual((), broken.gaps)
+
+        self.assertEqual({"CONVERGED": 0, "NOT_CONVERGED": 1, "INVALID": 2, "INTERNAL_ERROR": 3}, VERDICT_EXIT_CODES)
