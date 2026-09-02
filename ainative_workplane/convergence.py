@@ -6,8 +6,9 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Iterable
 
+from .evidence import VerificationEvidence
 from .traceability import Gap, TraceabilityResult
 
 
@@ -27,7 +28,7 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[Mapping[str, Any]], *, freshness: Iterable[str] = ()) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: Iterable[str] = ()) -> ConvergenceVerdict:
     gaps = list(traceability.gaps)
     states = set(freshness)
     for state in sorted(states & BLOCKING_FRESHNESS):
@@ -36,8 +37,10 @@ def converge(traceability: TraceabilityResult, runs: Iterable[Mapping[str, Any]]
     if not run_list:
         return ConvergenceVerdict("INVALID", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
     for run in run_list:
-        if run.get("status") not in {"PASS", "pass"}:
-            gaps.append(Gap("VERIFICATION_FAILED", run.get("uid"), "selected verification did not pass"))
+        if not isinstance(run, VerificationEvidence):
+            gaps.append(Gap("INVALID_VERIFICATION_EVIDENCE", None, "selected run is not validated evidence"))
+        elif run.result != "PASS":
+            gaps.append(Gap("VERIFICATION_FAILED", run.uid, "selected verification did not pass"))
     if gaps:
         return ConvergenceVerdict("BLOCKED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
     return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")

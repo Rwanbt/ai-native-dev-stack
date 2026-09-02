@@ -355,13 +355,26 @@ def _validate_repository_snapshot(value: Mapping[str, Any]) -> None:
 def _validate_verification_run(value: Mapping[str, Any]) -> None:
     _uid_field(value, "run")
     _reference(_required(value, "work"), "work", "work")
+    revision = _required(value, "contract_revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+        _fail("INVALID_FIELD", "contract_revision must be a positive integer")
     for field in ("contract_digest", "command_registry_digest", "policy_digest"):
         _digest(_required(value, field), field)
     _reference(_required(value, "verification_specification"), "verification_specification", "verify")
     _reference(_required(value, "approval_root"), "approval_root", "root")
     _reference(_required(value, "repository_snapshot"), "repository_snapshot", "snapshot")
-    for field in ("producer", "producer_version", "result", "started_at", "finished_at", "substance_metadata"):
+    for field in ("producer", "producer_version", "result", "started_at", "finished_at", "substance_metadata", "command"):
         _required(value, field)
+    if value["result"] not in {"PASS", "FAIL", "TIMEOUT", "SUSPICIOUS_VERIFICATION"}:
+        _fail("INVALID_ENUM", "verification result is invalid")
+    exit_code = _required(value, "exit_code")
+    if exit_code is not None and (not isinstance(exit_code, int) or isinstance(exit_code, bool)):
+        _fail("INVALID_FIELD", "exit_code must be an integer or null")
+    duration = _required(value, "duration_ms")
+    if not isinstance(duration, int) or isinstance(duration, bool) or duration < 0:
+        _fail("INVALID_FIELD", "duration_ms must be a non-negative integer")
+    for field in ("stdout_digest", "stderr_digest"):
+        _digest(_required(value, field), field)
     _provenance(_required(value, "evidence_provenance"), "evidence_provenance")
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ainative_workplane.controller import WorkController
+from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.convergence import converge
 from ainative_workplane.metrics import PilotMetrics
 from ainative_workplane.runner import VerificationRunner
@@ -23,6 +24,12 @@ def run() -> dict[str, object]:
     started = time.monotonic()
     convergence_started = time.monotonic()
     completed = 0
+    digest = "a" * 64
+    registry_digest = canonical_digest(registry)
+
+    def binding() -> dict[str, object]:
+        reference = lambda prefix: {"uid": generate_uid(prefix), "digest": digest}
+        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": reference("verify"), "command_registry_digest": registry_digest, "policy_digest": digest, "approval_root": reference("root"), "repository_snapshot": reference("snapshot"), "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
     with tempfile.TemporaryDirectory(prefix="workplane-pilot-") as directory:
         root = Path(directory)
         for index, kind in enumerate(kinds, 1):
@@ -30,11 +37,11 @@ def run() -> dict[str, object]:
             controller = WorkController(work)
             controller.create({"task": {"kind": kind, "index": index}})
             controller.mutate(1, {"task": {"kind": kind, "index": index, "verified": True}})
-            result = VerificationRunner(registry).run("check", cwd=work)
-            if result.status != "PASS":
-                raise RuntimeError(f"pilot verification failed for {kind}: {result.status}")
+            result = VerificationRunner(registry).run("check", cwd=work, binding=binding())
+            if result.result != "PASS":
+                raise RuntimeError(f"pilot verification failed for {kind}: {result.result}")
             completed += 1
-        verdict = converge(analyze([], [], [], []), [{"uid": "pilot-run", "status": "PASS"}])
+        verdict = converge(analyze([], [], [], []), [result])
         if verdict.verdict != "CONVERGED":
             raise RuntimeError(f"pilot convergence failed: {verdict.verdict}")
         elapsed = int((time.monotonic() - started) * 1000)

@@ -6,23 +6,11 @@ import json
 import re
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .contracts import ContractError, canonical_digest, generate_uid
-
-
-@dataclass(frozen=True)
-class RunResult:
-    uid: str
-    command: str
-    status: str
-    exit_code: int | None
-    stdout: str
-    stderr: str
-    duration_ms: int
-    evidence_provenance: str
+from .contracts import canonical_digest
+from .evidence import VerificationEvidence, build_verification_evidence
 
 
 class RunnerError(RuntimeError):
@@ -55,15 +43,16 @@ def load_registry(registry: Mapping[str, Any], expected_digest: str | None = Non
 
 
 class VerificationRunner:
-    def __init__(self, registry: Mapping[str, Any], *, provenance: str = "GIT_REVIEWED", runs_dir: str | Path | None = None):
+    def __init__(self, registry: Mapping[str, Any], *, runs_dir: str | Path | None = None):
         self.registry = load_registry(registry)
-        self.provenance = provenance
         self.runs_dir = Path(runs_dir) if runs_dir else None
 
-    def run(self, command: str, *, cwd: str | Path, require_substance: bool = False) -> RunResult:
+    def run(self, command: str, *, cwd: str | Path, binding: Mapping[str, Any], require_substance: bool = False) -> VerificationEvidence:
         definition = self.registry["commands"].get(command)
         if definition is None:
             raise RunnerError("UNKNOWN_COMMAND")
+        if binding.get("command_registry_digest") != canonical_digest(self.registry):
+            raise RunnerError("COMMAND_REGISTRY_BINDING_MISMATCH")
         started = time.monotonic()
         try:
             completed = subprocess.run(definition["argv"], cwd=cwd, shell=False, capture_output=True, timeout=definition.get("timeout_seconds", 30), check=False)
@@ -75,11 +64,11 @@ class VerificationRunner:
             status = "PASS" if completed.returncode == 0 else "FAIL"
             if require_substance and completed.returncode == 0 and not (stdout.strip() or stderr.strip()):
                 status = "SUSPICIOUS_VERIFICATION"
-            result = RunResult(generate_uid("run"), command, status, completed.returncode, stdout, stderr, int((time.monotonic() - started) * 1000), self.provenance)
+            result = build_verification_evidence(binding, command=command, result=status, exit_code=completed.returncode, stdout=stdout_bytes, stderr=stderr_bytes, duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={"stdout_preview": stdout, "stderr_preview": stderr})
         except subprocess.TimeoutExpired:
-            result = RunResult(generate_uid("run"), command, "TIMEOUT", None, "", "", int((time.monotonic() - started) * 1000), self.provenance)
+            result = build_verification_evidence(binding, command=command, result="TIMEOUT", exit_code=None, stdout=b"", stderr=b"", duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={})
         if self.runs_dir:
             self.runs_dir.mkdir(parents=True, exist_ok=True)
             path = self.runs_dir / f"{result.uid}.json"
-            path.write_text(json.dumps(result.__dict__, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+            path.write_text(json.dumps(result.to_record(), sort_keys=True, separators=(",", ":")), encoding="utf-8")
         return result
