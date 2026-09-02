@@ -14,13 +14,37 @@ from typing import Any, Mapping, Sequence
 
 from .contracts import canonical_digest
 from .evidence import VerificationEvidence, build_verification_evidence
+from .substance import SubstanceError, evaluate as evaluate_substance, validate_contract as validate_substance
 
 
 class RunnerError(RuntimeError):
     pass
 
 
-_SECRET = re.compile(r"(?i)(token|secret|password|api[_-]?key)=([^\s]+)")
+# Defense in depth, not perfect secret detection: persisted evidence keeps
+# digests and a bounded preview rather than the full log, so a miss here is
+# not a full disclosure.
+_REDACTIONS = (
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED PRIVATE KEY]"),
+    (re.compile(r"(?i)\b(authorization)\s*:\s*(bearer|basic)\s+[A-Za-z0-9._~+/=-]+"), r"\1: \2 [REDACTED]"),
+    (re.compile(r"(?i)\b(set-cookie|cookie)\s*:\s*[^\r\n]+"), r"\1: [REDACTED]"),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "[REDACTED]"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}"), "[REDACTED]"),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"), "[REDACTED]"),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"), "[REDACTED]"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED]"),
+    (re.compile(r"(?i)\b(aws_secret_access_key|secret|token|password|passwd|api[_-]?key)\b\"?\s*[=:]\s*\"?[^\s\"',]+"), r"\1=[REDACTED]"),
+)
+
+PREVIEW_CHARS = 512
+
+
+def redact(text: str) -> str:
+    """Mask the credential shapes a verification command most often prints."""
+
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def load_registry(registry: Mapping[str, Any], expected_digest: str | None = None) -> dict[str, Any]:
@@ -40,6 +64,11 @@ def load_registry(registry: Mapping[str, Any], expected_digest: str | None = Non
             raise RunnerError("INVALID_COMMAND_REGISTRY")
         if not isinstance(definition.get("max_output_bytes", 1_000_000), int) or definition.get("max_output_bytes", 1_000_000) < 1:
             raise RunnerError("INVALID_COMMAND_REGISTRY")
+        if "substance" in definition:
+            try:
+                validate_substance(definition["substance"])
+            except SubstanceError as error:
+                raise RunnerError(str(error)) from error
     if expected_digest is not None and canonical_digest(registry) != expected_digest:
         raise RunnerError("COMMAND_REGISTRY_CHANGED")
     return dict(registry)
@@ -59,12 +88,14 @@ class VerificationRunner:
         started = time.monotonic()
         try:
             completed, stdout_bytes, stderr_bytes = self._run_bounded(definition, cwd)
-            stdout = _SECRET.sub(r"\1=[REDACTED]", stdout_bytes.decode("utf-8", errors="replace"))
-            stderr = _SECRET.sub(r"\1=[REDACTED]", stderr_bytes.decode("utf-8", errors="replace"))
+            stdout = redact(stdout_bytes.decode("utf-8", errors="replace"))
+            stderr = redact(stderr_bytes.decode("utf-8", errors="replace"))
             status = "PASS" if completed.returncode == 0 else "FAIL"
-            if require_substance and completed.returncode == 0 and not (stdout.strip() or stderr.strip()):
+            suspicious, observed = evaluate_substance(definition.get("substance"), stdout=stdout, stderr=stderr, exit_code=completed.returncode)
+            if require_substance and completed.returncode == 0 and suspicious:
                 status = "SUSPICIOUS_VERIFICATION"
-            result = build_verification_evidence(binding, command=command, result=status, exit_code=completed.returncode, stdout=stdout_bytes, stderr=stderr_bytes, duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={"stdout_preview": stdout, "stderr_preview": stderr})
+            metadata = {**observed, "stdout_preview": stdout[:PREVIEW_CHARS], "stderr_preview": stderr[:PREVIEW_CHARS]}
+            result = build_verification_evidence(binding, command=command, result=status, exit_code=completed.returncode, stdout=stdout_bytes, stderr=stderr_bytes, duration_ms=int((time.monotonic() - started) * 1000), substance_metadata=metadata)
         except subprocess.TimeoutExpired:
             result = build_verification_evidence(binding, command=command, result="TIMEOUT", exit_code=None, stdout=b"", stderr=b"", duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={})
         if self.runs_dir:

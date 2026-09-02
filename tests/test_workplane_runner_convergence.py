@@ -49,7 +49,7 @@ class RunnerConvergenceTests(unittest.TestCase):
         return policy, root, binding
 
     def test_runner_uses_argv_timeout_and_substance(self):
-        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"], "timeout_seconds": 3, "max_output_bytes": 100}}}
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"], "timeout_seconds": 3, "max_output_bytes": 100, "substance": {"type": "exit_only", "minimum_observations": 0}}}}
         with tempfile.TemporaryDirectory() as directory:
             result = VerificationRunner(registry, runs_dir=directory).run("check", cwd=directory, binding=self.binding(registry), require_substance=True)
             self.assertEqual("PASS", result.result)

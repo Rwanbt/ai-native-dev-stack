@@ -112,7 +112,7 @@ jobs:
         run: python -m unittest tests.test_workplane_contracts tests.test_workplane_controller tests.test_workplane_snapshot -v
 
       - name: Runner, trust, freshness, traceability and convergence
-        run: python -m unittest tests.test_workplane_runner_convergence tests.test_workplane_authorization tests.test_workplane_traceability tests.test_workplane_convergence_history -v
+        run: python -m unittest tests.test_workplane_runner_convergence tests.test_workplane_substance tests.test_workplane_authorization tests.test_workplane_traceability tests.test_workplane_convergence_history -v
 
       - name: CLI, integrations and local pilot harnesses
         run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix -v

@@ -11,7 +11,8 @@ from .evidence import EvidenceError, VerificationEvidence
 from .trust import TRUST_LEVELS, TrustVerdict, evaluate_trust
 from .authorization import UNWAIVABLE, apply_authorizations
 from .freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
-from .runner import RunnerError, VerificationRunner, load_registry
+from .runner import PREVIEW_CHARS, RunnerError, VerificationRunner, load_registry, redact
+from .substance import ADAPTERS, Substance, SubstanceError
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_files, snapshot_reference
 from .cli import main as cli_main
@@ -38,6 +39,11 @@ __all__ = [
     "RunnerError",
     "VerificationRunner",
     "load_registry",
+    "redact",
+    "PREVIEW_CHARS",
+    "ADAPTERS",
+    "Substance",
+    "SubstanceError",
     "ConvergenceVerdict",
     "converge",
     "append_convergence",
