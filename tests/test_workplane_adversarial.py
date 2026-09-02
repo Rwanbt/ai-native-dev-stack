@@ -212,6 +212,20 @@ class VerificationAdversarialTests(unittest.TestCase):
             self.assertFalse(marker.exists(), "a child process outlived the run that spawned it")
 
 
+    def test_a18_an_orphan_whose_parent_exited_is_still_killed(self):
+        # The case a PID walk cannot reach: the command exits at once, its
+        # child keeps the inherited pipe open, and the timeout fires with no
+        # parent left to walk from.
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "orphan.txt"
+            child = "import pathlib,time; time.sleep(3); pathlib.Path(r'%s').write_text('survived')" % str(marker).replace("\\", "\\\\")
+            parent = "import subprocess,sys; subprocess.Popen([sys.executable, '-c', %r])" % child
+            abandoned = registry([sys.executable, "-c", parent], timeout_seconds=1)
+            self.assertEqual("TIMEOUT", run_command(abandoned).result)
+            __import__("time").sleep(3.2)
+            self.assertFalse(marker.exists(), "an orphaned grandchild outlived the run that spawned it")
+
+
 class FreshnessAdversarialTests(unittest.TestCase):
     def test_a24_to_a27_bound_identities_invalidate_evidence(self):
         record = evidence()

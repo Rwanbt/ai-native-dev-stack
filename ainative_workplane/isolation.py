@@ -110,10 +110,11 @@ class IsolatedProcess:
     def _terminate_windows(self) -> None:
         """Kill the tree, then the job.
 
-        WHY both: the PID walk reaches descendants only while their parent is
-        alive, and the job reaches orphans but was observed to leave a live
-        tree standing on this platform. Each covers the other's blind spot, and
-        the adversarial suite asserts the result rather than the mechanism.
+        WHY both: the job object is what reaches an orphan whose parent has
+        already exited, which a PID walk cannot do; the PID walk is what still
+        works when the job could not be created or the process could not be
+        assigned to it. The adversarial suite asserts the outcome — no
+        descendant survives — rather than which mechanism achieved it.
         """
 
         if self.process.poll() is None:

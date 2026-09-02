@@ -15,13 +15,13 @@ FRESHNESS:    PASS
 VERIFICATION: PASS
 TRACEABILITY: PASS
 CONVERGENCE:  PASS
-ADVERSARIAL:  PASS (local; two cases skipped for platform reasons)
-CI:           OPEN
+ADVERSARIAL:  PASS (fully covered across the Linux and Windows legs)
+CI:           PASS
 HISTORICAL:   OPEN
 PILOT:        OPEN
 
 P0 = 0
-P1 = 3
+P1 = 2
 
 → NO-GO
 ```
@@ -44,17 +44,25 @@ that require evidence this branch cannot produce about itself.
 | Traceability | REQ→AC→Spec→Run and REQ→TASK→paths, relationship scope coverage, human-approval and black-box paths, deterministic structural gaps | `traceability.py`, A29-A35 |
 | Convergence | Four verdicts with exit codes 0/1/2/3, no vacuous convergence, no arbitrary mappings, no stale or untrusted evidence, no unauthorized exception | `convergence.py`, A36-A45 |
 
+## CI — closed
+
+Pull request #16 made the `workplane-v2` job execute for the first time. Run
+`33687956666`: every job green, including `Verified Work Plane V2` on
+`ubuntu-latest` and `windows-latest`, each running the contract, controller,
+snapshot, runner, trust, freshness, traceability, convergence, authorization,
+substance, adversarial, CLI, integration and pilot suites, the package install
+with its console entry point, and the three deterministic scripts.
+
+The Linux leg is what first executed the POSIX branches — `os.kill`,
+`killpg`, `start_new_session` — which no local run on this machine could
+reach. It also ran the adversarial matrix with **no skips**: the FIFO, device
+and symlink cases that Windows cannot create are covered there. The matrix is
+therefore complete across the pair, not on either OS alone.
+
+macOS is not in this job. The plan lists it as optional and the existing
+`installers` and `hooks` jobs already cover it for the surrounding stack.
+
 ## Open gates
-
-### CI — the job exists and has never run
-
-`.github/workflows/ci.yml` defines `workplane-v2` on `ubuntu-latest` and
-`windows-latest`. The workflow triggers on `push` to `main` and on
-`pull_request`; nothing triggers on a push to `spec`, and no pull request has
-been opened. **No GitHub run of the V2 suite exists.** Its commands were
-executed locally on Windows only. macOS is not covered.
-
-Closing it: open the pull request, and require the job.
 
 ### Historical — never executed
 
@@ -83,13 +91,13 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <14 V2 modules + vault + hooks> -q
-→ 102 tests, OK (2 skipped: FIFO and symlink creation on this platform)
+→ 103 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
 ```
 
-Local, single-platform, single-Python. That is exactly why CI is an open gate
-and not a closed one.
+The same suites run in CI on Linux and Windows, where the two locally skipped
+cases execute.
 
 ## Residual risks, stated
 
