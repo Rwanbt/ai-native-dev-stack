@@ -7,7 +7,7 @@ from ainative_workplane.convergence import converge
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
-from ainative_workplane.trust import approval_root_commitment, evaluate_trust, policy_commitment
+from ainative_workplane.trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
 from ainative_workplane.freshness import FreshnessResult, evaluate_freshness
 
 
@@ -150,3 +150,33 @@ class RunnerConvergenceTests(unittest.TestCase):
         self.assertEqual(frozenset(), fresh.states)
         stale = evaluate_freshness(evidence, current_contract_digest="b" * 64, current_snapshot={"uid": "other", "digest": "b" * 64}, current_registry_digest="b" * 64, current_policy_digest="b" * 64, current_approval_root={"uid": "other", "digest": "b" * 64})
         self.assertTrue({"STALE_CONTRACT", "STALE_SCOPE", "COMMAND_REGISTRY_CHANGED", "POLICY_CHANGED", "ROOT_OF_TRUST_CHANGED"}.issubset(stale.states))
+
+
+    def test_convergence_requires_evidence_bound_to_declared_specifications(self):
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}
+        digest = "a" * 64
+        declared = generate_uid("verify")
+        graph = analyze(
+            [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": digest}]}],
+            [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": digest}, "verification_specifications": [{"uid": declared, "digest": digest}]}],
+            [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": digest}]}],
+            [{"uid": declared}],
+        )
+        self.assertEqual((), graph.gaps)
+        trusted = TrustVerdict(True, "TRUSTED")
+        fresh = FreshnessResult(frozenset())
+
+        with tempfile.TemporaryDirectory() as directory:
+            unrelated = VerificationRunner(registry).run("check", cwd=directory, binding=self.binding(registry))
+        self.assertEqual("PASS", unrelated.result)
+        rejected = converge(graph, [unrelated], freshness=fresh, trust=trusted)
+        codes = [gap.code for gap in rejected.gaps]
+        self.assertEqual("NOT_CONVERGED", rejected.verdict)
+        self.assertIn("UNRELATED_VERIFICATION_EVIDENCE", codes)
+        self.assertIn("UNVERIFIED_SPECIFICATION", codes)
+
+        bound_binding = self.binding(registry)
+        bound_binding["verification_specification"] = {"uid": declared, "digest": digest}
+        with tempfile.TemporaryDirectory() as directory:
+            bound = VerificationRunner(registry).run("check", cwd=directory, binding=bound_binding)
+        self.assertEqual("CONVERGED", converge(graph, [bound], freshness=fresh, trust=trusted).verdict)

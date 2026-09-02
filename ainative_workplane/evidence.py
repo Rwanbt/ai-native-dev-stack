@@ -35,6 +35,10 @@ class VerificationEvidence:
     def result(self) -> str:
         return str(self.artifact["result"])
 
+    @property
+    def verification_specification_uid(self) -> str:
+        return str(self.artifact["verification_specification"]["uid"])
+
     def to_record(self) -> dict[str, Any]:
         return dict(self.artifact)
 

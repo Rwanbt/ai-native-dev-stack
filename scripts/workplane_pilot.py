@@ -34,16 +34,17 @@ def run() -> dict[str, object]:
         policy[field]["policy_digest"] = policy_digest
     approval_root = {"schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"), "root_digest": digest, "policy_digest": policy_digest, "root_provenance": "LOCAL_UNTRUSTED", "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "pilot"}}
     approval_root["root_digest"] = approval_root_commitment(approval_root)
+    specification_uid = generate_uid("verify")
     graph = analyze(
         [{"uid": "req-pilot", "acceptance_criteria": [{"uid": "ac-pilot", "digest": digest}]}],
-        [{"uid": "ac-pilot", "requirement": {"uid": "req-pilot", "digest": digest}, "verification_specifications": [{"uid": "verify-pilot", "digest": digest}]}],
+        [{"uid": "ac-pilot", "requirement": {"uid": "req-pilot", "digest": digest}, "verification_specifications": [{"uid": specification_uid, "digest": digest}]}],
         [{"uid": "task-pilot", "requirements": [{"uid": "req-pilot", "digest": digest}]}],
-        [{"uid": "verify-pilot"}],
+        [{"uid": specification_uid}],
     )
 
     def binding() -> dict[str, object]:
         reference = lambda prefix: {"uid": generate_uid(prefix), "digest": digest}
-        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": reference("verify"), "command_registry_digest": registry_digest, "policy_digest": policy_digest, "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]}, "repository_snapshot": reference("snapshot"), "snapshot_content_digest": digest, "snapshot_dependency_digest": digest, "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
+        return {"work": reference("work"), "contract_revision": 1, "contract_digest": digest, "verification_specification": {"uid": specification_uid, "digest": digest}, "command_registry_digest": registry_digest, "policy_digest": policy_digest, "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]}, "repository_snapshot": reference("snapshot"), "snapshot_content_digest": digest, "snapshot_dependency_digest": digest, "producer": "local-pilot", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED"}
     with tempfile.TemporaryDirectory(prefix="workplane-pilot-") as directory:
         root = Path(directory)
         for index, kind in enumerate(kinds, 1):

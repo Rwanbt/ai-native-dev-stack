@@ -39,6 +39,13 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
 
 
 def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None) -> ConvergenceVerdict:
+    """Decide convergence from bound evidence only.
+
+    @contract Evidence supports convergence only when its verification
+    specification is declared by the contract graph, and every declared
+    specification carries passing evidence.
+    """
+
     gaps = list(traceability.gaps)
     if traceability.requirement_count == 0:
         gaps.append(Gap("NO_MEANINGFUL_REQUIREMENTS", None, "a work contract requires at least one requirement"))
@@ -53,11 +60,21 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
     if not run_list:
         gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
         return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "no verification run is available", stall_fingerprint(gaps))
+    declared_specs = {spec_uid for _, spec_uid in traceability.acceptance_to_verification}
+    passed_specs: set[str] = set()
     for run in run_list:
         if not isinstance(run, VerificationEvidence):
             gaps.append(Gap("INVALID_VERIFICATION_EVIDENCE", None, "selected run is not validated evidence"))
+            continue
+        spec_uid = run.verification_specification_uid
+        if spec_uid not in declared_specs:
+            gaps.append(Gap("UNRELATED_VERIFICATION_EVIDENCE", run.uid, "evidence is bound to a specification the contract does not declare"))
         elif run.result != "PASS":
             gaps.append(Gap("VERIFICATION_FAILED", run.uid, "selected verification did not pass"))
+        else:
+            passed_specs.add(spec_uid)
+    for spec_uid in sorted(declared_specs - passed_specs):
+        gaps.append(Gap("UNVERIFIED_SPECIFICATION", spec_uid, "declared verification specification has no passing evidence"))
     if gaps:
         return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
     return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
