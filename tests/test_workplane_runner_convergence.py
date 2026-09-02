@@ -24,6 +24,22 @@ class RunnerConvergenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "COMMAND_REGISTRY_CHANGED"):
             load_registry(registry, expected_digest="b" * 64)
 
+    def test_runner_rejects_output_exceeding_configured_limit(self):
+        registry = {
+            "schema_name": "command_registry",
+            "schema_version": 1,
+            "commands": {
+                "noisy": {
+                    "argv": [sys.executable, "-c", "print('x' * 101)"],
+                    "timeout_seconds": 3,
+                    "max_output_bytes": 100,
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RunnerError, "OUTPUT_LIMIT_EXCEEDED"):
+                VerificationRunner(registry).run("noisy", cwd=directory)
+
     def test_convergence_ignores_narrative_and_blocks_failures(self):
         graph = analyze([], [], [], [])
         self.assertEqual("INVALID", converge(graph, []).verdict)
