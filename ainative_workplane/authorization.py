@@ -16,14 +16,19 @@ from .traceability import Gap
 from .trust import TRUST_LEVELS, policy_commitment
 
 
-# A waiver may hide unfinished work; it may never hide the fact that the
-# engine could not establish authority in the first place.
-UNWAIVABLE = frozenset({
-    "FRESHNESS_UNAVAILABLE",
-    "ROOT_OF_TRUST_INVALID",
-    "POLICY_COMMITMENT_INVALID",
-    "INVALID_VERIFICATION_EVIDENCE",
-    "UNRELATED_VERIFICATION_EVIDENCE",
+# An allowlist, not a blocklist: a gap code nobody thought about when it was
+# added must not become waivable by default. These are the gaps that say work
+# is incomplete. Everything else — authority, integrity, freshness, evidence
+# binding, and a verification that actually failed — is non-waivable.
+WAIVABLE_GAPS = frozenset({
+    "REQ_WITHOUT_ACCEPTANCE",
+    "REQ_WITHOUT_TASK",
+    "TASK_WITHOUT_REQ",
+    "TASK_WITHOUT_VERIFICATION",
+    "UNVERIFIABLE_ACCEPTANCE",
+    "ORPHAN_VERIFICATION_SPEC",
+    "UNVERIFIED_SPECIFICATION",
+    "INSUFFICIENT_VERIFICATION_SCOPE",
 })
 
 _EFFECTIVE = "effective"
@@ -125,7 +130,7 @@ def apply_authorizations(gaps: Iterable[Gap], *, policy: Mapping[str, Any] | Non
 
 
 def _covered(gap: Gap, waivers: list[Mapping[str, Any]], approvals: list[Mapping[str, Any]]) -> bool:
-    if gap.code in UNWAIVABLE:
+    if gap.code not in WAIVABLE_GAPS:
         return False
     for waiver in waivers:
         if _target_uid(waiver) == gap.uid and waiver.get("scope") == gap.code:

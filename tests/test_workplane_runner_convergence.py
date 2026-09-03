@@ -126,8 +126,16 @@ class RunnerConvergenceTests(unittest.TestCase):
         parent = dict(root)
         parent["uid"] = generate_uid("root")
         parent["root_digest"] = approval_root_commitment(parent)
-        chained_root = dict(root)
-        chained_root["predecessor"] = {"uid": parent["uid"], "digest": parent["root_digest"]}
+        unauthorized = dict(root)
+        unauthorized["predecessor"] = {"uid": parent["uid"], "digest": parent["root_digest"]}
+        unauthorized["root_digest"] = approval_root_commitment(unauthorized)
+
+        chained_root = dict(unauthorized)
+        chained_root["transition_approval"] = {
+            "predicate_id": policy["approval_predicate"]["predicate_id"], "approved_by": "release-board",
+            "provenance": "GIT_REVIEWED", "successor_uid": chained_root["uid"],
+            "predecessor_digest": parent["root_digest"], "policy_digest": policy["approval_predicate"]["policy_digest"],
+        }
         chained_root["root_digest"] = approval_root_commitment(chained_root)
         chained_binding = dict(binding)
         chained_binding["approval_root"] = {"uid": chained_root["uid"], "digest": chained_root["root_digest"]}
@@ -135,6 +143,13 @@ class RunnerConvergenceTests(unittest.TestCase):
             chained_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=chained_binding)
         self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root).code)
         self.assertEqual("TRUSTED", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root, approval_chain=[parent]).code)
+
+        # A62: pointing at a predecessor is lineage, not consent.
+        unauthorized_binding = dict(binding)
+        unauthorized_binding["approval_root"] = {"uid": unauthorized["uid"], "digest": unauthorized["root_digest"]}
+        with tempfile.TemporaryDirectory() as directory:
+            unauthorized_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=unauthorized_binding)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(unauthorized_evidence, policy=policy, approval_root=unauthorized, approval_chain=[parent]).code)
 
         invalid_policy = dict(policy)
         invalid_policy["approval_predicate"] = dict(policy["approval_predicate"])

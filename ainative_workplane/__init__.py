@@ -13,7 +13,7 @@ from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
 from .trust import TRUST_LEVELS, TrustVerdict, evaluate_trust
-from .authorization import UNWAIVABLE, apply_authorizations
+from .authorization import WAIVABLE_GAPS, apply_authorizations
 from .freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
 from .runner import PREVIEW_CHARS, RunnerError, VerificationRunner, load_registry, redact
 from .substance import ADAPTERS, Substance, SubstanceError
@@ -37,7 +37,7 @@ __all__ = [
     "TrustVerdict",
     "evaluate_trust",
     "TRUST_LEVELS",
-    "UNWAIVABLE",
+    "WAIVABLE_GAPS",
     "apply_authorizations",
     "FreshnessResult",
     "evaluate_freshness",

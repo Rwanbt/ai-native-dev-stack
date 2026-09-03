@@ -330,6 +330,15 @@ def _validate_approval_root(value: Mapping[str, Any]) -> None:
         _fail("INVALID_FIELD", "bootstrap metadata must include initialized_at and initialized_by")
     if "predecessor" in value:
         _reference(value["predecessor"], "predecessor", "root")
+        approval = _mapping(_required(value, "transition_approval"), "transition_approval")
+        if not isinstance(_required(approval, "predicate_id"), str) or not approval["predicate_id"]:
+            _fail("INVALID_PREDICATE", "transition_approval.predicate_id must be non-empty")
+        if not isinstance(_required(approval, "approved_by"), str) or not approval["approved_by"]:
+            _fail("INVALID_FIELD", "transition_approval.approved_by must be non-empty")
+        _provenance(_required(approval, "provenance"), "transition_approval.provenance")
+        validate_uid(_required(approval, "successor_uid"), "root")
+        _digest(_required(approval, "predecessor_digest"), "transition_approval.predecessor_digest")
+        _digest(_required(approval, "policy_digest"), "transition_approval.policy_digest")
 
 
 def _validate_waiver(value: Mapping[str, Any]) -> None:
