@@ -118,7 +118,7 @@ jobs:
         run: python -m unittest tests.test_workplane_adversarial -v
 
       - name: CLI, integrations and local pilot harnesses
-        run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix -v
+        run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix tests.test_workplane_historical_case -v
 
       - name: The package installs and exposes its console entry point
         shell: bash

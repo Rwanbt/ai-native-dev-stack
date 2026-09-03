@@ -1,7 +1,14 @@
-"""Local five-work-item pilot for the V2 core."""
+"""Five-work-item pilot for the V2 core, recorded per item.
+
+Running this proves the engine survives a five-item shape end to end. It does
+not prove the section 46-48 pilot: the items are synthetic and one harness is
+one harness. The record says which of those it is rather than leaving a reader
+to assume, so that two real harnesses producing two records can be compared.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import tempfile
@@ -20,12 +27,13 @@ from ainative_workplane.traceability import analyze
 from ainative_workplane.trust import approval_root_commitment, evaluate_trust, policy_commitment
 
 
-def run() -> dict[str, object]:
+def run(harness_id: str = "local", *, provider: str | None = None) -> dict[str, object]:
     registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('pilot pass')"], "timeout_seconds": 3, "max_output_bytes": 1024}}}
     kinds = ["feature", "feature", "bugfix", "refactor", "hotfix"]
     started = time.monotonic()
     convergence_started = time.monotonic()
     completed = 0
+    items: list[dict[str, object]] = []
     registry_digest = canonical_digest(registry)
     digest = "a" * 64
     policy = {"schema_name": "project_policy", "schema_version": 1, "approval_predicate": {"predicate_id": "local", "policy_digest": digest}, "success_condition_mutation_provenance": "LOCAL_UNTRUSTED", "verification_evidence_provenance": "LOCAL_UNTRUSTED", "waiver_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "human_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "promotion_policy": "explicit"}
@@ -52,9 +60,29 @@ def run() -> dict[str, object]:
             controller = WorkController(work)
             controller.create({"task": {"kind": kind, "index": index}})
             controller.mutate(1, {"task": {"kind": kind, "index": index, "verified": True}})
+            item_started = time.monotonic()
             result = VerificationRunner(registry).run("check", cwd=work, binding=binding())
             if result.result != "PASS":
                 raise RuntimeError(f"pilot verification failed for {kind}: {result.result}")
+            item_verdict = converge(graph, [result], freshness=evaluate_freshness(result, current_contract_digest=digest, current_snapshot=result.artifact["repository_snapshot"], current_registry_digest=registry_digest, current_policy_digest=policy_digest, current_approval_root=result.artifact["approval_root"]), trust=evaluate_trust(result, policy=policy, approval_root=approval_root))
+            items.append({
+                "kind": kind,
+                "harness": harness_id,
+                "provider": provider,
+                "work_uid": controller.read()["work_uid"],
+                "contract_revisions": controller.read()["revision"],
+                "verification_runs": 1,
+                "reruns": 0,
+                "gaps": [gap.code for gap in item_verdict.gaps],
+                "stale_invalidations": 0,
+                "manual_interventions": 0,
+                "duration_ms": int((time.monotonic() - item_started) * 1000),
+                "tokens": None,
+                "false_positives": 0,
+                "false_negatives": 0,
+                "friction": None,
+                "verdict": item_verdict.verdict,
+            })
             completed += 1
         freshness = evaluate_freshness(result, current_contract_digest=digest, current_snapshot=result.artifact["repository_snapshot"], current_registry_digest=registry_digest, current_policy_digest=policy_digest, current_approval_root=result.artifact["approval_root"])
         verdict = converge(graph, [result], freshness=freshness, trust=evaluate_trust(result, policy=policy, approval_root=approval_root))
@@ -63,8 +91,35 @@ def run() -> dict[str, object]:
         elapsed = int((time.monotonic() - started) * 1000)
         convergence_elapsed = int((time.monotonic() - convergence_started) * 1000)
     metrics = PilotMetrics(setup_time_ms=elapsed, verification_runtime_ms=elapsed, convergence_runtime_ms=convergence_elapsed)
-    return {"work_items": len(kinds), "completed": completed, "kinds": kinds, "metrics": metrics.__dict__, "external_harness": False}
+    return {
+        "schema_version": 1,
+        "harness_id": harness_id,
+        "provider": provider,
+        "work_items": len(kinds),
+        "completed": completed,
+        "kinds": kinds,
+        "items": items,
+        "metrics": metrics.__dict__,
+        "items_source": "synthetic",
+        "external_harness": False,
+        "authority": "smoke_pilot_only",
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the five-item smoke pilot and record it per item.")
+    parser.add_argument("--harness-id", default="local", help="Which harness ran this, so two records can be compared.")
+    parser.add_argument("--provider", help="Model or provider, when the harness has one.")
+    parser.add_argument("--output", type=Path, help="Write the record here as well as to stdout.")
+    arguments = parser.parse_args()
+    record = run(arguments.harness_id, provider=arguments.provider)
+    encoded = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    if arguments.output:
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        arguments.output.write_text(encoded + "\n", encoding="utf-8")
+    print(encoded)
+    return 0
 
 
 if __name__ == "__main__":
-    print(json.dumps(run(), sort_keys=True, separators=(",", ":")))
+    raise SystemExit(main())
