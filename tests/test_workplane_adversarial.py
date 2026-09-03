@@ -35,11 +35,11 @@ def build_policy(*, required=None):
     required = {"git_recorded": True} if required is None else required
     policy = {
         "schema_name": "project_policy", "schema_version": 1,
-        "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
+        "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "required_mutation_facts": required,
         "required_evidence_facts": required,
-        "waiver_approval_rule": {"predicate_id": "waiver-board", "policy_digest": DIGEST},
-        "human_approval_rule": {"predicate_id": "human-signoff", "policy_digest": DIGEST},
+        "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
+        "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "promotion_policy": "explicit",
     }
     commitment = policy_commitment(policy)
@@ -364,7 +364,7 @@ class ConvergenceAdversarialTests(unittest.TestCase):
             "schema_name": "waiver", "schema_version": 1, "uid": generate_uid("waiver"),
             "target": {"uid": self.specification, "digest": DIGEST}, "reason": "later", "scope": "UNVERIFIED_SPECIFICATION",
             "approved_by": "someone", "approved_at": "2026-09-01T00:00:00Z", "state": "effective",
-            "approval_provenance": "GIT_REVIEWED", "approval_predicate": {"predicate_id": "waiver-board", "policy_digest": self.commitment},
+            "approval_provenance": "GIT_REVIEWED", "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": self.commitment},
             "policy_digest": self.commitment,
         }
         # A42 an expired waiver suppresses nothing

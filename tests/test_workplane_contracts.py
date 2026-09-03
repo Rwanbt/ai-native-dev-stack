@@ -67,7 +67,7 @@ class WorkPlaneContractsTests(unittest.TestCase):
 
     def test_valid_minimal_artifacts_cover_all_pr01_schema_identities(self):
         values = [
-            artifact("work_manifest", work_uid=uid("work"), revision=1, artifacts={"policy": {"path": "revisions/1/policy.json", "digest": DIGEST}}),
+            artifact("work_manifest", work_uid=uid("work"), revision=1, artifacts={"policy": {"path": "revisions/1/policy.json", "digest": DIGEST}}, root_chain=[{"revision": 1, "digest": DIGEST}]),
             artifact("requirements", uid=uid("req"), statement="must work", acceptance_criteria=[reference("ac")]),
             artifact("acceptance_criteria", uid=uid("ac"), requirement=reference("req"), criterion="works", verification_specifications=[reference("verify")]),
             artifact("tasks", uid=uid("task"), requirements=[reference("req")], implementation_paths=["src/module.py"], status="planned"),

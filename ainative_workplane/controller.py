@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from .authorization import authorize_mutation
+from .bootstrap import BootstrapError, governs, load as load_trust_anchor, locate as locate_trust_anchor
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 from .provenance import UNOBSERVED, observe_artifacts
+from .trust import approval_root_commitment
 
 
 class ControllerError(RuntimeError):
@@ -178,7 +180,7 @@ class WorkController:
                 raise ControllerError("REVISION_ALREADY_EXISTS")
             shutil.move(str(stage), str(revision_dir))
             self._step("after_promotion_before_manifest")
-            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers}
+            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers, "root_chain": self._extend_root_chain(previous, artifacts, revision)}
             temporary = self.root / f".manifest.{secrets.token_hex(8)}.tmp"
             self._write_json(temporary, manifest)
             self._step("before_manifest_replace")
@@ -189,15 +191,58 @@ class WorkController:
             if stage.exists():
                 shutil.rmtree(stage, ignore_errors=True)
 
+    @staticmethod
+    def _extend_root_chain(previous: Mapping[str, Any] | None, artifacts: Mapping[str, Any], revision: int) -> list[dict[str, Any]]:
+        """Carry the committed root chain forward, appending a rotation.
+
+        WHY the chain lives in the manifest: the manifest is the commit marker.
+        A revision directory can exist without ever having been committed --
+        crash consistency permits exactly that -- so a root found by listing
+        directories is not evidence that it was ever authoritative. A root
+        recorded here was, because the atomic replace that recorded it is what
+        makes a revision committed at all.
+        """
+
+        chain = [dict(entry) for entry in (previous.get("root_chain", []) if previous else [])]
+        root = artifacts.get("approval_root")
+        if not isinstance(root, Mapping):
+            return chain
+        digest = approval_root_commitment(root)
+        if not chain or chain[-1]["digest"] != digest:
+            chain.append({"revision": revision, "digest": digest})
+        return chain
+
     def create(self, artifacts: Mapping[str, Any]) -> dict[str, Any]:
         handle = self._lock()
         try:
             self._recover_interrupted()
             if self.manifest_path.exists():
                 raise ControllerError("WORK_ALREADY_EXISTS")
+            self._require_project_trust(artifacts)
             return self._commit(None, artifacts)
         finally:
             self._unlock(handle)
+
+    def _require_project_trust(self, artifacts: Mapping[str, Any]) -> None:
+        """Refuse a work that invents its own authority inside a governed project.
+
+        Where no anchor exists this permits the creation and establishes
+        nothing: an ungoverned work directory is a local scratch, and the
+        evaluator refuses to converge on one. What is refused here is the other
+        case -- a project that *is* governed acquiring a second, softer root
+        because someone made a new directory.
+        """
+
+        anchor_path = locate_trust_anchor(self.root)
+        if anchor_path is None:
+            return
+        try:
+            anchor = load_trust_anchor(anchor_path)
+        except BootstrapError as error:
+            raise ControllerError(f"UNGOVERNED_GENESIS: {error}") from error
+        refusal = governs(anchor, approval_root=artifacts.get("approval_root"))
+        if refusal is not None:
+            raise ControllerError(f"UNGOVERNED_GENESIS: {refusal}")
 
     def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = (), approval: str | os.PathLike[str] | None = None) -> dict[str, Any]:
         """Apply an explicit change to the committed set.
@@ -235,25 +280,31 @@ class WorkController:
             self._unlock(handle)
 
     def root_history(self) -> list[dict[str, Any]]:
-        """Every approval root this work has committed, oldest first.
+        """Every approval root this work actually committed, oldest first.
 
-        A rotated root names a predecessor, and the predecessor is not
-        somewhere else: it is the root of an earlier revision of this work.
-        Resolving it here is what lets the production path validate a chain
-        instead of only a genesis root.
+        A rotated root names a predecessor, and the predecessor is the root of
+        an earlier revision of this work. Resolving it here is what lets the
+        production path validate a chain instead of only a genesis root.
+
+        @contract Only revisions named in the committed manifest root chain are
+        read, and each root must still digest to what the chain recorded. A
+        revision directory promoted by a write that never reached its manifest
+        replace is not history, and is never returned.
         """
 
+        manifest = self._load_manifest()
         history: list[dict[str, Any]] = []
-        if not self.revisions.is_dir():
-            return history
-        for revision in sorted((child for child in self.revisions.iterdir() if child.is_dir() and child.name.isdigit()), key=lambda child: int(child.name)):
-            candidate = revision / "approval_root.json"
+        for entry in manifest.get("root_chain", []):
+            candidate = self.revisions / str(entry["revision"]) / "approval_root.json"
             if not candidate.is_file():
                 continue
             try:
-                history.append(json.loads(candidate.read_text(encoding="utf-8")))
+                root = json.loads(candidate.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            if not isinstance(root, Mapping) or approval_root_commitment(root) != entry["digest"]:
+                continue
+            history.append(dict(root))
         return history
 
     def normative_digest(self, artifacts: Mapping[str, Any]) -> str:

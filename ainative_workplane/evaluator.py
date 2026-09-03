@@ -41,6 +41,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from .bootstrap import BootstrapError, anchor_refusal, governs, load as load_trust_anchor, locate as locate_trust_anchor
 from .contracts import canonical_digest, canonical_path
 from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
@@ -258,6 +259,33 @@ def _execute_declared_verifications(work_dir: str | Path, repository_root: str |
     return produced, gaps
 
 
+def _project_trust_gaps(repository_root: str | Path, authority: Mapping[str, Any]) -> list[Gap]:
+    """Refuse to converge on a work that is its own root of trust.
+
+    WHY here and not only in the controller: creating a work directory is a
+    local act, and a local act must not be able to decide what a project
+    trusts. The controller refuses a *new* work that contradicts an existing
+    anchor; this refuses a *verdict* for any work the project never pinned. The
+    anchor is measured the way every other authority artifact is -- by
+    observing the object, against the predicate it declares for itself.
+    """
+
+    anchor_path = locate_trust_anchor(repository_root)
+    if anchor_path is None:
+        return [Gap("PROJECT_TRUST_UNINITIALIZED", None, "the project has no trust anchor, so this work is governed only by rules it declared for itself")]
+    try:
+        anchor = load_trust_anchor(anchor_path)
+    except BootstrapError as error:
+        return [Gap("PROJECT_TRUST_INVALID", None, str(error))]
+    unverified = anchor_refusal(anchor_path, anchor)
+    if unverified is not None:
+        return [Gap("PROJECT_TRUST_UNVERIFIED", None, f"the project trust anchor itself is not established: {unverified}")]
+    refusal = governs(anchor, approval_root=authority["approval_root"], root_history=authority["root_history"])
+    if refusal is not None:
+        return [Gap("PROJECT_TRUST_MISMATCH", None, refusal)]
+    return []
+
+
 def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEvaluation:
     """Decide convergence for a governed work directory against a checkout.
 
@@ -265,6 +293,9 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     checkout. No contract, policy, root, registry, trust verdict, freshness
     result or evidence is accepted from the caller: the declared verifications
     are executed here, and only their results are judged.
+    @contract The work must be one the project already pinned. A work whose
+    authority nothing above it established is unevaluable, however internally
+    consistent it is.
     """
 
     artifacts, authority, specifications = _authority(work_dir)
@@ -295,7 +326,7 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
         for evidence in produced
     )
     eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
-    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps)
+    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps) + tuple(_project_trust_gaps(repository_root, authority))
 
     # Trust and freshness were established per evidence above; what remains for
     # the kernel is whether the authority documents exist at all.

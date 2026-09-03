@@ -19,10 +19,10 @@ def policy():
 
     declared = {
         "schema_name": "project_policy", "schema_version": 1,
-        "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
+        "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "required_mutation_facts": {}, "required_evidence_facts": {},
-        "waiver_approval_rule": {"predicate_id": "waiver", "policy_digest": DIGEST},
-        "human_approval_rule": {"predicate_id": "human", "policy_digest": DIGEST},
+        "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
+        "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "promotion_policy": "explicit",
     }
     commitment = policy_commitment(declared)
@@ -32,14 +32,22 @@ def policy():
 
 
 def approval_for(controller, candidate, commitment, directory):
-    """Write the approval, because the controller observes an artifact.
+    """Record the approval, because the controller observes an artifact.
 
-    This suite's policy requires no provenance fact, so a plain file suffices;
-    the authority suite is where recorded provenance is exercised.
+    Recording it is not optional any more. The weakest predicate this build
+    implements, `recorded_owner_ack`, still requires `git_recorded`: an
+    approval nobody committed is an argument, and round 3 closed that door.
     """
 
-    path = Path(directory) / f"{generate_uid('approval')}.json"
+    root = Path(directory)
+    if not (root / ".git").exists():
+        subprocess.run(["git", "-C", str(root), "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "controller@example.invalid"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Controller Test"], check=True, capture_output=True)
+    path = root / f"{generate_uid('approval')}.json"
     path.write_text(json.dumps(_approval_record(controller, candidate, commitment)), encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "approval"], check=True, capture_output=True)
     return path
 
 
@@ -47,7 +55,7 @@ def _approval_record(controller, candidate, commitment):
     return {
         "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
         "target_digest": controller.normative_digest(candidate), "policy_digest": commitment,
-        "predicate_id": "review", "approved_by": "test", "approved_at": "2026-09-03T00:00:00Z",
+        "predicate_id": "recorded_owner_ack", "approved_by": "test", "approved_at": "2026-09-03T00:00:00Z",
         "provenance": "GIT_RECORDED",
     }
 

@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .bootstrap import BootstrapError, anchor_refusal, bootstrap, load as load_trust_anchor, locate as locate_trust_anchor
 from .controller import ControllerError, WorkController
 from .convergence import VERDICT_EXIT_CODES
 from .evaluator import EvaluationError, evaluate_work, run_verification
@@ -44,6 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--artifact", action="append", default=[])
     update.add_argument("--delete", action="append", default=[], help="Name an artifact to remove; nothing disappears implicitly.")
     update.add_argument("--approval", type=Path, help="Path to the recorded mutation_approval authorizing this exact next state.")
+
+    trust = commands.add_parser("trust", help="Pin what a project trusts, before any work contract exists.")
+    trust_commands = trust.add_subparsers(dest="trust_command", required=True)
+    initialize = trust_commands.add_parser("bootstrap", help="Establish the project trust anchor. Refuses to replace one.")
+    initialize.add_argument("--repo", type=Path, default=Path.cwd())
+    initialize.add_argument("--approval-root", type=Path, required=True)
+    initialize.add_argument("--policy", type=Path, required=True)
+    initialize.add_argument("--by", required=True, help="Who is bootstrapping this project.")
+    initialize.add_argument("--predicate", default="signature", help="The predicate the anchor itself must satisfy.")
+    show = trust_commands.add_parser("show", help="Report the anchor governing a location, if any.")
+    show.add_argument("--repo", type=Path, default=Path.cwd())
 
     verify = commands.add_parser("verify", help="Run one committed verification and record bound evidence.")
     verify.add_argument("--work", type=Path, required=True)
@@ -90,6 +102,21 @@ def _work(args: argparse.Namespace) -> int:
     return 0
 
 
+def _trust(args: argparse.Namespace) -> int:
+    if args.trust_command == "bootstrap":
+        path = bootstrap(args.repo, approval_root=_load(args.approval_root), policy=_load(args.policy), initialized_by=args.by, predicate_id=args.predicate)
+        _emit({"anchor": str(path), "trust": load_trust_anchor(path)})
+        return 0
+    located = locate_trust_anchor(args.repo)
+    if located is None:
+        _emit({"anchor": None, "governed": False})
+        return 1
+    anchor = load_trust_anchor(located)
+    unverified = anchor_refusal(located, anchor)
+    _emit({"anchor": str(located), "governed": unverified is None, "refusal": unverified, "trust": anchor})
+    return 0 if unverified is None else 1
+
+
 def _verify(args: argparse.Namespace) -> int:
     evidence = run_verification(args.work, args.repo, args.verification)
     _emit(evidence.to_record())
@@ -129,12 +156,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.entrypoint == "work":
             return _work(args)
+        if args.entrypoint == "trust":
+            return _trust(args)
         if args.entrypoint == "verify":
             return _verify(args)
         if args.entrypoint == "debug":
             return _debug_run_command(args)
         return _converge(args)
-    except (EvaluationError, ControllerError) as refusal:
+    except (EvaluationError, ControllerError, BootstrapError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
 

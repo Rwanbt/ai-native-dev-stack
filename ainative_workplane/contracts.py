@@ -33,6 +33,7 @@ SUPPORTED_SCHEMA_VERSIONS = {
     "convergence_run": {SCHEMA_VERSION},
     "mutation_approval": {SCHEMA_VERSION},
     "command_registry": {SCHEMA_VERSION},
+    "project_trust": {SCHEMA_VERSION},
 }
 
 # Artifact names the engine reads as authority. Anything committed under one
@@ -83,7 +84,7 @@ RELATIONSHIP_MODES = frozenset({"direct_scope", "black_box", "external_artifact"
 PROVENANCE_VALUES = frozenset({"UNTRACKED", "GIT_DIRTY", "GIT_RECORDED", "GIT_REVIEWED", "CI_APPROVED", "SIGNED", "LOCAL_UNTRUSTED"})
 OBSERVABLE_FACTS = ("git_recorded", "git_reviewed", "ci_verified", "signature_verified")
 EFFECTIVE_WAIVER_STATES = frozenset({"effective", "expired", "revoked"})
-UID_PREFIXES = frozenset({"work", "req", "ac", "task", "verify", "run", "gap", "waiver", "approval", "root", "snapshot", "convergence"})
+UID_PREFIXES = frozenset({"work", "req", "ac", "task", "verify", "run", "gap", "waiver", "approval", "root", "snapshot", "convergence", "trust"})
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _UID = re.compile(r"^(?P<prefix>[a-z]+)_(?P<body>[0-9A-HJKMNP-TV-Z]{26})$")
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:")
@@ -290,6 +291,15 @@ def _validate_work_manifest(value: Mapping[str, Any]) -> None:
         _digest(_required(pointer, "digest"), f"artifacts.{name}.digest")
     if "approval_root" in value:
         _reference(value["approval_root"], "approval_root", "root")
+    # The committed root chain. Every entry names a revision whose manifest was
+    # actually replaced, which is what stops a revision directory left behind
+    # by a crash from being read as historical authority.
+    for entry in _list(_required(value, "root_chain"), "root_chain"):
+        link = _mapping(entry, "root_chain[]")
+        revision = _required(link, "revision")
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            _fail("INVALID_FIELD", "root_chain[].revision must be a positive integer")
+        _digest(_required(link, "digest"), "root_chain[].digest")
 
 
 def _validate_requirements(value: Mapping[str, Any]) -> None:
@@ -384,6 +394,24 @@ def _validate_approval_root(value: Mapping[str, Any]) -> None:
         _digest(_required(approval, "predecessor_digest"), "transition_approval.predecessor_digest")
         _digest(_required(approval, "successor_commitment"), "transition_approval.successor_commitment")
         _digest(_required(approval, "policy_digest"), "transition_approval.policy_digest")
+
+
+def _validate_project_trust(value: Mapping[str, Any]) -> None:
+    """The project-level anchor a work contract must already be governed by.
+
+    It exists so that creating a work directory is not the act that decides
+    what the project trusts. See ADR-0004.
+    """
+
+    _uid_field(value, "trust")
+    _digest(_required(value, "trust_digest"), "trust_digest")
+    _digest(_required(value, "policy_digest"), "policy_digest")
+    _reference(_required(value, "approval_root"), "approval_root", "root")
+    _predicate_reference(_required(value, "bootstrap_predicate"), "bootstrap_predicate")
+    bootstrap = _mapping(_required(value, "bootstrap"), "bootstrap")
+    for field in ("initialized_at", "initialized_by"):
+        if not isinstance(_required(bootstrap, field), str) or not bootstrap[field]:
+            _fail("INVALID_FIELD", f"bootstrap.{field} must be non-empty")
 
 
 def _validate_command_registry(value: Mapping[str, Any]) -> None:
@@ -531,6 +559,7 @@ _VALIDATORS = {
     "repository_snapshot": _validate_repository_snapshot,
     "verification_run": _validate_verification_run,
     "convergence_run": _validate_convergence_run,
+    "project_trust": _validate_project_trust,
 }
 
 

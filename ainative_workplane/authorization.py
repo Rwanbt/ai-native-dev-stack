@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 from .contracts import ContractError, validate_artifact
+from .predicates import predicate_refusal
 from .traceability import Gap
 from .trust import policy_commitment, unmet
 
@@ -74,6 +75,11 @@ def _rejection(record: Mapping[str, Any], policy: Mapping[str, Any], commitment:
         return "no approval predicate is declared"
     if predicate.get("predicate_id") != rule["predicate_id"] or predicate.get("policy_digest") != commitment:
         return "approval predicate is not the one the policy configures"
+    # The predicate is a mechanism, not a label: what it demands is decided by
+    # the mechanism, and the policy's own fact requirement may only add to it.
+    unsatisfied = predicate_refusal(rule["predicate_id"], facts)
+    if unsatisfied is not None:
+        return unsatisfied
     missing = unmet(facts, policy["required_mutation_facts"])
     if missing:
         return f"approval provenance does not establish {', '.join(missing)}"
@@ -106,6 +112,10 @@ def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candi
 
     @contract The approval is checked against the policy in force *before* the
     change. A candidate policy never authorizes its own adoption.
+    @contract Satisfying the configured predicate is a separate question from
+    the approval artifact being recorded. A `git_recorded` approval satisfies
+    `recorded_owner_ack` and nothing else: an actor with commit rights cannot
+    turn its own commit into a review by naming the predicate one.
     """
 
     if policy is None:
@@ -125,6 +135,9 @@ def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candi
         return "the approval uses a predicate the policy in force does not configure"
     if approval.get("target_digest") != candidate_digest:
         return "the approval names a different next state than the one being written"
+    unsatisfied = predicate_refusal(policy["approval_predicate"]["predicate_id"], facts)
+    if unsatisfied is not None:
+        return unsatisfied
     missing = unmet(facts, policy["required_mutation_facts"])
     if missing:
         return f"the approval does not establish {', '.join(missing)}"

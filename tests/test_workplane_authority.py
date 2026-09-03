@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ainative_workplane.bootstrap import bootstrap
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.controller import ControllerError, WorkController
 from ainative_workplane.evaluator import EvaluationError, evaluate_work, run_verification
@@ -29,9 +30,11 @@ def git(root, *arguments):
 class GovernedWork:
     """A checkout plus a governed work directory that converges."""
 
-    def __init__(self, root: Path, *, required=None):
+    def __init__(self, root: Path, *, required=None, predicate="recorded_owner_ack", signing=False, anchor=True):
         self.root = root
         self.repo = root / "repo"
+        self.predicate = predicate
+        self.signing = signing
         # The work directory lives in the repository it governs. That is what
         # gives its artifacts a provenance of their own: changing the rules
         # means committing the change, where it can be seen.
@@ -60,8 +63,33 @@ class GovernedWork:
             "bootstrap": {"initialized_at": "2026-09-03T00:00:00Z", "initialized_by": "authority-test"},
         }
         self.approval_root["root_digest"] = approval_root_commitment(self.approval_root)
+        if signing:
+            self.enable_signing()
+        # The project is bootstrapped before any work exists. That order is the
+        # correction itself: creating a work directory is no longer the act
+        # that decides what the project trusts. `anchor=False` is the state the
+        # engine used to treat as governed, kept so A95 can exercise it.
+        self.anchor = bootstrap(self.repo, approval_root=self.approval_root, policy=self.policy, initialized_by="project-owner", predicate_id=predicate) if anchor else None
+        self.commit_governed_state()
         WorkController(self.work).create(self.artifacts())
         self.commit_governed_state()
+
+    def enable_signing(self):
+        """Give the project a signing key and an allowed-signers file.
+
+        This is what makes `signature` a real predicate rather than a name: Git
+        verifies the commit against a key, and an actor without that key cannot
+        produce a commit that verifies.
+        """
+
+        key = self.root / "signing_key"
+        subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(key), "-C", "owner@example.invalid"], check=True, capture_output=True)
+        allowed = self.root / "allowed_signers"
+        allowed.write_text(f"owner@example.invalid {key.with_suffix('.pub').read_text(encoding='utf-8').strip()}\n", encoding="utf-8")
+        git(self.repo, "config", "gpg.format", "ssh")
+        git(self.repo, "config", "user.signingkey", key.with_suffix(".pub").as_posix())
+        git(self.repo, "config", "gpg.ssh.allowedSignersFile", allowed.as_posix())
+        git(self.repo, "config", "commit.gpgsign", "true")
 
     def record_approval(self, candidate, **overrides):
         """Write and commit an approval, which is what makes it one.
@@ -70,10 +98,11 @@ class GovernedWork:
         artifact, so it has to exist where the observation can reach it.
         """
 
+        signed = overrides.pop("signed", True)
         path = self.work / "approvals" / f"{generate_uid('approval')}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.approval_record(candidate, **overrides)), encoding="utf-8")
-        self.commit_governed_state()
+        self.commit_governed_state(signed=signed)
         return path
 
     def approval_record(self, candidate, *, policy_digest=None, predicate_id=None):
@@ -94,20 +123,27 @@ class GovernedWork:
         _, committed = WorkController(self.work).load_committed_artifacts()
         return self.record_approval({**committed, **changes}, **overrides)
 
-    def commit_governed_state(self):
-        """Record the governed state, as a real project would."""
+    def commit_governed_state(self, *, signed=True):
+        """Record the governed state, as a real project would.
+
+        `signed=False` models the actor this whole bar exists for: someone with
+        commit rights and no key.
+        """
 
         git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-m", "governed state")
+        pending = subprocess.run(["git", "-C", str(self.repo), "status", "--porcelain"], check=True, capture_output=True, text=True)
+        if not pending.stdout.strip():
+            return
+        git(self.repo, "commit", "-m", "governed state", *([] if signed else ["--no-gpg-sign"]))
 
     def _policy(self, required):
         return {
             "schema_name": "project_policy", "schema_version": 1,
-            "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
+            "approval_predicate": {"predicate_id": self.predicate, "policy_digest": DIGEST},
             "required_mutation_facts": required,
             "required_evidence_facts": required,
-            "waiver_approval_rule": {"predicate_id": "waiver-board", "policy_digest": DIGEST},
-            "human_approval_rule": {"predicate_id": "human-signoff", "policy_digest": DIGEST},
+            "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
+            "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
             "promotion_policy": "explicit",
         }
 
@@ -305,7 +341,7 @@ class AuthorityMatrixTests(unittest.TestCase):
             "scope": "INELIGIBLE_VERIFICATION_EVIDENCE", "approved_by": "someone",
             "approved_at": "2026-09-03T00:00:00Z", "state": "effective",
             "approval_provenance": "GIT_REVIEWED",
-            "approval_predicate": {"predicate_id": "waiver-board", "policy_digest": work.commitment},
+            "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": work.commitment},
             "policy_digest": work.commitment,
         }
         WorkController(work.work).mutate(1, {"waivers": [waiver]}, approval=work.record_approval_for_change({"waivers": [waiver]}))

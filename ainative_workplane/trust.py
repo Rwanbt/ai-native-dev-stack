@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 from .contracts import ContractError, canonical_digest, validate_artifact
 from .evidence import VerificationEvidence
+from .predicates import predicate_refusal
 
 
 # The numeric ladder is gone. It made SIGNED satisfy a policy that asked for
@@ -95,6 +96,10 @@ def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, An
     if approval.get("successor_commitment") != successor_commitment(successor):
         return False
     if approval.get("predecessor_digest") != parent.get("root_digest"):
+        return False
+    # A rotation is a change of authority, so it clears the same bar as any
+    # other one: the predicate the policy configures, actually satisfied.
+    if predicate_refusal(predicate_id, facts) is not None:
         return False
     return not unmet(facts, required)
 

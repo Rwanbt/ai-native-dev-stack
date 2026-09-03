@@ -67,12 +67,36 @@ def _git(root: Path, *arguments: str, timeout: int = 10) -> subprocess.Completed
     return subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, text=True, timeout=timeout, check=False)
 
 
+def signature_verified(target: str | Path, paths: Iterable[str] = ()) -> bool:
+    """Whether Git verifies the signature on the commit that last wrote these paths.
+
+    WHY the last commit touching the paths and not HEAD: the question is who
+    signed *this object*. A signed head commit says nothing about a file
+    someone else committed ten commits ago, and a policy asking for a signature
+    on an approval is asking about the approval.
+
+    Git decides, not this module: `%G?` is `G` only when the signature verifies
+    against the configured keyring or allowed-signers file. An actor without
+    the key cannot make it say `G`, which is what makes `signature` the one
+    predicate an agent with commit rights cannot satisfy for itself.
+    """
+
+    root = Path(target)
+    named = list(paths)
+    arguments = ["log", "-1", "--format=%G?", *(["--", *named] if named else [])]
+    try:
+        result = _git(root, *arguments)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "G"
+
+
 def observe(target: str | Path, paths: Iterable[str] = ()) -> ProvenanceFacts:
     """Establish what a checkout supports for the given paths.
 
     `git_reviewed` and `ci_verified` are never set here. They assert that a
     process happened, which a checkout cannot show, and this build ships no
-    attestation verifier. A policy requiring either fails closed — a real
+    verifier for either. A policy requiring one fails closed — a real
     functional limit, stated rather than quietly approximated.
     """
 
@@ -88,12 +112,12 @@ def observe(target: str | Path, paths: Iterable[str] = ()) -> ProvenanceFacts:
             return ProvenanceFacts(reason="the working tree state could not be read")
         if status.stdout.strip():
             return ProvenanceFacts(reason="the observed paths differ from the commit")
-        signed = _git(root, "verify-commit", "HEAD").returncode == 0
+        signed = signature_verified(root, named)
         return ProvenanceFacts(
             git_recorded=True,
             signature_verified=signed,
             local_dirty=False,
-            reason="tracked and matching the commit" + (", head signature verifies" if signed else ""),
+            reason="tracked and matching the commit" + (", and its last commit is signed" if signed else ""),
         )
     except (OSError, subprocess.SubprocessError):
         return ProvenanceFacts(reason="Git could not be executed")

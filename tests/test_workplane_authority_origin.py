@@ -1,4 +1,4 @@
-"""Authority attacks A72-A90: who may create evidence, and who may change the rules.
+"""Authority attacks A72-A96: who may create evidence, and who may change the rules.
 
 The A54-A70 matrix proved that the evaluator does not accept authority from its
 caller's arguments. These cases ask the next question: can a caller manufacture
@@ -7,16 +7,20 @@ claim, an approval, or a weaker rule to be measured against.
 """
 
 import json
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from ainative_workplane.bootstrap import BootstrapError, bootstrap
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.controller import ControllerError, WorkController
 from ainative_workplane.evaluator import SUCCESS_CONDITION, EvaluationError, evaluate_work
+from ainative_workplane.predicates import predicate_refusal
+from ainative_workplane.provenance import ProvenanceFacts
 from ainative_workplane.snapshot import build_repository_snapshot, snapshot_reference
-from ainative_workplane.trust import policy_commitment
+from ainative_workplane.trust import approval_root_commitment, policy_commitment
 from tests.test_workplane_authority import GovernedWork
 
 
@@ -214,6 +218,209 @@ class AuthorityRaceTests(unittest.TestCase):
         self.assertNotEqual("CONVERGED", evaluation.verdict.verdict, "a command rewrote the authority and still converged")
         self.assertIn("AUTHORITY_CHANGED_DURING_EVALUATION", [gap.code for gap in evaluation.verdict.gaps])
 
+
+
+def weaker_registry(work):
+    """A registry whose declared command runs something that passes."""
+
+    (work.repo / "tests" / "easy.py").write_text("print('Ran 1 test in 0.001s'); print('OK')\n", encoding="utf-8")
+    work.commit_governed_state()
+    registry = work.registry()
+    registry["commands"]["check"]["argv"] = [sys.executable, "tests/easy.py"]
+    return {"command_registry": registry}
+
+
+def make_the_check_fail(work):
+    (work.repo / "tests" / "check.py").write_text("import sys\nprint('Ran 1 test in 0.001s')\nprint('FAILED (failures=1)')\nsys.exit(1)\n", encoding="utf-8")
+    work.commit_governed_state()
+
+
+@unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen is required to exercise a real signature predicate")
+class ApprovalPredicateTests(unittest.TestCase):
+    """A94: recorded is not approved.
+
+    The third round made the mutation approval an artifact, so an actor could
+    no longer hand the controller an object it had just built. It could still
+    write that object to a file and commit it, and under a policy whose
+    predicate was *named* `review` while requiring only `git_recorded`, that
+    counted. The predicate was a label. These cases ask whether it is a
+    mechanism.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def test_a94_a_self_recorded_approval_does_not_satisfy_an_independent_predicate(self):
+        work = self.governed(predicate="signature", signing=True)
+        make_the_check_fail(work)
+        self.assertEqual("NOT_CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+
+        # The actor has write access and commit rights. It does not have the
+        # key, which is the entire difference the predicate is supposed to
+        # make. It builds the exact approval its own weakened state needs.
+        weaker = weaker_registry(work)
+        approval = work.record_approval_for_change(weaker, signed=False)
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.work).mutate(1, weaker, approval=approval)
+        self.assertIn("signature_verified", str(refusal.exception))
+
+        # And nothing moved: the failing verification is still failing.
+        work.commit_governed_state()
+        self.assertEqual("NOT_CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+        self.assertEqual(1, WorkController(work.work).read()["revision"])
+
+    def test_a94_the_same_mutation_is_accepted_when_the_predicate_is_actually_satisfied(self):
+        """The control. Without it, A94 could pass because nothing works."""
+
+        work = self.governed(predicate="signature", signing=True)
+        make_the_check_fail(work)
+        weaker = weaker_registry(work)
+        approval = work.record_approval_for_change(weaker, signed=True)
+        WorkController(work.work).mutate(1, weaker, approval=approval)
+        work.commit_governed_state()
+        self.assertEqual(2, WorkController(work.work).read()["revision"])
+        self.assertEqual("CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+
+    def test_a94_a_predicate_no_provider_implements_is_never_satisfied(self):
+        """A policy cannot acquire authority by naming a mechanism."""
+
+        self.assertIsNone(predicate_refusal("recorded_owner_ack", ProvenanceFacts(git_recorded=True, local_dirty=False)))
+        for invented in ("review", "release-board", "human-signoff", "", None):
+            self.assertIsNotNone(predicate_refusal(invented, ProvenanceFacts(git_recorded=True, signature_verified=True, ci_verified=True, git_reviewed=True, local_dirty=False)))
+
+
+class GenesisTrustTests(unittest.TestCase):
+    """A95: who decided what this project trusts.
+
+    Every N to N+1 protection held while the actor could simply choose N. A
+    work contract is now created *under* a project trust anchor, and creating a
+    directory is no longer an act of governance.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def codes(self, evaluation):
+        return [gap.code for gap in evaluation.verdict.gaps]
+
+    def test_a95_a_work_the_project_never_pinned_is_unevaluable(self):
+        work = self.governed(anchor=False)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict)
+        self.assertIn("PROJECT_TRUST_UNINITIALIZED", self.codes(evaluation))
+
+    def test_a95_a_second_work_cannot_bring_a_root_of_its_own(self):
+        work = self.governed()
+        stranger = dict(work.approval_root, uid=generate_uid("root"), root_provenance="UNTRACKED")
+        stranger["root_digest"] = approval_root_commitment(stranger)
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.repo / ".ai-native" / "work" / "w2").create(work.artifacts(approval_root=stranger))
+        self.assertIn("UNGOVERNED_GENESIS", str(refusal.exception))
+
+    def test_a95_a_second_work_under_the_pinned_root_is_permitted(self):
+        """The control: governance is a bar, not a wall."""
+
+        work = self.governed()
+        manifest = WorkController(work.repo / ".ai-native" / "work" / "w2").create(work.artifacts())
+        self.assertEqual(1, manifest["revision"])
+
+    def test_a95_a_governed_project_never_re_bootstraps(self):
+        work = self.governed()
+        with self.assertRaises(BootstrapError) as refusal:
+            bootstrap(work.repo, approval_root=work.approval_root, policy=work.policy, initialized_by="the actor", predicate_id="recorded_owner_ack")
+        self.assertIn("ALREADY_INITIALIZED", str(refusal.exception))
+
+    @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen is required to exercise a real signature predicate")
+    def test_a95_an_anchor_the_actor_only_recorded_does_not_satisfy_signature(self):
+        work = self.governed(predicate="signature", signing=True)
+        self.assertEqual("CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+        # The actor rewrites the anchor. The content still parses and still
+        # commits to itself; the last commit that touched it is unsigned,
+        # because the actor has no key.
+        Path(work.anchor).write_text(Path(work.anchor).read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        work.commit_governed_state(signed=False)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict)
+        self.assertIn("PROJECT_TRUST_UNVERIFIED", self.codes(evaluation))
+
+    def test_a95_an_unreadable_anchor_never_reads_as_absent(self):
+        work = self.governed()
+        Path(work.anchor).write_text("{not json", encoding="utf-8")
+        work.commit_governed_state()
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict)
+        self.assertIn("PROJECT_TRUST_INVALID", self.codes(evaluation))
+
+
+class CommittedRootHistoryTests(unittest.TestCase):
+    """A96: a directory is not a commit.
+
+    Crash consistency deliberately permits a promoted revision whose manifest
+    was never replaced. Reading roots by listing `revisions/` therefore read
+    authority out of a write that never happened.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def rotate(self, work, *, revision=1, marker="SIGNED", injector=None):
+        """Write a different root into the next revision."""
+
+        rotated = dict(work.approval_root, root_provenance=marker)
+        rotated["root_digest"] = approval_root_commitment(rotated)
+        changes = {"approval_root": rotated}
+        approval = work.record_approval_for_change(changes)
+        WorkController(work.work, failure_injector=injector).mutate(revision, changes, approval=approval)
+        work.commit_governed_state()
+        return rotated
+
+    def test_a96_a_root_from_an_uncommitted_revision_is_not_history(self):
+        work = self.governed()
+
+        def crash(step):
+            if step == "before_manifest_replace":
+                raise RuntimeError("power loss between promotion and commit")
+
+        with self.assertRaises(RuntimeError):
+            self.rotate(work, injector=crash)
+        work.commit_governed_state()
+        controller = WorkController(work.work)
+        self.assertEqual(1, controller.read()["revision"])
+        # The directory is there. That is exactly the point.
+        self.assertTrue((work.work / "revisions" / "2" / "approval_root.json").is_file())
+        history = controller.root_history()
+        self.assertEqual([work.approval_root["root_digest"]], [entry["root_digest"] for entry in history])
+
+    def test_a96_a_committed_rotation_is_history(self):
+        """The control: the chain must still carry what really was committed."""
+
+        work = self.governed()
+        rotated = self.rotate(work)
+        history = WorkController(work.work).root_history()
+        self.assertEqual([work.approval_root["root_digest"], rotated["root_digest"]], [entry["root_digest"] for entry in history])
+
+    def test_a96_a_root_swapped_under_a_committed_chain_entry_is_dropped(self):
+        """The chain records a digest, so a historical file cannot be exchanged.
+
+        The current revision is already protected by the manifest pointers. An
+        *older* revision is not pointed at by the current manifest at all, and
+        before the chain existed nothing checked what its root said.
+        """
+
+        work = self.governed()
+        self.rotate(work, revision=1, marker="SIGNED")
+        self.rotate(work, revision=2, marker="CI_APPROVED")
+        self.assertEqual(3, len(WorkController(work.work).root_history()))
+        swapped = dict(work.approval_root, root_provenance="UNTRACKED")
+        swapped["root_digest"] = approval_root_commitment(swapped)
+        (work.work / "revisions" / "2" / "approval_root.json").write_text(json.dumps(swapped), encoding="utf-8")
+        self.assertEqual(2, len(WorkController(work.work).root_history()))
 
 
 if __name__ == "__main__":

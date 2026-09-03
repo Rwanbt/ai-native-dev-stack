@@ -17,11 +17,11 @@ NOW = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
 def build_policy():
     policy = {
         "schema_name": "project_policy", "schema_version": 1,
-        "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
+        "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "required_mutation_facts": {"git_recorded": True},
         "required_evidence_facts": {"git_recorded": True},
-        "waiver_approval_rule": {"predicate_id": "waiver-board", "policy_digest": DIGEST},
-        "human_approval_rule": {"predicate_id": "human-signoff", "policy_digest": DIGEST},
+        "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
+        "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
         "promotion_policy": "explicit",
     }
     commitment = policy_commitment(policy)
@@ -43,7 +43,7 @@ class AuthorizationTests(unittest.TestCase):
             "reason": "accepted for this release", "scope": "TASK_WITHOUT_VERIFICATION",
             "approved_by": "release-board", "approved_at": "2026-09-01T00:00:00Z",
             "state": "effective", "approval_provenance": "GIT_REVIEWED",
-            "approval_predicate": {"predicate_id": "waiver-board", "policy_digest": self.commitment},
+            "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": self.commitment},
             "policy_digest": self.commitment,
         }
         record.update(overrides)
@@ -55,7 +55,7 @@ class AuthorizationTests(unittest.TestCase):
             "target": {"uid": target, "digest": DIGEST},
             "approved_by": "tech-lead", "approved_at": "2026-09-01T00:00:00Z",
             "approval_provenance": "GIT_REVIEWED",
-            "approval_predicate": {"predicate_id": "human-signoff", "policy_digest": self.commitment},
+            "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": self.commitment},
             "policy_digest": self.commitment,
         }
         record.update(overrides)
@@ -104,7 +104,7 @@ class AuthorizationTests(unittest.TestCase):
         needs_ci_commitment = policy_commitment(needs_ci)
         for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
             needs_ci[field] = dict(needs_ci[field], policy_digest=needs_ci_commitment)
-        signed_but_not_ci = self.waiver(policy_digest=needs_ci_commitment, approval_predicate={"predicate_id": "waiver-board", "policy_digest": needs_ci_commitment})
+        signed_but_not_ci = self.waiver(policy_digest=needs_ci_commitment, approval_predicate={"predicate_id": "recorded_owner_ack", "policy_digest": needs_ci_commitment})
         blocked = apply_authorizations([self.gap], policy=needs_ci, waivers=[signed_but_not_ci], now=NOW, facts=ProvenanceFacts(git_recorded=True, signature_verified=True, local_dirty=False))
         self.assertIn("UNAUTHORIZED_WAIVER", self.codes(blocked))
         stale_policy = self.waiver(policy_digest="b" * 64)

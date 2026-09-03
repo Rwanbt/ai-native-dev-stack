@@ -34,11 +34,11 @@ class RunnerConvergenceTests(unittest.TestCase):
         placeholder = "a" * 64
         policy = {
             "schema_name": "project_policy", "schema_version": 1,
-            "approval_predicate": {"predicate_id": "review", "policy_digest": placeholder},
+            "approval_predicate": {"predicate_id": "recorded_owner_ack", "policy_digest": placeholder},
             "required_mutation_facts": {"git_recorded": True},
             "required_evidence_facts": {"git_recorded": True},
-            "waiver_approval_rule": {"predicate_id": "waiver", "policy_digest": placeholder},
-            "human_approval_rule": {"predicate_id": "human", "policy_digest": placeholder},
+            "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": placeholder},
+            "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": placeholder},
             "promotion_policy": "explicit",
         }
         digest = policy_commitment(policy)
