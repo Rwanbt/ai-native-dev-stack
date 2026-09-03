@@ -51,12 +51,12 @@ POLICY_EVOLUTION:                ADDRESSED, awaiting external review
 CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
 
 POLICY_ROOT_ATOMICITY:           ADDRESSED, awaiting external review
-HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review
+HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review (commit + path + digest)
 APPROVAL_SCOPE:                  ADDRESSED, awaiting external review (decided, not left ambiguous)
 BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A106)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A107)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -147,6 +147,12 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Eighth-round correction, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| A transition's recorded approval digest was never verified | The evaluator reads the approval out of the recorded commit at the recorded path, canonicalizes it and requires the digest to match; any failure leaves the transition unbound, and unbound is invalid | A107 |
 
 ## Seventh-round corrections, awaiting review
 
@@ -256,7 +262,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 148 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 153 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -296,6 +302,11 @@ cases execute.
   requirement (trusted bootstrap precedes controlled-agent access), not a
   mechanism. ADR-0006 and case A101 state it; an external trust source is the
   only mechanical answer and is not built.
+- A broken root chain surfaces as `ROOT_OF_TRUST_INVALID` inside the reasons
+  an individual run was ruled ineligible for, rather than as a standalone gap,
+  so the verdict is `NOT_CONVERGED` where `INVALID` would classify it better.
+  It never produces a false `CONVERGED`; it is noted rather than changed,
+  because the eighth review asked for a narrow round.
 - A historical transition's facts are re-established from the commit that
   authorized it, which is immutable — but against the signer set the anchor
   pins *today*. Removing a signer therefore invalidates that identity's earlier

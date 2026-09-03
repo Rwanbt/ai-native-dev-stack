@@ -103,6 +103,43 @@ def _signature_of(root: Path, path: str | None = None) -> str | None:
     return fields[1] or fields[2] or None
 
 
+def repository_location(path: str | Path) -> tuple[Path, str] | None:
+    """The work tree holding a path, and that path relative to it."""
+
+    target = Path(path)
+    base = target if target.is_dir() else target.parent
+    try:
+        toplevel = _git(base, "rev-parse", "--show-toplevel")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if toplevel.returncode != 0 or not toplevel.stdout.strip():
+        return None
+    root = Path(toplevel.stdout.strip())
+    try:
+        return root, target.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def blob_at_commit(target: str | Path, commit: str, path: str) -> bytes | None:
+    """The exact bytes one commit holds at one path, or None.
+
+    WHY read the commit rather than the working tree: the working tree is what
+    the actor has now, and the question is what the commit that authorized a
+    transition actually contained. A file on disk today proves nothing about
+    what was approved then.
+    """
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(Path(target)), "show", f"{commit}:{path}"],
+            capture_output=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
 def recording_commit(target: str | Path, path: str) -> str | None:
     """The commit that last wrote one path, or None."""
 

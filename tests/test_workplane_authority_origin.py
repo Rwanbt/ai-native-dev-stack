@@ -1,4 +1,4 @@
-"""Authority attacks A72-A106: who may create evidence, and who may change the rules.
+"""Authority attacks A72-A107: who may create evidence, and who may change the rules.
 
 The A54-A70 matrix proved that the evaluator does not accept authority from its
 caller's arguments. These cases ask the next question: can a caller manufacture
@@ -8,6 +8,7 @@ claim, an approval, or a weaker rule to be measured against.
 
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1068,6 +1069,99 @@ class ApprovalReplayTests(unittest.TestCase):
         weak = self.weak(work)
         WorkController(work.work).mutate(1, weak, approval=work.record_approval_for_change(weak))
         self.assertEqual(2, WorkController(work.work).read()["revision"])
+
+
+class TransitionApprovalBindingTests(unittest.TestCase):
+    """A107: the recorded approval digest must be checked, not merely recorded.
+
+    Round 7 bound each transition to the commit that carried its approval, and
+    recorded that approval's digest beside it -- then never read the digest
+    back. A commit signature says something was signed; it does not say what.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def rotated(self, work):
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        successor = work.successor_root(committed["approval_root"])
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        work.commit_governed_state()
+        return successor
+
+    def rewrite_authority(self, work, **changes):
+        """Edit what the commit marker claims authorized the rotation."""
+
+        path = work.work / "manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        for entry in manifest["root_chain"]:
+            if "authority" in entry:
+                entry["authority"] = {**entry["authority"], **changes}
+        path.write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        work.commit_governed_state()
+
+    def refusals(self, work):
+        """Every reason the evaluation gives, gaps and per-evidence alike.
+
+        A broken chain surfaces as `ROOT_OF_TRUST_INVALID` inside the reasons
+        an individual run was ruled ineligible for, not as a standalone gap.
+        See the round-8 packet: the classification is worth a look, and this
+        round deliberately does not change it.
+        """
+
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)
+        reasons = [gap.code for gap in evaluation.verdict.gaps]
+        for assessment in evaluation.assessments:
+            reasons.extend(assessment.reasons)
+        return reasons
+
+    def test_a107_the_commit_marker_records_commit_path_and_digest(self):
+        work = self.governed()
+        successor = self.rotated(work)
+        evidence = WorkController(work.work).root_transitions()[successor["uid"]]
+        self.assertEqual({"commit", "approval_path", "approval_digest"}, set(evidence))
+        self.assertTrue(evidence["approval_path"].startswith(".ai-native/"))
+
+    def test_a107_a_digest_naming_another_object_invalidates_the_chain(self):
+        work = self.governed()
+        self.rotated(work)
+        self.assertEqual("CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+        # The commit is real and signed exactly as before. Only the claim about
+        # what it contained is false.
+        self.rewrite_authority(work, approval_digest="b" * 64)
+        self.assertIn("ROOT_OF_TRUST_INVALID", self.refusals(work))
+
+    def test_a107_a_path_the_commit_does_not_hold_invalidates_the_chain(self):
+        work = self.governed()
+        self.rotated(work)
+        self.rewrite_authority(work, approval_path="src/app.py")
+        self.assertIn("ROOT_OF_TRUST_INVALID", self.refusals(work))
+
+    def test_a107_a_working_tree_approval_cannot_stand_in_for_the_commit(self):
+        """What is on disk now is not what the commit contained."""
+
+        work = self.governed()
+        successor = self.rotated(work)
+        evidence = WorkController(work.work).root_transitions()[successor["uid"]]
+        approved = work.repo / evidence["approval_path"]
+        self.assertTrue(approved.is_file())
+        # Point the chain at a commit that predates the approval entirely. The
+        # file is still there in the working tree; the commit does not hold it.
+        first = subprocess.run(["git", "-C", str(work.repo), "rev-list", "--max-parents=0", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        self.rewrite_authority(work, commit=first)
+        self.assertIn("ROOT_OF_TRUST_INVALID", self.refusals(work))
+
+    def test_a107_a_matching_commit_path_and_digest_stay_valid(self):
+        """The control."""
+
+        work = self.governed()
+        self.rotated(work)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("CONVERGED", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping
 from .authorization import authorize_mutation
 from .bootstrap import BootstrapError, admits, governs, read_creation_approval, verified_anchor
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
-from .provenance import UNOBSERVED, observe_artifacts, recording_commit
+from .provenance import UNOBSERVED, observe_artifacts, recording_commit, repository_location
 from .trust import approval_root_commitment, policy_commitment
 
 
@@ -509,10 +509,18 @@ class WorkController:
         path = Path(approval) if approval is not None else None
         if path is None:
             return None
-        commit = recording_commit(path.parent, path.name)
+        location = repository_location(path)
+        if location is None:
+            raise ControllerError("UNAUTHORIZED_MUTATION: the approval authorizing this root transition is not inside a work tree")
+        repository, relative = location
+        commit = recording_commit(repository, relative)
         if commit is None:
             raise ControllerError("UNAUTHORIZED_MUTATION: the approval authorizing this root transition is not recorded in any commit")
-        return {"commit": commit, "approval_digest": canonical_digest(record)}
+        # Commit *and* path *and* digest. The commit alone says something was
+        # signed; it does not say what. Recording the path and the content
+        # digest is what lets a later walk read the same object back out of that
+        # commit instead of trusting whatever is on disk by then.
+        return {"commit": commit, "approval_path": relative, "approval_digest": canonical_digest(record)}
 
     def _read_approval(self, approval: str | os.PathLike[str] | None) -> tuple[Any, Any]:
         """Load an approval and observe the artifact it actually is.

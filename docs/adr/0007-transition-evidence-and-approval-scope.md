@@ -53,19 +53,26 @@ covers the transition approval.
 The **manifest** records it, in the `root_chain` entry for the rotation:
 
 ```json
-{"revision": 2, "digest": "...", "authority": {"commit": "<sha>", "approval_digest": "<sha256>"}}
+{"revision": 2, "digest": "...", "authority": {"commit": "<sha>", "approval_path": "<repo-relative>", "approval_digest": "<sha256>"}}
 ```
 
 The controller populates it from what it actually observed when it authorized
-the mutation: the commit that recorded the approval, and the approval's own
-digest. The manifest is the commit marker, so an entry exists exactly when the
-revision was committed.
+the mutation: the commit that recorded the approval, where that approval lives,
+and its content digest. The manifest is the commit marker, so an entry exists
+exactly when the revision was committed.
 
-`evaluate_work` then re-establishes each transition's facts with
-`observe_commit()` — a commit is immutable, so the same question of the same
-object gets the same answer every time. `_valid_root_chain` takes a
-`transition_facts` mapping keyed by successor UID, and **a transition absent
-from it is invalid**: no bound evidence is not a pass.
+*Amended after the eighth review.* The first version recorded the digest and
+never read it back, so the binding was to a commit rather than to the approval
+that commit was supposed to contain — a signature says something was signed,
+not what. `evaluate_work` now reads the object out of the commit itself
+(`git show <commit>:<path>`), canonicalizes it, and requires the digest to
+match before deriving any facts. The working tree is deliberately not
+consulted: what is on disk today proves nothing about what was approved then.
+
+`_valid_root_chain` takes a `transition_facts` mapping keyed by successor UID,
+and **a transition absent from it is invalid** — whether because the commit is
+gone, the path is not in it, the object does not parse, or the digest does not
+match. No bound evidence is not a pass.
 
 *Limitation, stated:* the re-established facts are what Git can say about that
 commit *now* — that it exists, and whether its signature verifies against the
@@ -97,7 +104,10 @@ state before it demonstrated anything.
 
 ## Consequences
 
-Asserted by A104 (four cases: policy-only, a root committing to the policy
+Asserted by A107 (five cases: the marker records commit, path and digest; a
+digest naming another object, a path the commit does not hold, and a commit
+predating the approval each invalidate the chain; a matching triple stays
+valid), A104 (four cases: policy-only, a root committing to the policy
 being left, a root committing to an unrelated policy, and the control where
 policy and root move together), A105 (three: the commit marker records what
 authorized each transition; current authority cannot supply historical facts

@@ -310,6 +310,7 @@ def _validate_work_manifest(value: Mapping[str, Any]) -> None:
                 evidence = _mapping(link["authority"], f"{field}[].authority")
                 if not isinstance(_required(evidence, "commit"), str) or not evidence["commit"]:
                     _fail("INVALID_FIELD", f"{field}[].authority.commit must be non-empty")
+                canonical_path(_required(evidence, "approval_path"))
                 _digest(_required(evidence, "approval_digest"), f"{field}[].authority.approval_digest")
 
 

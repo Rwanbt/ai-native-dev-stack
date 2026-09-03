@@ -47,7 +47,7 @@ from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
 from .evidence import EvidenceError, VerificationEvidence
 from .freshness import FreshnessResult, evaluate_checkout_freshness
-from .provenance import ProvenanceFacts, observe, observe_artifacts, observe_commit
+from .provenance import ProvenanceFacts, blob_at_commit, observe, observe_artifacts, observe_commit, repository_location
 from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
@@ -358,15 +358,36 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
 def _transition_facts(work_dir: str | Path, transitions: Mapping[str, Mapping[str, Any]], anchor: Mapping[str, Any] | None) -> dict[str, ProvenanceFacts]:
     """Re-establish, per transition, what authorized it when it happened.
 
-    The commit recorded in the manifest is immutable, so this asks the same
-    question of the same object every time. Judging an old transition by
-    today's authority instead would let an authority that is signed now
-    validate one that never was.
+    Three things have to line up, and the seventh round only checked the first:
+
+    - the commit exists and carries the required provenance;
+    - that commit actually contained an approval at the recorded path;
+    - that approval canonicalizes to the recorded digest.
+
+    A commit signature alone says something was signed, not what. Reading the
+    object back out of the commit is what binds the transition to the approval
+    the manifest claims authorized it. Any step failing leaves the transition
+    with no entry at all, and an unbound transition is invalid.
     """
 
+    located = repository_location(work_dir)
+    if located is None:
+        return {}
+    repository, _ = located
     signers = anchor["authorized_signers"] if anchor else None
-    root = Path(work_dir)
-    return {uid: observe_commit(root, evidence["commit"], authorized_signers=signers) for uid, evidence in transitions.items()}
+    facts: dict[str, ProvenanceFacts] = {}
+    for uid, evidence in transitions.items():
+        recorded = blob_at_commit(repository, evidence["commit"], evidence["approval_path"])
+        if recorded is None:
+            continue
+        try:
+            approved = json.loads(recorded.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if canonical_digest(approved) != evidence["approval_digest"]:
+            continue
+        facts[uid] = observe_commit(repository, evidence["commit"], authorized_signers=signers)
+    return facts
 
 
 def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Mapping[str, Any]]]:
