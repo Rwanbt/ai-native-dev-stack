@@ -127,11 +127,49 @@ provide provenance and context but never become executable policy by prose alone
 
 ## Trust baseline and mutation protocol
 
-The portable default is `git_reviewed`: contract creation records an approved Git commit
-and canonical digests for `.ai-native/config/commands.json` and `policy.json`. A local
-commit is `GIT_RECORDED`, not automatically reviewed. If either file is dirty, absent
-from the approved commit, or differs from its recorded digest, the run is
-`local_untrusted` and cannot be represented as `git_reviewed` evidence.
+### The project trust anchor comes first
+
+A project is bootstrapped before any work contract exists:
+
+```text
+UNINITIALIZED  --explicit bootstrap-->  GOVERNED  --> work creation
+```
+
+`ainative trust bootstrap` writes `.ai-native/trust/project_trust.json`, which pins the
+approval root the project starts from and names the predicate the anchor itself must
+satisfy. Creating a work directory is a local act and never establishes what a project
+trusts: a work no anchor pins is `PROJECT_TRUST_UNINITIALIZED`, which is `INVALID`, and a
+work naming a root the anchor does not pin is refused as `UNGOVERNED_GENESIS`. Bootstrap
+refuses to replace an existing anchor -- rotating a governed project's root is a root
+transition, which the trust chain already governs. See ADR-0004.
+
+### A predicate is a mechanism
+
+`predicate_id` names a mechanism with a fixed fact requirement, not a label the policy is
+free to interpret:
+
+| predicate | requires | an actor with commit rights can satisfy it |
+| --- | --- | --- |
+| `signature` | `signature_verified` | no |
+| `git_review` | `git_reviewed` | no |
+| `ci_attestation` | `ci_verified` | no |
+| `recorded_owner_ack` | `git_recorded` | **yes**, and it is named to say so |
+
+`required_mutation_facts` may add to a predicate's requirement and never subtract from it.
+A predicate this build does not implement is never satisfied.
+
+**The supported production default is `signature`.** It is the one predicate with a real
+provider here: `git log -1 --format=%G?` over the observed paths must return `G`, which
+Git decides against the configured keyring or allowed-signers file. An actor without the
+key cannot produce it.
+
+`git_reviewed` and `ci_verified` are modelled as independent facts because they are real
+and independent, but nothing in this build can establish either, so a policy requiring one
+fails closed. That is a functional limit, stated rather than approximated -- and it is why
+`git_reviewed` is no longer described as the portable default.
+
+A local commit is `git_recorded`, never automatically reviewed. If an observed path is
+dirty or untracked, nothing is established about it at all.
 
 The initial manifest is created only by the Work Controller. Later loads canonicalise
 each referenced artifact and compare its digest with the manifest: mismatch becomes

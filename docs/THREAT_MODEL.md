@@ -69,6 +69,14 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## Authority threats found by the fourth review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Self-recorded approval read as review | Write and commit in the repository | Build the exact `mutation_approval` your own weakened state needs, commit it, and satisfy a policy whose predicate is *named* review while requiring only `git_recorded` | A predicate is a closed mechanism with a fixed fact requirement (`predicates.py`); the policy's own requirement may only add to it | Under `recorded_owner_ack` an actor with commit rights is still the whole bar -- named, not removed | A94 |
+| Agent-chosen genesis | Create a directory | Establish your own policy, approval root, registry and rules, and operate under the trust anchor you picked; every N to N+1 protection becomes irrelevant | Project trust is bootstrapped before work creation and pins the genesis root; an unpinned work is `PROJECT_TRUST_UNINITIALIZED` and therefore `INVALID` | Under a `recorded_owner_ack` anchor the actor can still write and commit the anchor itself | A95 |
+| Orphan revision read as history | Interrupt a commit between promotion and manifest replace | A root from a revision that was never committed enters the trust chain as historical authority | The committed root chain lives in the manifest, which is the commit marker; each historical root is re-digested when read | None for this path: the chain is written inside the marker, so a revision enters history exactly when it becomes committed | A96 |
+
 ## Authority threats found by the third review
 
 | Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |

@@ -36,9 +36,14 @@ AUTHORITY_STABILITY:             ADDRESSED, awaiting external review
 ROOT_CHAIN_RESOLUTION:           ADDRESSED, awaiting external review
 HUMAN_APPROVAL_CONVERGENCE:      ADDRESSED, awaiting external review
 AUTHORING_FACADE:                ADDRESSED, awaiting external review
+
+APPROVAL_PREDICATE:              ADDRESSED, awaiting external review
+GENESIS_TRUST_BOOTSTRAP:         ADDRESSED, awaiting external review
+COMMITTED_ROOT_HISTORY:          ADDRESSED, awaiting external review
+PREDICATE_PROVIDER:              ADDRESSED, awaiting external review (signature; git_reviewed and ci_verified remain unimplementable)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A93)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A96)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -66,17 +71,26 @@ controlled, and the first version of the test helper showed exactly how. The
 other was an ordering bug, not a missing check: a verification command could
 rewrite the authority while it ran.
 
-Three reviews, three sets of findings, each in what the previous round's green
-cases did not ask. The standard for closing an authority finding remains
-external review, and the record now argues for the rule rather than against
-it.
+A fourth review then found two more, and both were the same shape as each
+other: something that looked like authority was a statement by the party it was
+meant to constrain. A `mutation_approval` the actor wrote and committed
+satisfied a policy whose predicate was *named* `review` — because
+`predicate_id` was compared as a string while the facts required came from the
+same policy. And `WorkController.create()` still established a project's own
+policy, root, registry and rules, so every N → N+1 protection could be
+sidestepped by choosing a different N.
+
+Four reviews, four sets of findings, each in what the previous round's green
+cases did not ask — twice inside a correction. The standard for closing an
+authority finding remains external review, and the record now argues for the
+rule rather than against it.
 
 ## Closed gates
 
 | Gate | What holds it | Where |
 | --- | --- | --- |
-| Architecture | Frozen invariants preserved; no provider and no language model owns a blocking verdict; the trusted computing base is enumerated | `docs/THREAT_MODEL.md` |
-| Contracts | Twelve declared schemas, stable prefixed ULIDs, canonical NFC JSON and SHA-256, portable paths, unsupported schema fails closed | `contracts.py`, A04 |
+| Architecture | Frozen invariants preserved; no provider and no language model owns a blocking verdict; the trusted computing base is enumerated; project trust is bootstrapped before work exists | `docs/THREAT_MODEL.md`, ADR-0004 |
+| Contracts | Fifteen declared schemas, stable prefixed ULIDs, canonical NFC JSON and SHA-256, portable paths, unsupported schema fails closed | `contracts.py`, A04 |
 | Controller | Single writer, explicit mutation semantics, immutable revisions, manifest written last, crash recovery, stale-lock recovery with owner metadata, direct mutation detection | `controller.py`, A01-A06, A51-A53 |
 | Evidence | One validated `verification_run`, bound to contract, revision, specification, snapshot, checkout head, registry, policy, approval root and provenance | `evidence.py` |
 | Trust | No default reviewed provenance, root pinned to its own commitment, predecessor chain evaluated and acyclic, waivers and human approvals fail closed | `trust.py`, `authorization.py`, A07-A11 |
@@ -102,6 +116,16 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Fourth-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| A self-recorded approval satisfied a predicate named `review` | A predicate is a closed mechanism with a fixed fact requirement; the policy may add to it, never subtract | A94, with the satisfied-predicate control |
+| No provider implemented any independent predicate | `signature` is implemented against Git's own verification of the commit that last wrote the observed paths; it is now the documented production default | A94 control, A95 anchor case |
+| Work creation established its own root of trust | Project trust is bootstrapped before work exists and pins the genesis root; an unpinned work is unevaluable and a foreign root is refused | A95 |
+| `root_history()` read revision directories | The committed root chain lives in the manifest, and each historical root is re-digested when read | A96 |
+| Selective rerun still not delivered | Unchanged and still stated: `REUSABLE_ATTESTED_EVIDENCE: NOT BUILT` | ADR-0003 §1 |
 
 ## Third-round corrections, awaiting review
 
@@ -169,8 +193,9 @@ refactor and a hotfix.
 ## Local verification at the time of writing
 
 ```text
-python -m unittest <17 V2 modules + vault + hooks> -q
-→ 136 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
+→ 115 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
 ```
@@ -186,9 +211,10 @@ cases execute.
   keeps digests and a bounded preview rather than full logs for that reason.
 - Assigning a spawned command to its OS container has a microsecond window
   after start; a process created inside it is caught by the PID-tree fallback.
-- `GIT_REVIEWED` and `CI_APPROVED` are not observable from a checkout, so a
+- `git_reviewed` and `ci_verified` are not observable from a checkout, so a
   policy requiring either cannot be satisfied by this build. That is
-  fail-closed, and it is a real functional limit, not a detail.
+  fail-closed, and it is a real functional limit, not a detail. The predicate
+  with a working provider is `signature`, and it is the documented default.
 - A transition approval is a record, not a signature. In a single-maintainer
   repository the system protects against agent self-approval, accidental
   weakening, stale evidence, configuration drift and unreviewed automated
@@ -202,10 +228,18 @@ cases execute.
 - Freshness no longer gates staleness on the in-process path — it catches a
   checkout moving underneath a running verification. Stale *reuse* is prevented
   by not reusing, not by detection.
-- A mutation approval is a recorded artifact, not a signature, under a
-  `git_recorded` policy: an actor with commit rights can still record one,
-  though visibly and in history. Only a policy requiring `signature_verified`
-  excludes an actor without the key — and this build can verify that.
+- Under the `recorded_owner_ack` predicate — at either level, the mutation
+  approval or the project trust anchor — an actor with commit rights is the
+  whole bar. The fourth round named that posture rather than removing it; only
+  `signature` excludes an actor without the key.
+- The project trust anchor is a file. Under `recorded_owner_ack` an actor can
+  write and commit one; `bootstrap()` refuses to replace an existing anchor,
+  but nothing stops a direct write to the path. Under `signature` it cannot
+  produce one that verifies, which is the posture to run.
+- `scripts/workplane_pilot.py` calls the pure `converge()` kernel directly, not
+  `evaluate_work`, so it does not exercise the trust anchor or the mutation
+  bar. It is labelled `authority: smoke_pilot_only` for exactly this reason and
+  is not evidence about authority.
 - Authority drift is compared before and after the verification runs, not
   continuously. A change made and reverted within a single run is undetected.
 - Convergence re-executes every declared verification. For a large suite that
