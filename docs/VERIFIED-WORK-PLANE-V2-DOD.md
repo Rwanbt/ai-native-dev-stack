@@ -46,9 +46,13 @@ INITIAL_CONTRACT_ADMISSION:      ADDRESSED, awaiting external review
 SIGNER_AUTHORIZATION:            ADDRESSED, awaiting external review
 CONJUNCTIVE_PATH_PROVENANCE:     ADDRESSED, awaiting external review
 ROOT_CHAIN_CONNECTIVITY:         ADDRESSED, awaiting external review
+
+POLICY_EVOLUTION:                ADDRESSED, awaiting external review
+CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
+BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A100)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A103)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -93,7 +97,13 @@ And `signature` proved that Git accepted a signature without ever asking whose,
 so any identity the repository's verifier configuration accepted satisfied the
 production default.
 
-Five reviews, five sets of findings, three of them inside a correction. The
+A sixth review then found the remaining P0 at a different layer entirely: who
+authorizes the *first* project trust anchor. Nothing in the runtime does, and
+nothing can — a root of trust cannot prove its own legitimacy from data whose
+authority comes from that root. That one is answered by declaring the boundary
+rather than by building another internal layer.
+
+Six reviews, six sets of findings, three of them inside a correction. The
 standard for closing an authority finding remains external review, and the
 record now argues for the rule rather than against it.
 
@@ -128,6 +138,15 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Sixth-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| The first project trust anchor authorizes itself | **Not fixed — declared.** Genesis is a privileged ceremony inside the trusted computing base; the runtime cannot distinguish a trusted operator from an agent, and the deployment requirement is that trusted bootstrap precedes controlled-agent access. An external trust source is the only mechanical answer and is deliberately not built. | A101, ADR-0006 |
+| Policy evolution was unreachable, and history judged by today's rules | Each root carries the policy it was established under; the manifest records the committed policy chain; a transition is judged under its predecessor's policy | A102 |
+| The controller wrote under an anchor the evaluator would reject | One `verified_anchor()`, used by the writer and the judge | A103 |
+| Selective rerun still not delivered | Unchanged and still stated: `REUSABLE_ATTESTED_EVIDENCE: NOT BUILT` | ADR-0003 §1 |
 
 ## Fifth-round corrections, awaiting review
 
@@ -216,7 +235,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 131 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 139 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -250,10 +269,19 @@ cases execute.
 - Freshness no longer gates staleness on the in-process path — it catches a
   checkout moving underneath a running verification. Stale *reuse* is prevented
   by not reusing, not by detection.
+- **Genesis is not verifiable by the runtime.** Before a trusted anchor exists,
+  a controlled actor can generate its own key, authorize it, sign the anchor
+  and converge — every check passing truthfully. The mitigation is a deployment
+  requirement (trusted bootstrap precedes controlled-agent access), not a
+  mechanism. ADR-0006 and case A101 state it; an external trust source is the
+  only mechanical answer and is not built.
+- A historical root transition is judged under its predecessor's *policy*, but
+  against facts observed **now**. A local checkout has no record of what was
+  observable at the time.
 - Under the `recorded_owner_ack` predicate — at either level, the mutation
   approval or the project trust anchor — an actor with commit rights is the
   whole bar. The fourth round named that posture rather than removing it; only
-  `signature` excludes an actor without the key.
+  `signature` excludes an actor without the key, and only after genesis.
 - The project trust anchor is a file. Under `recorded_owner_ack` an actor can
   write and commit one. Under `signature` it cannot produce one that verifies,
   and rewriting an existing anchor now makes it establish nothing at all,

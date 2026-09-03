@@ -149,6 +149,27 @@ add its own key would be measured against the list it just wrote. Changing a gov
 project's authorized signers is therefore not an edit but a new anchor, which is what a
 root of trust should cost. See ADR-0005.
 
+> **The bootstrap ceremony is inside the trusted computing base.** A root of trust cannot
+> prove its own legitimacy from data whose authority comes from that root. Before a trusted
+> anchor exists, an actor able to run commands and commit can generate a key, configure Git
+> to verify it, name its own fingerprint as authorized, and sign the anchor — and every
+> later check then passes truthfully. The Work Plane's guarantees begin *after* a trusted
+> operator has established the anchor; it cannot distinguish that operator from an agent.
+> `initialized_by` is metadata the caller supplied and nothing verifies it.
+>
+> **Deployment requirement: trusted bootstrap must precede controlled-agent access.**
+> `ainative trust bootstrap` is a privileged operation and labels its output
+> `"authority": "privileged_trust_establishment"`. See ADR-0006 and case A101.
+
+The anchor pins the *genesis* approval root, not the current one, and deliberately does not
+pin the policy. Policy evolves through authorized mutation: each root carries the policy
+commitment it was established under, the manifest records the committed policy chain
+alongside the root chain, and **a transition is judged under its predecessor's policy** —
+its predicate and its required facts — so a later, weaker policy cannot retroactively
+authorize a transition it never saw. Because the current root must carry the current policy
+commitment, changing the policy rotates the root in the same mutation; the transition
+approval issued under the predecessor's policy is the authorization for both.
+
 ### Creating a work contract proposes; admission promotes it
 
 Revision 1 states the whole of what a work must accomplish, so it is a success condition

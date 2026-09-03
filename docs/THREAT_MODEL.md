@@ -69,6 +69,24 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## The bootstrap boundary — an assumption, not a defence
+
+| Question | Answer |
+| --- | --- |
+| Who authorizes the first project trust anchor? | Nothing in the runtime. A root of trust cannot prove its own legitimacy from data whose authority comes from that root. |
+| What can a controlled actor do before bootstrap? | Generate a signing key, configure Git to verify it, bootstrap with its own fingerprint authorized, sign the anchor, admit an easy contract, converge. Every check passes truthfully. |
+| What does the one-commit rule prove? | That this anchor was not edited afterwards in this history. Not that anyone outside the actor chose it. |
+| What is the mitigation? | A deployment requirement, not a mechanism: **trusted bootstrap must precede controlled-agent access.** A controlled agent must not be given authority to run the ceremony. |
+| What would fix it mechanically? | An external trust source — OS-level policy, an organizational trust configuration, remote attestation. Deliberately not built; see ADR-0006 for why. |
+| Test | A101, which asserts the boundary rather than a defence. If an external source is ever added, it must fail. |
+
+## Authority threats found by the sixth review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Retroactive policy authorization | Evolve the policy through authorized mutation | A later, weaker policy judges an old transition it never saw — or, as implemented, no evolved project can validate its own genesis at all | Each root carries the policy commitment it was established under; the manifest records the committed policy chain; a transition is judged under its predecessor's policy | The *facts* a historical transition is measured against are observed now, not then | A102 |
+| Writing under an anchor already known invalid | Rewrite the project trust anchor | The sole normative writer commits a revision under an anchor the evaluator will reject, so the refusal arrives after the write rather than before it | One `verified_anchor()` used by both the controller and the evaluator | None known for this path | A103 |
+
 ## Authority threats found by the fifth review
 
 | Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
