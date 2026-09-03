@@ -239,21 +239,25 @@ def _authority_drift(work_dir: str | Path, before: str) -> list[Gap]:
     return []
 
 
-def _execute_declared_verifications(work_dir: str | Path, repository_root: str | Path, specifications: Mapping[str, Mapping[str, Any]]) -> tuple[list[VerificationEvidence], list[Gap]]:
+def _execute_declared_verifications(context: AuthorityContext) -> tuple[list[VerificationEvidence], list[Gap]]:
     """Run every executable declared verification, now.
 
     WHY here rather than reading recorded runs: a recorded run is a file, and
     a file is whatever its author wrote. Producing the evidence is the only
     local way to know where it came from.
+
+    Takes an established context rather than a work directory: the authority
+    was decided once, and re-establishing it per specification would walk the
+    same chain N times to reach the same answer.
     """
 
     produced: list[VerificationEvidence] = []
     gaps: list[Gap] = []
-    for uid in sorted(specifications):
-        if specifications[uid].get("relationship") == "human_approval":
+    for uid in sorted(context.specifications):
+        if context.specifications[uid].get("relationship") == "human_approval":
             continue
         try:
-            produced.append(run_verification(work_dir, repository_root, uid))
+            produced.append(_run_established(context, uid))
         except (EvaluationError, RunnerError, SnapshotError, OSError) as error:
             gaps.append(Gap("VERIFICATION_NOT_EXECUTABLE", uid, f"{type(error).__name__}: {error}"))
     return produced, gaps
@@ -294,6 +298,84 @@ def _project_trust_gaps(work_dir: str | Path, authority: Mapping[str, Any]) -> l
     return []
 
 
+@dataclass(frozen=True)
+class AuthorityContext:
+    """Committed authority that has been established, or the reasons it was not.
+
+    One boundary, used by every production surface that executes anything. The
+    ninth round put the preflight in `evaluate_work`; the tenth found that
+    `ainative verify` still ran a registry-chosen command without it, and
+    exited 0 doing so. Duplicating the preflight would have meant two places to
+    keep in step, so there is one.
+    """
+
+    work_dir: Path
+    repository_root: Path
+    artifacts: Mapping[str, Any]
+    authority: Mapping[str, Any]
+    specifications: Mapping[str, Mapping[str, Any]]
+    provenance: ProvenanceFacts
+    authority_provenance: ProvenanceFacts
+    trust: TrustVerdict
+    gaps: tuple[Gap, ...]
+
+    @property
+    def established(self) -> bool:
+        return not self.gaps and self.trust.trusted
+
+    @property
+    def refusal(self) -> str:
+        reasons = [f"{gap.code}: {gap.detail}" for gap in self.gaps]
+        if not self.trust.trusted:
+            reasons.append(self.trust.code)
+        return "; ".join(reasons) or "authority established"
+
+
+def establish_authority(work_dir: str | Path, repository_root: str | Path) -> AuthorityContext:
+    """Establish everything an execution surface needs before it may execute.
+
+    @contract No process is started here. This function decides whether the
+    committed state carries authority at all: the project anchor is verified,
+    the project governs this work, the initial contract was admitted, and the
+    policy, root, complete chain, historical policies and each transition's own
+    evidence all hold.
+    @contract Callers execute nothing unless `established` is true.
+    """
+
+    artifacts, authority, specifications = _authority(work_dir)
+    scope: list[str] = []
+    for specification in specifications.values():
+        scope.extend(specification.get("execution_scope", []))
+        scope.extend(specification.get("covered_implementation_paths", []))
+    # Two domains, deliberately not one: what the checkout supports about the
+    # code under verification, and what is established about the work
+    # directory holding the rules, the root and the exceptions. A clean
+    # checkout says nothing about a work directory living somewhere else.
+    signers = authority["anchor"]["authorized_signers"] if authority["anchor"] else None
+    observation = observe(repository_root, scope, authorized_signers=signers)
+    authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]), authorized_signers=signers)
+    trust = evaluate_authority_trust(
+        policy=authority["policy"],
+        approval_root=authority["approval_root"],
+        approval_chain=authority["root_history"],
+        policy_chain=authority["policy_history"],
+        authority_facts=authority_observation,
+        genesis_digest=authority["genesis_root_digest"],
+        transition_facts=authority["transition_facts"],
+    )
+    return AuthorityContext(
+        work_dir=Path(work_dir),
+        repository_root=Path(repository_root),
+        artifacts=artifacts,
+        authority=authority,
+        specifications=specifications,
+        provenance=observation,
+        authority_provenance=authority_observation,
+        trust=trust,
+        gaps=tuple(_project_trust_gaps(work_dir, authority)),
+    )
+
+
 def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEvaluation:
     """Decide convergence for a governed work directory against a checkout.
 
@@ -306,45 +388,22 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     consistent it is.
     """
 
-    artifacts, authority, specifications = _authority(work_dir)
+    context = establish_authority(work_dir, repository_root)
+    artifacts, authority, specifications = context.artifacts, context.authority, context.specifications
     policy = authority["policy"]
-    approval_root = authority["approval_root"]
-    registry = authority["registry"]
+    observation, authority_observation = context.provenance, context.authority_provenance
+    established = context.trust
     spec_digests = {uid: canonical_digest(spec) for uid, spec in specifications.items()}
 
     graph = analyze(artifacts.get("requirements", []), artifacts.get("acceptance_criteria", []), artifacts.get("tasks", []), list(specifications.values()))
     relationship_gaps = frozenset(gap.uid for gap in graph.gaps if gap.code in {"INVALID_VERIFICATION_RELATIONSHIP", "HUMAN_APPROVAL_WITHOUT_PREDICATE"} and gap.uid)
+    machine_specs = frozenset(uid for uid, specification in specifications.items() if specification.get("relationship") != "human_approval")
 
-    scope: list[str] = []
-    for specification in specifications.values():
-        scope.extend(specification.get("execution_scope", []))
-        scope.extend(specification.get("covered_implementation_paths", []))
-    # Two domains, deliberately not one: what the checkout supports about the
-    # code under verification, and what is established about the work
-    # directory holding the rules, the root and the exceptions. A clean
-    # checkout says nothing about a work directory living somewhere else.
-    signers = authority["anchor"]["authorized_signers"] if authority["anchor"] else None
-    observation = observe(repository_root, scope, authorized_signers=signers)
-    authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]), authorized_signers=signers)
-
-    # ------------------------------------------------------------------ preflight
     # Nothing executes until the authority is established. A verdict that fails
     # closed after the fact is not the same as never having let an authority
     # nobody could validate decide what runs.
-    machine_specs = frozenset(uid for uid, specification in specifications.items() if specification.get("relationship") != "human_approval")
-    established = evaluate_authority_trust(
-        policy=policy,
-        approval_root=approval_root,
-        approval_chain=authority["root_history"],
-        policy_chain=authority["policy_history"],
-        authority_facts=authority_observation,
-        genesis_digest=authority["genesis_root_digest"],
-        transition_facts=authority["transition_facts"],
-    )
-    # The kernel turns an untrusted verdict into its own gap, so this list holds
-    # only what the kernel cannot see: whether the project ever admitted this work.
-    preflight = _project_trust_gaps(work_dir, authority)
-    if preflight or not established.trusted:
+    preflight = list(context.gaps)
+    if not context.established:
         refused = converge(
             replace(graph, gaps=graph.gaps + tuple(preflight)),
             [],
@@ -359,14 +418,14 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
         return WorkEvaluation(verdict=refused, assessments=(), contract_digest=authority["contract_digest"], provenance=observation, authority_provenance=authority_observation)
 
     before = _authority_commitment(authority, artifacts)
-    produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
+    produced, execution_gaps = _execute_declared_verifications(context)
     execution_gaps.extend(_authority_drift(work_dir, before))
     assessments = tuple(
         _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, authority_observation=authority_observation, relationship_gaps=relationship_gaps, established=established)
         for evidence in produced
     )
     eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
-    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps) + tuple(_project_trust_gaps(work_dir, authority))
+    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps)
 
     # Trust was established once, before anything ran, and per evidence after.
     # What remains for the kernel is the graph and the evidence it accepted.
@@ -470,9 +529,23 @@ def run_verification(work_dir: str | Path, repository_root: str | Path, specific
     @contract The binding is built from committed authority and from the
     checkout, and the recorded provenance is what was observed, not what the
     caller would like it to be. A caller cannot hand in a binding.
+    @contract Nothing executes unless the authority is established first. This
+    is a production surface: it selects a command from a committed registry, so
+    an authority nobody established must not get to choose it. There is no
+    parameter that skips this.
     """
 
-    artifacts, authority, specifications = _authority(work_dir)
+    context = establish_authority(work_dir, repository_root)
+    if not context.established:
+        raise EvaluationError(f"AUTHORITY_NOT_ESTABLISHED: {context.refusal}")
+    return _run_established(context, specification_uid)
+
+
+def _run_established(context: AuthorityContext, specification_uid: str) -> VerificationEvidence:
+    """Execute one verification under authority that has already been established."""
+
+    work_dir, repository_root = context.work_dir, context.repository_root
+    authority, specifications = context.authority, context.specifications
     specification = specifications.get(specification_uid)
     if specification is None:
         raise EvaluationError(f"UNKNOWN_VERIFICATION_SPECIFICATION:{specification_uid}")

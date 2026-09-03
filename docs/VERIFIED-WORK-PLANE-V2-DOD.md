@@ -52,12 +52,12 @@ CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
 
 POLICY_ROOT_ATOMICITY:           ADDRESSED, awaiting external review
 HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review (commit + path + digest)
-AUTHORITY_PREFLIGHT:             ADDRESSED, awaiting external review (nothing executes before authority holds)
+AUTHORITY_PREFLIGHT:             ADDRESSED, awaiting external review (one boundary, every production surface)
 APPROVAL_SCOPE:                  ADDRESSED, awaiting external review (decided, not left ambiguous)
 BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A110)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A112)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -148,6 +148,12 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Tenth-round correction, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| `ainative verify` executed before the preflight, and exited 0 | One `establish_authority()` boundary, used by `evaluate_work` and `run_verification` alike; the established context is passed to an internal runner so the chain is walked once, not once per specification | A111, A112 |
 
 ## Ninth-round corrections, awaiting review
 
@@ -271,7 +277,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 162 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 168 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -311,12 +317,11 @@ cases execute.
   requirement (trusted bootstrap precedes controlled-agent access), not a
   mechanism. ADR-0006 and case A101 state it; an external trust source is the
   only mechanical answer and is not built.
-- `run_verification` — the `ainative verify` entry point — runs one declared
-  command on request without the authority preflight. It produces evidence, not
-  a verdict, and the evaluator never reads recorded evidence; but it is a
-  production entry point that executes a registry-chosen command, and the
-  preflight was scoped to `evaluate_work` because that is where the review
-  located the finding.
+- `_valid_root_chain` still measures each *historical* root's
+  `required_mutation_facts` against the current authority observation, while
+  each *transition* is measured against its own bound evidence. No
+  false-success reproducer is known for it; recorded as a semantic cleanup
+  rather than acted on, at the tenth review's suggestion.
 - A historical transition's facts are re-established from the commit that
   authorized it, which is immutable — but against the signer set the anchor
   pins *today*. Removing a signer therefore invalidates that identity's earlier

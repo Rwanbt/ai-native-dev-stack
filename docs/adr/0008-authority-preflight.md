@@ -103,10 +103,33 @@ human-only specification, and nothing runnable).
 Reverting the change makes seven blocking cases fail while both controls keep
 passing.
 
-**Not covered:** `run_verification` — the `ainative verify` entry point — still
-runs one declared command on request without the preflight. It produces
-evidence, not a verdict, and the evaluator never reads recorded evidence; but
-it is a production entry point that executes a registry-chosen command. The
-preflight was scoped to `evaluate_work` because that is where the review
-located the finding, and widening it is a decision a reviewer should make
-rather than one taken quietly here.
+## Amendment after the tenth review — one boundary, every surface
+
+The scoping note above was the right thing to report and the wrong place to
+stop. `ainative verify` did execute a registry-chosen command under authority
+nobody had established, **and exited 0 doing it**. That recorded evidence is
+never consumed by a verdict is beside the point: this is an execution-authority
+question, not an evidence-reuse one.
+
+`establish_authority(work_dir, repository_root) -> AuthorityContext` is now the
+single boundary. It establishes committed state, the verified project anchor,
+that the project governs this work, the initial admission, the current policy
+and root, the complete chain, the historical policy chain, each transition's
+own evidence, and the authority provenance — and it starts no process.
+
+```text
+run_verification(...)          evaluate_work(...)
+  → establish_authority()        → establish_authority()
+  → refuse unless established    → refuse unless established
+  → _run_established(ctx, uid)   → for each machine spec: _run_established(ctx, uid)
+```
+
+`_run_established` is internal, so the chain is walked once per evaluation
+rather than once per specification, and there is no public parameter that skips
+the gate — no `skip_authority=`, no `trusted=`, no `preflight=`. A111 asserts
+that `run_verification` accepts exactly three arguments.
+
+`ainative debug run-command` is deliberately **not** gated. Everything it
+evaluates comes from the caller, it labels its own output `"authority": "none"`,
+and that distinction is worth keeping: a production surface is gated, an
+explicitly caller-controlled one is not authority at all.

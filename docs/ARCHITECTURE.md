@@ -187,10 +187,19 @@ contracts sit at the same bar.
 
 ### Authority is decided before anything executes
 
-`evaluate_work` establishes the whole of the authority — the verified project anchor, the
-work's admission, the current policy and root, the complete root chain with each
-transition's own evidence — **before a single registered command starts**. If any of it
-cannot be established the verdict is `INVALID` and **zero verification commands run**.
+`establish_authority()` is the single production boundary. It establishes the verified
+project anchor, the work's admission, the current policy and root, the complete root chain
+with each transition's own evidence — and starts no process. Every production surface that
+executes anything goes through it **before a single registered command starts**.
+
+| Surface | Gated |
+| --- | --- |
+| `ainative converge` / `evaluate_work` | yes — unestablished authority is `INVALID`, exit 2, zero commands run |
+| `ainative verify` / `run_verification` | yes — unestablished authority is refused, exit 2, zero commands run |
+| `ainative debug run-command` | **no, deliberately** — everything it evaluates comes from the caller, and it labels its own output `"authority": "none"` |
+
+There is no parameter that skips the gate. `run_verification` takes a work directory, a
+checkout and a specification, and nothing else.
 
 A verdict that fails closed after the fact is not the same as never having let an authority
 nobody could validate decide what executes. `evaluate_authority_trust()` is the pure

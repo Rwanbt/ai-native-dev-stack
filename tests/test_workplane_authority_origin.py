@@ -1,4 +1,4 @@
-"""Authority attacks A72-A110: who may create evidence, and who may change the rules.
+"""Authority attacks A72-A112: who may create evidence, and who may change the rules.
 
 The A54-A70 matrix proved that the evaluator does not accept authority from its
 caller's arguments. These cases ask the next question: can a caller manufacture
@@ -6,6 +6,9 @@ the things the evaluator does accept — a verification result, a provenance
 claim, an approval, or a weaker rule to be measured against.
 """
 
+import contextlib
+import inspect
+import io
 import json
 import shutil
 import subprocess
@@ -18,7 +21,8 @@ from ainative_workplane.bootstrap import BootstrapError, anchor_refusal, bootstr
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.controller import ControllerError, WorkController
 from ainative_workplane.convergence import VERDICT_EXIT_CODES
-from ainative_workplane.evaluator import SUCCESS_CONDITION, EvaluationError, evaluate_work
+from ainative_workplane.cli import main
+from ainative_workplane.evaluator import SUCCESS_CONDITION, EvaluationError, evaluate_work, run_verification
 from ainative_workplane.evidence import VerificationEvidence
 from ainative_workplane.predicates import predicate_refusal
 from ainative_workplane.provenance import ProvenanceFacts, observe, signature_signers
@@ -1319,6 +1323,140 @@ class AuthorityClassificationTests(unittest.TestCase):
         work.commit_governed_state()
         self.break_chain(work, revision=2)
         self.assert_invalid(work)
+
+
+class VerifyEntrypointTests(unittest.TestCase):
+    """A111: `ainative verify` is a production surface, so it is gated too.
+
+    Round 9 put the preflight in `evaluate_work`. `run_verification` kept
+    loading the authority files and running the command they named -- and
+    exiting 0 while doing it. That recorded evidence is never consumed by a
+    verdict is beside the point: a command was selected by authority nobody had
+    established, and it ran.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        return GovernedWork(self.directory, **kwargs)
+
+    def verify(self, work):
+        return main(["verify", "--work", str(work.work), "--repo", str(work.repo), "--verification", work.specification_uid])
+
+    def refused(self, work, sentinel):
+        self.assertEqual(2, self.verify(work))
+        self.assertFalse(sentinel.exists(), "a command ran through `verify` under unestablished authority")
+        self.assertFalse((work.work / "runs").exists() and any((work.work / "runs").glob("*.json")))
+
+    def break_chain(self, work):
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        successor = work.successor_root(committed["approval_root"])
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        manifest = work.work / "manifest.json"
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+        for entry in recorded["root_chain"]:
+            if "authority" in entry:
+                entry["authority"] = {**entry["authority"], "approval_digest": "b" * 64}
+        manifest.write_text(json.dumps(recorded, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+    def test_a111_verify_refuses_an_ungoverned_work(self):
+        work = self.governed(anchor=False)
+        sentinel = self.directory / "verify-ungoverned.txt"
+        work.sentinel_command(sentinel)
+        self.refused(work, sentinel)
+
+    def test_a111_verify_refuses_a_broken_root_chain(self):
+        work = self.governed()
+        self.break_chain(work)
+        sentinel = self.directory / "verify-chain.txt"
+        work.sentinel_command(sentinel)
+        self.refused(work, sentinel)
+
+    def test_a111_verify_refuses_a_work_that_was_never_admitted(self):
+        work = self.governed()
+        creation_approval_path(work.work).unlink()
+        sentinel = self.directory / "verify-unadmitted.txt"
+        work.sentinel_command(sentinel)
+        self.refused(work, sentinel)
+
+    def test_a111_verify_still_works_under_valid_authority(self):
+        """The control. A gate that refuses everything is not a gate."""
+
+        work = self.governed()
+        sentinel = self.directory / "verify-valid.txt"
+        work.sentinel_command(sentinel)
+        self.assertEqual(0, self.verify(work))
+        self.assertTrue(sentinel.exists())
+        recorded = list((work.work / "runs").glob("*.json"))
+        self.assertEqual(1, len(recorded))
+        self.assertEqual("PASS", json.loads(recorded[0].read_text(encoding="utf-8"))["result"])
+
+    def test_a111_the_public_api_offers_no_way_to_skip_the_gate(self):
+        """No `skip_authority=`, no `trusted=`, no `preflight=`."""
+
+        accepted = set(inspect.signature(run_verification).parameters)
+        self.assertEqual({"work_dir", "repository_root", "specification_uid"}, accepted)
+        with self.assertRaises(EvaluationError) as refusal:
+            run_verification(self.governed(anchor=False).work, self.directory / "repo", "verify_missing")
+        self.assertIn("AUTHORITY_NOT_ESTABLISHED", str(refusal.exception))
+
+
+class ExecutionSurfaceTests(unittest.TestCase):
+    """A112: which surfaces execute, and which of them are gated.
+
+    Stated as behaviour rather than as a call-graph assertion, because the
+    invariant is about what a user can make happen.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        return GovernedWork(self.directory, **kwargs)
+
+    def test_a112_converge_and_verify_are_gated_and_debug_is_not(self):
+        work = self.governed(anchor=False)
+        sentinel = self.directory / "surface.txt"
+        work.sentinel_command(sentinel)
+
+        # converge: gated.
+        self.assertEqual(2, main(["converge", "--work", str(work.work), "--repo", str(work.repo)]))
+        self.assertFalse(sentinel.exists())
+
+        # verify: gated.
+        self.assertEqual(2, main(["verify", "--work", str(work.work), "--repo", str(work.repo), "--verification", work.specification_uid]))
+        self.assertFalse(sentinel.exists())
+
+        # debug run-command: deliberately not gated, and it says so. Everything
+        # it evaluates comes from the caller, which is the whole point of it.
+        registry = self.directory / "registry.json"
+        registry.write_text(json.dumps(work.registry()), encoding="utf-8")
+        binding = self.directory / "binding.json"
+        binding.write_text(json.dumps(self.loose_binding(work)), encoding="utf-8")
+        emitted = io.StringIO()
+        with contextlib.redirect_stdout(emitted):
+            code = main(["debug", "run-command", "--registry", str(registry), "--binding", str(binding), "--command", "check", "--cwd", str(work.repo), "--runs-dir", str(self.directory / "loose")])
+        self.assertEqual(0, code)
+        self.assertTrue(sentinel.exists(), "the debug surface is caller-controlled and must still run")
+        self.assertEqual("none", json.loads(emitted.getvalue())["authority"])
+
+    def loose_binding(self, work):
+        snapshot = build_repository_snapshot(work.repo, scope=["tests/check.py"], dependency_paths=["src/app.py"], command_registry_digest=canonical_digest(work.registry()), policy_digest=work.commitment)
+        return {
+            "work": {"uid": generate_uid("work"), "digest": DIGEST},
+            "contract_revision": 1, "contract_digest": DIGEST,
+            "verification_specification": {"uid": work.specification_uid, "digest": DIGEST},
+            "command_registry_digest": canonical_digest(work.registry()), "policy_digest": work.commitment,
+            "approval_root": {"uid": work.approval_root["uid"], "digest": work.approval_root["root_digest"]},
+            "repository_snapshot": snapshot_reference(snapshot),
+            "snapshot_content_digest": snapshot["content_digest"],
+            "snapshot_dependency_digest": snapshot["dependency_digest"],
+            "snapshot_head": snapshot["head"],
+            "producer": "ainative-workplane", "producer_version": "0.1.0",
+            "evidence_provenance": "GIT_RECORDED",
+        }
 
 
 if __name__ == "__main__":
