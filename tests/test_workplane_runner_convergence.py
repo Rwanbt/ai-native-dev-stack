@@ -108,7 +108,29 @@ class RunnerConvergenceTests(unittest.TestCase):
         self.assertEqual("INVALID", missing.verdict)
         self.assertIn("NO_MEANINGFUL_REQUIREMENTS", [gap.code for gap in missing.gaps])
         self.assertIn("FRESHNESS_UNAVAILABLE", [gap.code for gap in missing.gaps])
-        self.assertIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in missing.gaps])
+        # An empty contract declares no verification, so missing machine
+        # evidence is not the gap; having no requirements is.
+        self.assertNotIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in missing.gaps])
+
+        declared = generate_uid("verify")
+        graph_with_spec = analyze(
+            [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": "a" * 64}]}],
+            [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": "a" * 64}, "verification_specifications": [{"uid": declared, "digest": "a" * 64}]}],
+            [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": "a" * 64}]}],
+            [{"uid": declared, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]}],
+        )
+        unverified = converge(graph_with_spec, [], freshness=FreshnessResult(frozenset()), trust=TrustVerdict(True, "TRUSTED"))
+        self.assertIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in unverified.gaps])
+        # A human-approval specification expects no run, so its absence is not one.
+        human = analyze(
+            [{"uid": "req-1", "acceptance_criteria": [{"uid": "ac-1", "digest": "a" * 64}]}],
+            [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": "a" * 64}, "verification_specifications": [{"uid": declared, "digest": "a" * 64}]}],
+            [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": "a" * 64}]}],
+            [{"uid": declared, "relationship": "human_approval", "approval_predicate": {"predicate_id": "signoff", "policy_digest": "a" * 64}}],
+        )
+        approved_only = converge(human, [], freshness=FreshnessResult(frozenset()), trust=TrustVerdict(True, "TRUSTED"), machine_specs=frozenset())
+        self.assertNotIn("NO_VERIFICATION_EVIDENCE", [gap.code for gap in approved_only.gaps])
+        self.assertIn("UNVERIFIED_SPECIFICATION", [gap.code for gap in approved_only.gaps])
         forged = converge(graph, [{"uid": "run-1", "status": "PASS"}])
         self.assertEqual("INVALID", forged.verdict)
         self.assertIn("INVALID_VERIFICATION_EVIDENCE", [gap.code for gap in forged.gaps])

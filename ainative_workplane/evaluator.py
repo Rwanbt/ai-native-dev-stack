@@ -150,7 +150,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], evidence_facts=observation, authority_facts=authority_observation)
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], evidence_facts=observation, authority_facts=authority_observation)
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -299,9 +299,11 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     # Trust and freshness were established per evidence above; what remains for
     # the kernel is whether the authority documents exist at all.
     authority_present = policy is not None and approval_root is not None and registry is not None
+    machine_specs = frozenset(uid for uid, specification in specifications.items() if specification.get("relationship") != "human_approval")
     verdict = converge(
         replace(graph, gaps=graph.gaps + rejected),
         eligible,
+        machine_specs=machine_specs,
         freshness=FreshnessResult(frozenset()) if authority_present else None,
         trust=TrustVerdict(True, "AUTHORITY_PRESENT") if authority_present else None,
         policy=policy,
@@ -335,6 +337,7 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "work_uid": manifest["work_uid"],
         "revision": manifest["revision"],
         "manifest": manifest,
+        "root_history": controller.root_history(),
     }
     return artifacts, authority, specifications
 

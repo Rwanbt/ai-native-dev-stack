@@ -56,7 +56,7 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), authorization_facts: Any = None) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), authorization_facts: Any = None, machine_specs: frozenset[str] | None = None) -> ConvergenceVerdict:
     """Decide convergence from bound evidence only.
 
     @contract Evidence supports convergence only when its verification
@@ -70,7 +70,7 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
     """
 
     try:
-        gaps = _collect_gaps(traceability, runs, freshness, trust)
+        gaps = _collect_gaps(traceability, runs, freshness, trust, machine_specs)
         gaps = apply_authorizations(gaps, policy=policy, waivers=waivers, human_approvals=human_approvals, facts=authorization_facts)
     except Exception as error:  # WHY: an engine failure must surface as a verdict, never as a success or a traceback in the caller.
         return ConvergenceVerdict("INTERNAL_ERROR", (), f"convergence engine failed: {type(error).__name__}", "")
@@ -81,7 +81,7 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
     return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
 
 
-def _collect_gaps(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], freshness: FreshnessResult | None, trust: TrustVerdict | None) -> list[Gap]:
+def _collect_gaps(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], freshness: FreshnessResult | None, trust: TrustVerdict | None, machine_specs: frozenset[str] | None = None) -> list[Gap]:
     gaps = list(traceability.gaps)
     if traceability.requirement_count == 0:
         gaps.append(Gap("NO_MEANINGFUL_REQUIREMENTS", None, "a work contract requires at least one requirement"))
@@ -93,9 +93,14 @@ def _collect_gaps(traceability: TraceabilityResult, runs: Iterable[VerificationE
     elif not trust.trusted:
         gaps.append(Gap(trust.code, None, "evidence authority is insufficient"))
     run_list = list(runs)
-    if not run_list:
-        gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
     declared_specs = {spec_uid for _, spec_uid in traceability.acceptance_to_verification}
+    # A specification satisfied by human approval has no command to run, so
+    # absent machine evidence is not a gap for it. It still needs a verified
+    # approval: UNVERIFIED_SPECIFICATION below is emitted for every declared
+    # specification, and only an authorized approval removes it.
+    expects_machine_evidence = declared_specs if machine_specs is None else declared_specs & machine_specs
+    if not run_list and expects_machine_evidence:
+        gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
     passed_specs: set[str] = set()
     for run in run_list:
         if not isinstance(run, VerificationEvidence):

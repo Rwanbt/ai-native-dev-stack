@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .controller import WorkController
+from .controller import ControllerError, WorkController
 from .convergence import VERDICT_EXIT_CODES
 from .evaluator import EvaluationError, evaluate_work, run_verification
 from .runner import VerificationRunner
@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("path", type=Path)
     update.add_argument("expected_revision", type=int)
     update.add_argument("--artifact", action="append", default=[])
+    update.add_argument("--delete", action="append", default=[], help="Name an artifact to remove; nothing disappears implicitly.")
+    update.add_argument("--approval", type=Path, help="Path to the recorded mutation_approval authorizing this exact next state.")
 
     verify = commands.add_parser("verify", help="Run one committed verification and record bound evidence.")
     verify.add_argument("--work", type=Path, required=True)
@@ -83,7 +85,7 @@ def _work(args: argparse.Namespace) -> int:
     elif args.work_command == "validate":
         manifest = controller.read()
     else:
-        manifest = controller.mutate(args.expected_revision, _artifacts(args.artifact))
+        manifest = controller.mutate(args.expected_revision, _artifacts(args.artifact), delete_artifacts=args.delete, approval=args.approval)
     _emit(manifest)
     return 0
 
@@ -132,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.entrypoint == "debug":
             return _debug_run_command(args)
         return _converge(args)
-    except EvaluationError as refusal:
+    except (EvaluationError, ControllerError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
 

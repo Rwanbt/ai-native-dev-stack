@@ -234,6 +234,28 @@ class WorkController:
         finally:
             self._unlock(handle)
 
+    def root_history(self) -> list[dict[str, Any]]:
+        """Every approval root this work has committed, oldest first.
+
+        A rotated root names a predecessor, and the predecessor is not
+        somewhere else: it is the root of an earlier revision of this work.
+        Resolving it here is what lets the production path validate a chain
+        instead of only a genesis root.
+        """
+
+        history: list[dict[str, Any]] = []
+        if not self.revisions.is_dir():
+            return history
+        for revision in sorted((child for child in self.revisions.iterdir() if child.is_dir() and child.name.isdigit()), key=lambda child: int(child.name)):
+            candidate = revision / "approval_root.json"
+            if not candidate.is_file():
+                continue
+            try:
+                history.append(json.loads(candidate.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                continue
+        return history
+
     def normative_digest(self, artifacts: Mapping[str, Any]) -> str:
         """Digest exactly the artifacts that decide what success means."""
 
