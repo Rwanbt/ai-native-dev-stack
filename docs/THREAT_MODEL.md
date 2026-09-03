@@ -32,6 +32,27 @@ system, or protection against an actor controlling the host, checkout, and Git h
 | Crash during a mutation | Previous valid contract lost | Stage, promote immutable artifacts, atomically replace manifest last |
 | Long-running command or prompt text in `spec.md` | Denial of service or injected execution | Timeout, output limits, and non-normative prose with registered `argv` only |
 
+## Authority threats and what closes them
+
+Each row names what an attacker who controls the agent — but not the reviewer,
+the checkout's history, or the host — can attempt, and the case that proves it
+is refused.
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Arbitrary contract injection | Write any JSON file on disk | Convergence against an easier contract than the committed one | The evaluator takes a work directory; no contract argument exists | An attacker who can write through the controller changes committed state, which is visible in the manifest | A54, A68 |
+| Arbitrary policy injection | Supply a policy that lowers its own bar | Trust satisfied by a weaker rule than the governed one | Policy is read from committed state and its commitment is bound into evidence | Same as above | A61, A70 |
+| Arbitrary root injection | Supply an approval root it controls | Self-granted authority | Root is read from committed state; evidence must bind that exact root reference | Same as above | A69 |
+| Forged declared provenance | Write `"SIGNED"` or `"GIT_REVIEWED"` into evidence or a root | Claimed authority accepted as established | Declared provenance is capped at what the checkout can be observed to support | GIT_REVIEWED and CI_APPROVED are not observable at all here, so policies requiring them cannot be satisfied | A55, A56 |
+| Forged freshness input | Supply a current-identity fixture naming old digests | Stale evidence presented as fresh | Freshness is recomputed from the checkout per specification; no fixture is accepted | A file rewritten with identical size, mtime and inode during hashing is undetected | A57, A66 |
+| First-evidence trust inheritance | Order a trusted run before an untrusted one | Weak evidence laundered by a strong neighbour | Every run carries its own assessment; only individually eligible runs count | — | A59 |
+| First-evidence freshness inheritance | Order a fresh run before a stale one | Stale evidence counted | As above | — | A58 |
+| Root predecessor link without authorization | Write a successor root naming the trusted one as parent | Inherited authority without consent | A successor must carry a transition_approval naming that exact successor under the policy's predicate | The approval is a record, not a signature; a maintainer who can write both roots can write both | A62 |
+| Partial mutation deleting success conditions | Mutate one artifact | Requirements and criteria silently removed | A revision is the previous set with explicit replacements and explicit deletions | — | A63 |
+| Schema-less normative artifact | Commit `{"tasks": {...}}` with no schema | Unvalidated data read as authority | Normative names must validate; other names are marked non-normative and never read | — | A64 |
+| Unknown gap waived | Wait for a gap code nobody classified | Future gaps waivable by default | Waiver eligibility is an allowlist of eight completeness gaps | — | A67 |
+| Snapshot read during a write | Rewrite a scoped file while it is hashed | A digest of a state that never existed | Size, mtime and inode are compared before and after hashing | A rewrite preserving all three is undetected | A71 |
+
 ## Trusted computing base
 
 Everything a verdict depends on, and nothing else:

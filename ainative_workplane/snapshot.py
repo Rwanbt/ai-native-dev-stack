@@ -15,11 +15,27 @@ class SnapshotError(RuntimeError):
     pass
 
 
+def _identity(status: os.stat_result) -> tuple[int, int, int, int]:
+    return (status.st_size, status.st_mtime_ns, status.st_ino, status.st_dev)
+
+
 def _digest_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Hash a file and refuse the result if it changed while being read.
+
+    WHY: a snapshot that hashes a file being rewritten records a digest of a
+    state that never existed, and every later freshness comparison is then
+    against fiction. Size, mtime and inode are cheap and portable enough to
+    catch that; they cannot catch a rewrite that preserves all three, which is
+    stated as residual risk rather than implied away.
+    """
+
+    before = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         while chunk := stream.read(chunk_size):
             digest.update(chunk)
+    if _identity(path.stat()) != _identity(before):
+        raise SnapshotError("SNAPSHOT_RACE")
     return digest.hexdigest()
 
 

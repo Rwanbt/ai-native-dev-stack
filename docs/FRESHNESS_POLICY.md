@@ -35,6 +35,15 @@ command-registry digest, and a canonical content digest.
 - Normative JSON uses UTF-8, sorted object keys, fixed separators, and a documented
   Unicode policy before SHA-256 is calculated.
 
+## Where freshness comes from
+
+The authoritative evaluator recomputes freshness from the checkout, once per
+verification specification, using that specification's `execution_scope` as the
+snapshot scope and its `covered_implementation_paths` as the dependency set. It
+accepts no current-identity fixture from a caller, and it never derives one
+run's freshness from another's. `evaluate_freshness` remains available as a
+pure function for tests; it is not the production path.
+
 ## Practical consequence
 
 Changing `src/auth/token.ts` after a verification that scoped it invalidates the run.

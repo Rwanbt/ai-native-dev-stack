@@ -387,6 +387,34 @@ class FilesystemAdversarialTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "CASE_COLLISION"):
                 snapshot_files(directory, ["Foo.ts", "foo.ts"])
 
+    def test_a71_a_file_rewritten_while_it_is_hashed_is_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            target = Path(directory) / "moving.bin"
+            target.write_bytes(b"0" * (4 * 1024 * 1024))
+            stop = __import__("threading").Event()
+
+            def rewrite():
+                content = 1
+                while not stop.is_set():
+                    target.write_bytes(bytes([content % 251]) * (4 * 1024 * 1024))
+                    content += 1
+
+            writer = __import__("threading").Thread(target=rewrite, daemon=True)
+            writer.start()
+            try:
+                for _ in range(20):
+                    try:
+                        snapshot_files(directory, ["moving.bin"])
+                    except SnapshotError as refusal:
+                        self.assertIn("SNAPSHOT_RACE", str(refusal))
+                        return
+                    except (OSError, PermissionError):
+                        continue
+            finally:
+                stop.set()
+                writer.join(timeout=5)
+            self.skipTest("the writer never overlapped a hash on this machine")
+
     def test_a47_symlink_escape_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -26,7 +26,26 @@ are the authority; PR-00 prose is historical.
 | `traceability.py` | Structural graph, deterministic gaps, relationship scope coverage |
 | `authorization.py` | Waivers and human approvals, effective only under the policy that configured them |
 | `convergence.py` | `CONVERGED`, `NOT_CONVERGED`, `INVALID`, `INTERNAL_ERROR` and their exit codes |
-| `cli.py` | Thin headless facade: `work`, `verify`, `converge` |
+| `provenance.py` | What the checkout can be observed to establish, capping every declared claim |
+| `evaluator.py` | The authoritative boundary: committed state in, verdict out |
+| `cli.py` | Thin headless facade: `work`, `verify`, `converge`, and a labelled `debug` |
+
+## Kernel and boundary
+
+There are two convergence surfaces and confusing them is the whole risk:
+
+- `converge()` is a **pure kernel**. It decides from the traceability,
+  evidence, trust and freshness objects it is handed. That is what makes it
+  unit-testable, and exactly what makes it unsafe to expose: whoever supplies
+  its inputs decides its verdict.
+- `evaluate_work(work_dir, repository_root)` is the **authoritative
+  boundary**. It accepts two paths and derives everything else — contract,
+  policy, approval root, registry, specifications, observed provenance,
+  per-evidence trust, per-evidence freshness — from committed state and from
+  the checkout. Its signature takes no contract, policy, root, registry, trust
+  verdict or freshness result, and a test asserts that it never will.
+
+Production code and the CLI use the boundary. Tests may use the kernel.
 
 Known limitations, stated rather than implied: no blind historical validation has
 been run ([protocol](verified-work-plane-v2-historical-validation-protocol.md)), and
