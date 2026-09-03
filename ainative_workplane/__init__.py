@@ -12,7 +12,7 @@ from .contracts import SUPPORTED_SCHEMA_VERSIONS, ContractError, canonical_diges
 from .controller import ControllerError, WorkController
 from .traceability import Gap, TraceabilityResult, analyze
 from .evidence import EvidenceError, VerificationEvidence
-from .trust import TRUST_LEVELS, TrustVerdict, evaluate_trust
+from .trust import TrustVerdict, evaluate_trust, unmet
 from .authorization import WAIVABLE_GAPS, apply_authorizations
 from .freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
 from .runner import PREVIEW_CHARS, RunnerError, VerificationRunner, load_registry, redact
@@ -20,7 +20,7 @@ from .substance import ADAPTERS, Substance, SubstanceError
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_files, snapshot_reference
 from .evaluator import EvaluationError, EvidenceAssessment, WorkEvaluation, evaluate_work, run_verification
-from .provenance import ProvenanceObservation, observe
+from .provenance import OBSERVABLE_FACTS, ProvenanceFacts, observe, observe_artifact
 from .cli import main as cli_main
 from .integrations import ReadOnlyFinding, collect_findings, memory_summary
 from .metrics import PilotMetrics
@@ -38,7 +38,7 @@ __all__ = [
     "EvidenceError",
     "TrustVerdict",
     "evaluate_trust",
-    "TRUST_LEVELS",
+    "unmet",
     "WAIVABLE_GAPS",
     "apply_authorizations",
     "FreshnessResult",
@@ -65,8 +65,10 @@ __all__ = [
     "EvidenceAssessment",
     "WorkEvaluation",
     "EvaluationError",
-    "ProvenanceObservation",
+    "ProvenanceFacts",
+    "OBSERVABLE_FACTS",
     "observe",
+    "observe_artifact",
     "cli_main",
     "ReadOnlyFinding",
     "collect_findings",

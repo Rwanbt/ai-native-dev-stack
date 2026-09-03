@@ -79,7 +79,11 @@ def validate_normative(name: str, value: Any) -> None:
         _fail("UNSUPPORTED_SCHEMA", f"{name} must be a {SINGLE_ARTIFACTS[name]} artifact")
 
 RELATIONSHIP_MODES = frozenset({"direct_scope", "black_box", "external_artifact", "human_approval"})
+# Kept as descriptive metadata on artifacts. Nothing compares these strings
+# any more: a claim is not a proof, and these four properties are independent
+# rather than ranked. See ainative_workplane/provenance.py.
 PROVENANCE_VALUES = frozenset({"UNTRACKED", "GIT_DIRTY", "GIT_RECORDED", "GIT_REVIEWED", "CI_APPROVED", "SIGNED", "LOCAL_UNTRUSTED"})
+OBSERVABLE_FACTS = ("git_recorded", "git_reviewed", "ci_verified", "signature_verified")
 EFFECTIVE_WAIVER_STATES = frozenset({"effective", "expired", "revoked"})
 UID_PREFIXES = frozenset({"work", "req", "ac", "task", "verify", "run", "gap", "waiver", "approval", "root", "snapshot", "convergence"})
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -340,10 +344,22 @@ def _validate_verification_specification(value: Mapping[str, Any]) -> None:
     _provenance(_required(value, "required_evidence_provenance"), "required_evidence_provenance")
 
 
+def _fact_requirement(value: Any, field: str) -> Mapping[str, Any]:
+    """A policy states the properties it needs, each independently."""
+
+    requirement = _mapping(value, field)
+    for name, needed in requirement.items():
+        if name not in OBSERVABLE_FACTS:
+            _fail("UNKNOWN_PROVENANCE_FACT", f"{field}.{name} is not a fact the runtime can establish")
+        if not isinstance(needed, bool):
+            _fail("INVALID_FIELD", f"{field}.{name} must be a boolean")
+    return requirement
+
+
 def _validate_project_policy(value: Mapping[str, Any]) -> None:
     _predicate_reference(_required(value, "approval_predicate"), "approval_predicate")
-    for field in ("success_condition_mutation_provenance", "verification_evidence_provenance"):
-        _provenance(_required(value, field), field)
+    for field in ("required_mutation_facts", "required_evidence_facts"):
+        _fact_requirement(_required(value, field), field)
     _predicate_reference(_required(value, "waiver_approval_rule"), "waiver_approval_rule")
     _predicate_reference(_required(value, "human_approval_rule"), "human_approval_rule")
     if not isinstance(_required(value, "promotion_policy"), str) or not value["promotion_policy"]:

@@ -9,15 +9,10 @@ from .contracts import ContractError, canonical_digest, validate_artifact
 from .evidence import VerificationEvidence
 
 
-TRUST_LEVELS = {
-    "UNTRACKED": 0,
-    "GIT_DIRTY": 0,
-    "LOCAL_UNTRUSTED": 0,
-    "GIT_RECORDED": 1,
-    "GIT_REVIEWED": 2,
-    "CI_APPROVED": 3,
-    "SIGNED": 4,
-}
+# The numeric ladder is gone. It made SIGNED satisfy a policy that asked for
+# CI, because 4 >= 3, which is false about the world. Authority is now decided
+# by observed facts (see provenance.py), and the strings artifacts carry are
+# descriptive only.
 
 
 @dataclass(frozen=True)
@@ -26,19 +21,16 @@ class TrustVerdict:
     code: str
 
 
-def capped(declared: str, observed: str | None) -> str:
-    """Lower a declared provenance to what the environment could establish.
+def unmet(facts: Any, required: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the required facts an observation does not support.
 
-    @contract A declaration is a claim, not evidence. Where an observation is
-    available, no artifact may exceed it; where none is, the declaration
-    stands and the caller carries that risk knowingly.
+    @contract Absent an observation, nothing is established: every required
+    fact is reported unmet rather than assumed.
     """
 
-    if declared not in TRUST_LEVELS:
-        return "LOCAL_UNTRUSTED"
-    if observed is None:
-        return declared
-    return declared if TRUST_LEVELS[declared] <= TRUST_LEVELS[observed] else observed
+    if facts is None:
+        return tuple(sorted(name for name, needed in required.items() if needed))
+    return facts.unmet(required)
 
 
 def _without_digest(value: Any, digest_key: str) -> Any:
@@ -69,7 +61,7 @@ def _policy_predicates_match(policy: Mapping[str, Any], commitment: str) -> bool
     return True
 
 
-def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, Any], *, predicate_id: str, policy_digest: str, required_level: int, observed: str | None) -> bool:
+def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, Any], *, predicate_id: str, policy_digest: str, required: Mapping[str, Any], facts: Any) -> bool:
     """Check that the predecessor's authority accepted this exact successor.
 
     WHY this is separate from the predecessor link: a successor pointing at a
@@ -87,10 +79,10 @@ def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, An
         return False
     if approval.get("predecessor_digest") != parent.get("root_digest"):
         return False
-    return TRUST_LEVELS[capped(str(approval.get("provenance")), observed)] >= required_level
+    return not unmet(facts, required)
 
 
-def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required_level: int, approval_chain: Iterable[Mapping[str, Any]], observed: str | None = None, predicate_id: str = "") -> bool:
+def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required: Mapping[str, Any], approval_chain: Iterable[Mapping[str, Any]], facts: Any = None, predicate_id: str = "") -> bool:
     roots: dict[str, Mapping[str, Any]] = {root["uid"]: root}
     try:
         for candidate in approval_chain:
@@ -106,7 +98,7 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required_l
             return False
         if current.get("root_digest") != approval_root_commitment(current):
             return False
-        if TRUST_LEVELS[capped(current["root_provenance"], observed)] < required_level:
+        if unmet(facts, required):
             return False
         seen.add(uid)
         predecessor = current.get("predecessor")
@@ -117,17 +109,18 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required_l
         parent = roots.get(predecessor.get("uid"))
         if parent is None or predecessor.get("digest") != parent.get("root_digest"):
             return False
-        if not _authorized_transition(current, parent, predicate_id=predicate_id, policy_digest=policy_digest, required_level=required_level, observed=observed):
+        if not _authorized_transition(current, parent, predicate_id=predicate_id, policy_digest=policy_digest, required=required, facts=facts):
             return False
         current = parent
 
 
-def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, observed_provenance: str | None = None) -> TrustVerdict:
+def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None) -> TrustVerdict:
     """Reject missing, malformed, mismatched, or insufficient authority.
 
-    @contract When observed_provenance is supplied, every declared provenance
-    is capped at it before comparison, so an artifact cannot assert authority
-    the environment could not establish.
+    @contract Authority comes from facts observed about the objects
+    themselves — the checkout for evidence, the artifact's own location for the
+    approval root — never from a provenance string an artifact carries about
+    itself.
     """
 
     if policy is None or approval_root is None:
@@ -146,9 +139,8 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
     if record["policy_digest"] != commitment or approval_root["policy_digest"] != commitment:
         return TrustVerdict(False, "POLICY_CHANGED")
-    required = policy["verification_evidence_provenance"]
-    if TRUST_LEVELS[capped(record["evidence_provenance"], observed_provenance)] < TRUST_LEVELS[required]:
+    if unmet(evidence_facts, policy["required_evidence_facts"]):
         return TrustVerdict(False, "INSUFFICIENT_EVIDENCE_PROVENANCE")
-    if not _valid_root_chain(approval_root, policy_digest=commitment, required_level=TRUST_LEVELS[required], approval_chain=approval_chain, observed=observed_provenance, predicate_id=policy["approval_predicate"]["predicate_id"]):
+    if not _valid_root_chain(approval_root, policy_digest=commitment, required=policy["required_mutation_facts"], approval_chain=approval_chain, facts=authority_facts, predicate_id=policy["approval_predicate"]["predicate_id"]):
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
     return TrustVerdict(True, "TRUSTED")

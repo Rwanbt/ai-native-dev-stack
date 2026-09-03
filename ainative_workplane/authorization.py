@@ -13,7 +13,7 @@ from typing import Any, Iterable, Mapping
 
 from .contracts import ContractError, validate_artifact
 from .traceability import Gap
-from .trust import TRUST_LEVELS, policy_commitment
+from .trust import policy_commitment, unmet
 
 
 # An allowlist, not a blocklist: a gap code nobody thought about when it was
@@ -58,8 +58,13 @@ def _expired(record: Mapping[str, Any], now: datetime) -> bool:
     return moment <= now
 
 
-def _rejection(record: Mapping[str, Any], policy: Mapping[str, Any], commitment: str, rule_field: str) -> str | None:
-    """Return why the record lacks authority, or None when it holds."""
+def _rejection(record: Mapping[str, Any], policy: Mapping[str, Any], commitment: str, rule_field: str, facts: Any) -> str | None:
+    """Return why the record lacks authority, or None when it holds.
+
+    WHY facts rather than record["approval_provenance"]: that field is a claim
+    the same actor wrote. An exception that removes a gap has to clear the same
+    bar as any other authority operation, measured against the artifact.
+    """
 
     if record.get("policy_digest") != commitment:
         return "policy commitment does not match the policy in force"
@@ -69,13 +74,13 @@ def _rejection(record: Mapping[str, Any], policy: Mapping[str, Any], commitment:
         return "no approval predicate is declared"
     if predicate.get("predicate_id") != rule["predicate_id"] or predicate.get("policy_digest") != commitment:
         return "approval predicate is not the one the policy configures"
-    required = policy["success_condition_mutation_provenance"]
-    if TRUST_LEVELS[record["approval_provenance"]] < TRUST_LEVELS[required]:
-        return "approval provenance is below the policy requirement"
+    missing = unmet(facts, policy["required_mutation_facts"])
+    if missing:
+        return f"approval provenance does not establish {', '.join(missing)}"
     return None
 
 
-def _classify(record: Any, policy: Mapping[str, Any] | None, commitment: str, rule_field: str, kind: str, now: datetime) -> tuple[Mapping[str, Any] | None, Gap | None]:
+def _classify(record: Any, policy: Mapping[str, Any] | None, commitment: str, rule_field: str, kind: str, now: datetime, facts: Any) -> tuple[Mapping[str, Any] | None, Gap | None]:
     """Return the record when it may act, otherwise the gap explaining why not."""
 
     uid = _uid_of(record)
@@ -90,13 +95,13 @@ def _classify(record: Any, policy: Mapping[str, Any] | None, commitment: str, ru
         return None, Gap("WAIVER_NOT_EFFECTIVE", uid, f"waiver state is {record.get('state')!r}, not effective")
     if expired:
         return None, Gap(f"{kind}_EXPIRED", uid, f"{kind.lower()} expired before this evaluation")
-    reason = _rejection(record, policy, commitment, rule_field)
+    reason = _rejection(record, policy, commitment, rule_field, facts)
     if reason is not None:
         return None, Gap(f"UNAUTHORIZED_{kind}", uid, reason)
     return record, None
 
 
-def apply_authorizations(gaps: Iterable[Gap], *, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), now: datetime | None = None) -> list[Gap]:
+def apply_authorizations(gaps: Iterable[Gap], *, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), now: datetime | None = None, facts: Any = None) -> list[Gap]:
     """Remove the gaps a valid, authorized waiver or approval covers.
 
     @contract Every supplied artifact either suppresses exactly the gap it
@@ -114,13 +119,13 @@ def apply_authorizations(gaps: Iterable[Gap], *, policy: Mapping[str, Any] | Non
     effective_waivers: list[Mapping[str, Any]] = []
     effective_approvals: list[Mapping[str, Any]] = []
     for record in waiver_list:
-        accepted, rejected = _classify(record, policy, commitment, "waiver_approval_rule", "WAIVER", moment)
+        accepted, rejected = _classify(record, policy, commitment, "waiver_approval_rule", "WAIVER", moment, facts)
         if accepted is None:
             rejections.append(rejected)
         else:
             effective_waivers.append(accepted)
     for record in approval_list:
-        accepted, rejected = _classify(record, policy, commitment, "human_approval_rule", "HUMAN_APPROVAL", moment)
+        accepted, rejected = _classify(record, policy, commitment, "human_approval_rule", "HUMAN_APPROVAL", moment, facts)
         if accepted is None:
             rejections.append(rejected)
         else:

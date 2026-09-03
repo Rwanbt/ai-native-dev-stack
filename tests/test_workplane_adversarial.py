@@ -22,6 +22,7 @@ from ainative_workplane.evidence import build_verification_evidence
 from ainative_workplane.freshness import FreshnessResult, evaluate_checkout_freshness, evaluate_freshness
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry, redact
 from ainative_workplane.snapshot import SnapshotError, build_repository_snapshot, snapshot_files, snapshot_reference
+from ainative_workplane.provenance import ProvenanceFacts
 from ainative_workplane.traceability import Gap, analyze
 from ainative_workplane.trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
 
@@ -30,12 +31,13 @@ OTHER = "b" * 64
 HEAD = "0" * 40
 
 
-def build_policy(*, required="GIT_REVIEWED"):
+def build_policy(*, required=None):
+    required = {"git_recorded": True} if required is None else required
     policy = {
         "schema_name": "project_policy", "schema_version": 1,
         "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
-        "success_condition_mutation_provenance": required,
-        "verification_evidence_provenance": required,
+        "required_mutation_facts": required,
+        "required_evidence_facts": required,
         "waiver_approval_rule": {"predicate_id": "waiver-board", "policy_digest": DIGEST},
         "human_approval_rule": {"predicate_id": "human-signoff", "policy_digest": DIGEST},
         "promotion_policy": "explicit",
@@ -43,7 +45,7 @@ def build_policy(*, required="GIT_REVIEWED"):
     commitment = policy_commitment(policy)
     for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
         policy[field]["policy_digest"] = commitment
-    root = {"schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"), "root_digest": DIGEST, "policy_digest": commitment, "root_provenance": required, "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "adversarial"}}
+    root = {"schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"), "root_digest": DIGEST, "policy_digest": commitment, "root_provenance": "GIT_RECORDED", "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "adversarial"}}
     root["root_digest"] = approval_root_commitment(root)
     return policy, commitment, root
 
@@ -136,35 +138,47 @@ class ContractAdversarialTests(unittest.TestCase):
 
 
 class TrustAdversarialTests(unittest.TestCase):
-    def test_a07_to_a12_authority_cannot_be_asserted_by_the_evidence(self):
-        policy, commitment, root = build_policy(required="SIGNED")
+    def test_a07_to_a11_a77_a79_authority_comes_from_facts_not_from_claims(self):
+        policy, commitment, root = build_policy(required={"git_recorded": True})
         root_reference = {"uid": root["uid"], "digest": root["root_digest"]}
+        record = evidence(policy_digest=commitment, root=root_reference, provenance="SIGNED")
 
-        # A07 evidence claims a provenance below what the policy demands
-        weak = evidence(policy_digest=commitment, root=root_reference, provenance="GIT_REVIEWED")
-        self.assertEqual("INSUFFICIENT_EVIDENCE_PROVENANCE", evaluate_trust(weak, policy=policy, approval_root=root).code)
-
-        signed = evidence(policy_digest=commitment, root=root_reference, provenance="SIGNED")
-        self.assertEqual("TRUSTED", evaluate_trust(signed, policy=policy, approval_root=root).code)
+        # A07 nothing observed establishes nothing, however loud the claim.
+        self.assertEqual("INSUFFICIENT_EVIDENCE_PROVENANCE", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=ProvenanceFacts(), authority_facts=ProvenanceFacts()).code)
+        established = ProvenanceFacts(git_recorded=True, local_dirty=False)
+        self.assertEqual("TRUSTED", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=established, authority_facts=established).code)
 
         # A08 missing root
-        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(signed, policy=policy, approval_root=None).code)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(record, policy=policy, approval_root=None, evidence_facts=established, authority_facts=established).code)
 
         # A09 mismatched root
         other_root = dict(root)
         other_root["uid"] = generate_uid("root")
         other_root["root_digest"] = approval_root_commitment(other_root)
-        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(signed, policy=policy, approval_root=other_root).code)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(record, policy=policy, approval_root=other_root, evidence_facts=established, authority_facts=established).code)
 
         # A10 a predicate that approves itself is not the configured predicate
         self_approving = dict(policy)
         self_approving["approval_predicate"] = {"predicate_id": "itself", "policy_digest": OTHER}
-        self.assertEqual("POLICY_COMMITMENT_INVALID", evaluate_trust(signed, policy=self_approving, approval_root=root).code)
+        self.assertEqual("POLICY_COMMITMENT_INVALID", evaluate_trust(record, policy=self_approving, approval_root=root, evidence_facts=established, authority_facts=established).code)
 
         # A11 a policy that lowers its own bar no longer matches the commitment the evidence bound
-        lowered, lowered_commitment, _ = build_policy(required="LOCAL_UNTRUSTED")
+        lowered, lowered_commitment, _ = build_policy(required={})
         self.assertNotEqual(commitment, lowered_commitment)
-        self.assertEqual("POLICY_CHANGED", evaluate_trust(signed, policy=lowered, approval_root=root).code)
+        self.assertEqual("POLICY_CHANGED", evaluate_trust(record, policy=lowered, approval_root=root, evidence_facts=established, authority_facts=established).code)
+
+    def test_a77_a78_a79_a_signature_is_not_a_review_and_not_a_ci_run(self):
+        signed_only = ProvenanceFacts(git_recorded=True, signature_verified=True, local_dirty=False)
+        # A77 a signature does not stand in for CI.
+        self.assertEqual(("ci_verified",), signed_only.unmet({"ci_verified": True}))
+        # A78 nor for human review.
+        self.assertEqual(("git_reviewed",), signed_only.unmet({"git_reviewed": True}))
+        # A79 nor does CI stand in for review.
+        ci_only = ProvenanceFacts(git_recorded=True, ci_verified=True, local_dirty=False)
+        self.assertEqual(("git_reviewed",), ci_only.unmet({"git_reviewed": True}))
+        # Each fact satisfies exactly itself, and a policy may ask for several.
+        self.assertEqual((), signed_only.unmet({"git_recorded": True, "signature_verified": True}))
+        self.assertEqual(("ci_verified",), signed_only.unmet({"signature_verified": True, "ci_verified": True}))
 
     def test_a12_registry_change_is_detected_by_digest(self):
         original = registry([sys.executable, "-c", "print('one')"])

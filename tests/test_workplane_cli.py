@@ -36,7 +36,7 @@ class AuthoritativeCliTests(unittest.TestCase):
 
         converged = cli("converge", "--work", work.work, "--repo", work.repo, expect=0)
         self.assertEqual("CONVERGED", converged["verdict"])
-        self.assertEqual("GIT_RECORDED", converged["observed_provenance"]["level"])
+        self.assertTrue(converged["observed_provenance"]["git_recorded"])
         self.assertTrue(converged["evidence"][0]["eligible"])
 
     def test_a_failing_verification_moves_the_exit_code_to_one(self):

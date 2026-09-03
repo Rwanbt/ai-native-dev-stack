@@ -1,75 +1,149 @@
-"""Observe the provenance a checkout can actually establish.
+"""Observe what is actually established about an object, as separate facts.
 
-Evidence and approval roots carry a provenance string. On its own that string
-proves only that someone wrote it: an artifact claiming SIGNED is not a
-signature, and one claiming GIT_REVIEWED is not a review. This module observes
-the repository and reports the highest level it can establish by itself, and
-the evaluator caps every declared level at what was observed.
+Two mistakes this module exists to prevent.
 
-What a local checkout can establish:
+The first is treating a declaration as its own proof: an artifact saying
+`"SIGNED"` is not a signature, and one saying `"GIT_REVIEWED"` is not a review.
+So nothing here reads a claim — it looks at the object.
 
-    LOCAL_UNTRUSTED   no usable Git checkout, or the state cannot be observed
-    GIT_DIRTY         a checkout exists and the observed paths are modified
-    GIT_RECORDED      the observed paths are tracked and match the commit
-    SIGNED            the head commit's signature verifies
+The second is ranking those properties on one scale. A signature verifies a
+signature. It does not show that a human reviewed anything, and it does not
+show that CI ran. Under a numeric order where SIGNED outranks CI_APPROVED, a
+signed commit satisfies a policy that demanded CI, which is simply false. Facts
+are therefore independent booleans, and a policy states the ones it needs.
 
-GIT_REVIEWED and CI_APPROVED are deliberately not observable here. They assert
-that a *process* happened, which a checkout cannot show, and this build ships
-no attestation verifier. A policy demanding either therefore cannot be
-satisfied — which is the fail-closed answer, not a gap to paper over.
+Observation is also per object, not per repository. A clean source checkout
+says something about the source; it says nothing about a work directory, an
+approval root or a waiver that lives somewhere else. `observe` takes the paths
+whose provenance is in question.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import subprocess
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
-from .trust import TRUST_LEVELS
-
-# The levels this module is able to establish on its own.
-OBSERVABLE = ("LOCAL_UNTRUSTED", "GIT_DIRTY", "GIT_RECORDED", "SIGNED")
+# Every property the runtime can establish for itself. A policy may require any
+# subset; it may never require something absent from this list, because nothing
+# would be able to establish it.
+OBSERVABLE_FACTS = ("git_recorded", "git_reviewed", "ci_verified", "signature_verified")
 
 
 @dataclass(frozen=True)
-class ProvenanceObservation:
-    """What the repository itself supports, and why."""
+class ProvenanceFacts:
+    """What is established about one object, and what plainly is not."""
 
-    level: str
-    reason: str
+    git_recorded: bool = False
+    git_reviewed: bool = False
+    ci_verified: bool = False
+    signature_verified: bool = False
+    local_dirty: bool = True
+    reason: str = "not observed"
 
-    def caps(self, declared: str) -> str:
-        """Return the declared level, lowered to what was observed."""
+    def unmet(self, required: Mapping[str, Any]) -> tuple[str, ...]:
+        """Return the required facts this object does not support."""
 
-        if declared not in TRUST_LEVELS:
-            return "LOCAL_UNTRUSTED"
-        return declared if TRUST_LEVELS[declared] <= TRUST_LEVELS[self.level] else self.level
+        missing = []
+        for name, needed in sorted(required.items()):
+            if not needed:
+                continue
+            if not getattr(self, name, False):
+                missing.append(name)
+        return tuple(missing)
+
+    def satisfies(self, required: Mapping[str, Any]) -> bool:
+        return not self.unmet(required)
+
+    def to_record(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+UNOBSERVED = ProvenanceFacts()
 
 
 def _git(root: Path, *arguments: str, timeout: int = 10) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def observe(repository_root: str | Path, paths: Iterable[str] = ()) -> ProvenanceObservation:
-    """Report the highest provenance this checkout supports for these paths."""
+def observe(target: str | Path, paths: Iterable[str] = ()) -> ProvenanceFacts:
+    """Establish what a checkout supports for the given paths.
 
-    root = Path(repository_root)
-    tracked = [path for path in paths]
+    `git_reviewed` and `ci_verified` are never set here. They assert that a
+    process happened, which a checkout cannot show, and this build ships no
+    attestation verifier. A policy requiring either fails closed — a real
+    functional limit, stated rather than quietly approximated.
+    """
+
+    root = Path(target)
+    named = list(paths)
     try:
         if _git(root, "rev-parse", "HEAD").returncode != 0:
-            return ProvenanceObservation("LOCAL_UNTRUSTED", "no Git head to observe")
-        if tracked:
-            listed = _git(root, "ls-files", "--error-unmatch", "--", *tracked)
-            if listed.returncode != 0:
-                return ProvenanceObservation("LOCAL_UNTRUSTED", "an observed path is not tracked by Git")
-        status = _git(root, "status", "--porcelain", "--", *tracked) if tracked else _git(root, "status", "--porcelain")
+            return ProvenanceFacts(reason="no Git head to observe")
+        if named and _git(root, "ls-files", "--error-unmatch", "--", *named).returncode != 0:
+            return ProvenanceFacts(reason="an observed path is not tracked by Git")
+        status = _git(root, "status", "--porcelain", "--", *named) if named else _git(root, "status", "--porcelain")
         if status.returncode != 0:
-            return ProvenanceObservation("LOCAL_UNTRUSTED", "the working tree state could not be read")
+            return ProvenanceFacts(reason="the working tree state could not be read")
         if status.stdout.strip():
-            return ProvenanceObservation("GIT_DIRTY", "the observed paths differ from the commit")
-        if _git(root, "verify-commit", "HEAD").returncode == 0:
-            return ProvenanceObservation("SIGNED", "the head commit signature verifies")
-        return ProvenanceObservation("GIT_RECORDED", "the observed paths are tracked and match the commit")
+            return ProvenanceFacts(reason="the observed paths differ from the commit")
+        signed = _git(root, "verify-commit", "HEAD").returncode == 0
+        return ProvenanceFacts(
+            git_recorded=True,
+            signature_verified=signed,
+            local_dirty=False,
+            reason="tracked and matching the commit" + (", head signature verifies" if signed else ""),
+        )
     except (OSError, subprocess.SubprocessError):
-        return ProvenanceObservation("LOCAL_UNTRUSTED", "Git could not be executed")
+        return ProvenanceFacts(reason="Git could not be executed")
+
+
+def observe_artifacts(paths: Iterable[str | Path]) -> ProvenanceFacts:
+    """Establish what is known about a specific set of files.
+
+    Only the objects named here are observed. An audit trail sitting beside
+    them is not authority and must not decide whether they are clean.
+    """
+
+    targets = [Path(path) for path in paths]
+    if not targets:
+        return ProvenanceFacts(reason="no authority artifact to observe")
+    try:
+        toplevel = _git(targets[0].parent, "rev-parse", "--show-toplevel")
+        if toplevel.returncode != 0 or not toplevel.stdout.strip():
+            return ProvenanceFacts(reason="the authority artifacts are not inside a Git work tree")
+    except (OSError, subprocess.SubprocessError):
+        return ProvenanceFacts(reason="Git could not be executed")
+    base = Path(toplevel.stdout.strip())
+    relative = []
+    for target in targets:
+        try:
+            relative.append(target.resolve().relative_to(base.resolve()).as_posix())
+        except ValueError:
+            return ProvenanceFacts(reason=f"{target.name} is outside its own work tree")
+    return observe(base, relative)
+
+
+def observe_artifact(path: str | Path) -> ProvenanceFacts:
+    """Establish what is known about the file or directory holding an artifact.
+
+    An artifact outside any repository inherits nothing from the repository it
+    happens to describe. This is what stops a work directory in /tmp from
+    borrowing the cleanliness of the checkout it points at.
+    """
+
+    target = Path(path)
+    root = target if target.is_dir() else target.parent
+    try:
+        toplevel = _git(root, "rev-parse", "--show-toplevel")
+        if toplevel.returncode != 0 or not toplevel.stdout.strip():
+            return ProvenanceFacts(reason=f"{target.name} is not inside a Git work tree")
+    except (OSError, subprocess.SubprocessError):
+        return ProvenanceFacts(reason="Git could not be executed")
+    base = Path(toplevel.stdout.strip())
+    try:
+        relative = target.resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return ProvenanceFacts(reason=f"{target.name} is outside its own work tree")
+    return observe(base, [relative])

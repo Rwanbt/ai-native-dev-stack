@@ -29,10 +29,13 @@ def git(root, *arguments):
 class GovernedWork:
     """A checkout plus a governed work directory that converges."""
 
-    def __init__(self, root: Path, *, required="GIT_RECORDED"):
+    def __init__(self, root: Path, *, required=None):
         self.root = root
         self.repo = root / "repo"
-        self.work = root / "work"
+        # The work directory lives in the repository it governs. That is what
+        # gives its artifacts a provenance of their own: changing the rules
+        # means committing the change, where it can be seen.
+        self.work = self.repo / ".ai-native" / "work" / "w1"
         (self.repo / "src").mkdir(parents=True)
         (self.repo / "tests").mkdir()
         (self.repo / "src" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -46,24 +49,32 @@ class GovernedWork:
         self.specification_uid = generate_uid("verify")
         self.requirement_uid = generate_uid("req")
         self.criterion_uid = generate_uid("ac")
-        self.policy = self._policy(required)
+        self.required = {"git_recorded": True} if required is None else required
+        self.policy = self._policy(self.required)
         self.commitment = policy_commitment(self.policy)
         for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
             self.policy[field]["policy_digest"] = self.commitment
         self.approval_root = {
             "schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"),
-            "root_digest": DIGEST, "policy_digest": self.commitment, "root_provenance": required,
+            "root_digest": DIGEST, "policy_digest": self.commitment, "root_provenance": "GIT_RECORDED",
             "bootstrap": {"initialized_at": "2026-09-03T00:00:00Z", "initialized_by": "authority-test"},
         }
         self.approval_root["root_digest"] = approval_root_commitment(self.approval_root)
         WorkController(self.work).create(self.artifacts())
+        self.commit_governed_state()
+
+    def commit_governed_state(self):
+        """Record the governed state, as a real project would."""
+
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-m", "governed state")
 
     def _policy(self, required):
         return {
             "schema_name": "project_policy", "schema_version": 1,
             "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
-            "success_condition_mutation_provenance": required,
-            "verification_evidence_provenance": required,
+            "required_mutation_facts": required,
+            "required_evidence_facts": required,
             "waiver_approval_rule": {"predicate_id": "waiver-board", "policy_digest": DIGEST},
             "human_approval_rule": {"predicate_id": "human-signoff", "policy_digest": DIGEST},
             "promotion_policy": "explicit",
@@ -109,6 +120,7 @@ class GovernedWork:
         artifacts["requirements"] = [dict(artifacts["requirements"][0], acceptance_criteria=[{"uid": self.criterion_uid, "digest": DIGEST}, {"uid": second_criterion, "digest": DIGEST}])]
         artifacts["verification_specifications"] = artifacts["verification_specifications"] + [self.specification(uid=second_uid, command=command, execution_scope=["tests/other.py"])]
         WorkController(self.work).mutate(1, artifacts)
+        self.commit_governed_state()
         return second_uid
 
     def artifacts(self, **overrides):
@@ -150,7 +162,8 @@ class AuthorityMatrixTests(unittest.TestCase):
         self.assertEqual("CONVERGED", evaluation.verdict.verdict, self.codes(evaluation))
         self.assertEqual(1, len(evaluation.assessments))
         self.assertTrue(evaluation.assessments[0].eligible)
-        self.assertEqual("GIT_RECORDED", evaluation.provenance.level)
+        self.assertTrue(evaluation.provenance.git_recorded)
+        self.assertTrue(evaluation.authority_provenance.git_recorded, evaluation.authority_provenance.reason)
 
     def test_a54_a68_a_loose_contract_beside_the_work_directory_has_no_authority(self):
         work = self.governed()
@@ -166,7 +179,7 @@ class AuthorityMatrixTests(unittest.TestCase):
             evaluate_work(work.root / "not-a-work-directory", work.repo)
 
     def test_a55_a56_a61_a_claimed_provenance_cannot_exceed_what_was_observed(self):
-        work = self.governed(required="SIGNED")
+        work = self.governed(required={"ci_verified": True})
         work.verify()
         evaluation = work.evaluate()
         self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)
@@ -251,7 +264,7 @@ class AuthorityMatrixTests(unittest.TestCase):
             self.assertNotIn(forbidden, parameters, f"the authoritative API accepts {forbidden} from its caller")
 
     def test_a67_a_waiver_cannot_suppress_an_authority_gap(self):
-        work = self.governed(required="SIGNED")
+        work = self.governed(required={"ci_verified": True})
         work.verify()
         waiver = {
             "schema_name": "waiver", "schema_version": 1, "uid": generate_uid("waiver"),

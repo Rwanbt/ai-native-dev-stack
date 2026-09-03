@@ -9,6 +9,11 @@ from ainative_workplane.runner import RunnerError, VerificationRunner, load_regi
 from ainative_workplane.traceability import analyze
 from ainative_workplane.trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
 from ainative_workplane.freshness import FreshnessResult, evaluate_freshness
+from ainative_workplane.provenance import ProvenanceFacts
+
+# The kernel is unit-tested with the facts the production path observes for
+# itself; nothing here lets a caller supply them to a production verdict.
+ESTABLISHED = ProvenanceFacts(git_recorded=True, local_dirty=False)
 
 
 class RunnerConvergenceTests(unittest.TestCase):
@@ -30,8 +35,8 @@ class RunnerConvergenceTests(unittest.TestCase):
         policy = {
             "schema_name": "project_policy", "schema_version": 1,
             "approval_predicate": {"predicate_id": "review", "policy_digest": placeholder},
-            "success_condition_mutation_provenance": "GIT_REVIEWED",
-            "verification_evidence_provenance": "GIT_REVIEWED",
+            "required_mutation_facts": {"git_recorded": True},
+            "required_evidence_facts": {"git_recorded": True},
             "waiver_approval_rule": {"predicate_id": "waiver", "policy_digest": placeholder},
             "human_approval_rule": {"predicate_id": "human", "policy_digest": placeholder},
             "promotion_policy": "explicit",
@@ -121,7 +126,7 @@ class RunnerConvergenceTests(unittest.TestCase):
         policy, root, binding = self.authorization(registry)
         with tempfile.TemporaryDirectory() as directory:
             evidence = VerificationRunner(registry).run("check", cwd=directory, binding=binding)
-        self.assertEqual("TRUSTED", evaluate_trust(evidence, policy=policy, approval_root=root).code)
+        self.assertEqual("TRUSTED", evaluate_trust(evidence, policy=policy, approval_root=root, evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
 
         parent = dict(root)
         parent["uid"] = generate_uid("root")
@@ -141,20 +146,20 @@ class RunnerConvergenceTests(unittest.TestCase):
         chained_binding["approval_root"] = {"uid": chained_root["uid"], "digest": chained_root["root_digest"]}
         with tempfile.TemporaryDirectory() as directory:
             chained_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=chained_binding)
-        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root).code)
-        self.assertEqual("TRUSTED", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root, approval_chain=[parent]).code)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root, evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
+        self.assertEqual("TRUSTED", evaluate_trust(chained_evidence, policy=policy, approval_root=chained_root, approval_chain=[parent], evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
 
         # A62: pointing at a predecessor is lineage, not consent.
         unauthorized_binding = dict(binding)
         unauthorized_binding["approval_root"] = {"uid": unauthorized["uid"], "digest": unauthorized["root_digest"]}
         with tempfile.TemporaryDirectory() as directory:
             unauthorized_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=unauthorized_binding)
-        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(unauthorized_evidence, policy=policy, approval_root=unauthorized, approval_chain=[parent]).code)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(unauthorized_evidence, policy=policy, approval_root=unauthorized, approval_chain=[parent], evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
 
         invalid_policy = dict(policy)
         invalid_policy["approval_predicate"] = dict(policy["approval_predicate"])
         invalid_policy["approval_predicate"]["policy_digest"] = "b" * 64
-        self.assertEqual("POLICY_COMMITMENT_INVALID", evaluate_trust(evidence, policy=invalid_policy, approval_root=root).code)
+        self.assertEqual("POLICY_COMMITMENT_INVALID", evaluate_trust(evidence, policy=invalid_policy, approval_root=root, evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
 
     def test_freshness_detects_changed_contract_registry_policy_root_and_snapshot(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": [sys.executable, "-c", "print('ok')"]}}}

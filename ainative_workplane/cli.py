@@ -111,7 +111,8 @@ def _converge(args: argparse.Namespace) -> int:
         "reason": verdict.reason,
         "fingerprint": verdict.fingerprint,
         "contract_digest": evaluation.contract_digest,
-        "observed_provenance": {"level": evaluation.provenance.level, "reason": evaluation.provenance.reason},
+        "observed_provenance": evaluation.provenance.to_record(),
+        "authority_provenance": evaluation.authority_provenance.to_record(),
         "gaps": [{"code": gap.code, "uid": gap.uid, "detail": gap.detail} for gap in verdict.gaps],
         "evidence": [
             {"uid": assessment.evidence_uid, "verification_specification": assessment.verification_spec_uid, "eligible": assessment.eligible, "reasons": list(assessment.reasons)}

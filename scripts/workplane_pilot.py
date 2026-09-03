@@ -36,7 +36,7 @@ def run(harness_id: str = "local", *, provider: str | None = None) -> dict[str, 
     items: list[dict[str, object]] = []
     registry_digest = canonical_digest(registry)
     digest = "a" * 64
-    policy = {"schema_name": "project_policy", "schema_version": 1, "approval_predicate": {"predicate_id": "local", "policy_digest": digest}, "success_condition_mutation_provenance": "LOCAL_UNTRUSTED", "verification_evidence_provenance": "LOCAL_UNTRUSTED", "waiver_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "human_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "promotion_policy": "explicit"}
+    policy = {"schema_name": "project_policy", "schema_version": 1, "approval_predicate": {"predicate_id": "local", "policy_digest": digest}, "required_mutation_facts": {}, "required_evidence_facts": {}, "waiver_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "human_approval_rule": {"predicate_id": "local", "policy_digest": digest}, "promotion_policy": "explicit"}
     policy_digest = policy_commitment(policy)
     for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
         policy[field]["policy_digest"] = policy_digest

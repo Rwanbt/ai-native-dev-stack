@@ -34,12 +34,12 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .contracts import canonical_digest
+from .contracts import canonical_digest, canonical_path
 from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
 from .evidence import EvidenceError, VerificationEvidence
 from .freshness import FreshnessResult, evaluate_checkout_freshness
-from .provenance import ProvenanceObservation, observe
+from .provenance import ProvenanceFacts, observe, observe_artifacts
 from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
@@ -72,7 +72,8 @@ class WorkEvaluation:
     verdict: ConvergenceVerdict
     assessments: tuple[EvidenceAssessment, ...]
     contract_digest: str
-    provenance: ProvenanceObservation
+    provenance: ProvenanceFacts
+    authority_provenance: ProvenanceFacts
 
 
 class EvaluationError(RuntimeError):
@@ -123,7 +124,7 @@ def _binding_reasons(artifact: Mapping[str, Any], *, spec_digest: str | None, co
     return reasons
 
 
-def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spec_digests: Mapping[str, str], authority: Mapping[str, Any], repository_root: str | Path, observation: ProvenanceObservation, relationship_gaps: frozenset[str]) -> EvidenceAssessment:
+def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spec_digests: Mapping[str, str], authority: Mapping[str, Any], repository_root: str | Path, observation: ProvenanceFacts, authority_observation: ProvenanceFacts, relationship_gaps: frozenset[str]) -> EvidenceAssessment:
     """Qualify one run on its own, never by inheritance from another."""
 
     try:
@@ -143,7 +144,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], observed_provenance=observation.level)
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], evidence_facts=observation, authority_facts=authority_observation)
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -194,6 +195,21 @@ def _freshness(evidence: VerificationEvidence, specification: Mapping[str, Any] 
         return None
 
 
+def _authority_paths(work_dir: str | Path, manifest: Mapping[str, Any]) -> list[Path]:
+    """The files that carry authority: the manifest and the artifacts it points at.
+
+    Deliberately not the whole work directory. The run log lives there too, and
+    a fresh audit entry must not make the rules look tampered with.
+    """
+
+    root = Path(work_dir)
+    paths = [root / "manifest.json"]
+    for name, pointer in manifest["artifacts"].items():
+        if pointer.get("normative"):
+            paths.append(root / canonical_path(pointer["path"]))
+    return paths
+
+
 def _execute_declared_verifications(work_dir: str | Path, repository_root: str | Path, specifications: Mapping[str, Mapping[str, Any]]) -> tuple[list[VerificationEvidence], list[Gap]]:
     """Run every executable declared verification, now.
 
@@ -236,11 +252,16 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     for specification in specifications.values():
         scope.extend(specification.get("execution_scope", []))
         scope.extend(specification.get("covered_implementation_paths", []))
+    # Two domains, deliberately not one: what the checkout supports about the
+    # code under verification, and what is established about the work
+    # directory holding the rules, the root and the exceptions. A clean
+    # checkout says nothing about a work directory living somewhere else.
     observation = observe(repository_root, scope)
+    authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]))
 
     produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
     assessments = tuple(
-        _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, relationship_gaps=relationship_gaps)
+        _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, authority_observation=authority_observation, relationship_gaps=relationship_gaps)
         for evidence in produced
     )
     eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
@@ -257,8 +278,9 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
         policy=policy,
         waivers=artifacts.get("waivers", []),
         human_approvals=artifacts.get("human_approvals", []),
+        authorization_facts=authority_observation,
     )
-    return WorkEvaluation(verdict=verdict, assessments=assessments, contract_digest=authority["contract_digest"], provenance=observation)
+    return WorkEvaluation(verdict=verdict, assessments=assessments, contract_digest=authority["contract_digest"], provenance=observation, authority_provenance=authority_observation)
 
 
 def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Mapping[str, Any]]]:
@@ -283,6 +305,7 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "root_reference": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]} if approval_root is not None else None,
         "work_uid": manifest["work_uid"],
         "revision": manifest["revision"],
+        "manifest": manifest,
     }
     return artifacts, authority, specifications
 
@@ -307,6 +330,7 @@ def run_verification(work_dir: str | Path, repository_root: str | Path, specific
     scope = list(specification.get("execution_scope", []))
     dependencies = list(specification.get("covered_implementation_paths", []))
     observation = observe(repository_root, scope + dependencies)
+    facts = observation.to_record()
     snapshot = build_repository_snapshot(
         repository_root,
         scope=scope,
@@ -328,7 +352,7 @@ def run_verification(work_dir: str | Path, repository_root: str | Path, specific
         "snapshot_head": snapshot["head"],
         "producer": "ainative-workplane",
         "producer_version": __import__("ainative_workplane").__version__,
-        "evidence_provenance": observation.level,
+        "evidence_provenance": "GIT_RECORDED" if facts["git_recorded"] else "GIT_DIRTY",
     }
     runner = VerificationRunner(authority["registry"], runs_dir=Path(work_dir) / "runs")
     return runner.run(command, cwd=repository_root, binding=binding, require_substance=True)

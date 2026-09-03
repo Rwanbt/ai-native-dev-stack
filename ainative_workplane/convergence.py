@@ -55,7 +55,7 @@ def stall_fingerprint(gaps: Iterable[Gap]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = ()) -> ConvergenceVerdict:
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), authorization_facts: Any = None) -> ConvergenceVerdict:
     """Decide convergence from bound evidence only.
 
     @contract Evidence supports convergence only when its verification
@@ -70,7 +70,7 @@ def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEviden
 
     try:
         gaps = _collect_gaps(traceability, runs, freshness, trust)
-        gaps = apply_authorizations(gaps, policy=policy, waivers=waivers, human_approvals=human_approvals)
+        gaps = apply_authorizations(gaps, policy=policy, waivers=waivers, human_approvals=human_approvals, facts=authorization_facts)
     except Exception as error:  # WHY: an engine failure must surface as a verdict, never as a success or a traceback in the caller.
         return ConvergenceVerdict("INTERNAL_ERROR", (), f"convergence engine failed: {type(error).__name__}", "")
     if not gaps:
