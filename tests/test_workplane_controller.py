@@ -8,9 +8,36 @@ import unittest
 from pathlib import Path
 
 from ainative_workplane.contracts import generate_uid
+from ainative_workplane.trust import policy_commitment
 from ainative_workplane.controller import ControllerError, WorkController
 
 DIGEST = "a" * 64
+
+
+def policy():
+    """A minimal policy that requires nothing observable, stated explicitly."""
+
+    declared = {
+        "schema_name": "project_policy", "schema_version": 1,
+        "approval_predicate": {"predicate_id": "review", "policy_digest": DIGEST},
+        "required_mutation_facts": {}, "required_evidence_facts": {},
+        "waiver_approval_rule": {"predicate_id": "waiver", "policy_digest": DIGEST},
+        "human_approval_rule": {"predicate_id": "human", "policy_digest": DIGEST},
+        "promotion_policy": "explicit",
+    }
+    commitment = policy_commitment(declared)
+    for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
+        declared[field]["policy_digest"] = commitment
+    return declared, commitment
+
+
+def approval_for(controller, candidate, commitment):
+    return {
+        "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
+        "target_digest": controller.normative_digest(candidate), "policy_digest": commitment,
+        "predicate_id": "review", "approved_by": "test", "approved_at": "2026-09-03T00:00:00Z",
+        "provenance": "GIT_RECORDED",
+    }
 
 
 def requirement(statement="the system refuses unbound evidence"):
@@ -128,23 +155,27 @@ class WorkControllerTests(unittest.TestCase):
     def test_a63_a_partial_mutation_preserves_every_other_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             controller = WorkController(directory)
+            declared, commitment = policy()
             first = requirement()
             original_task = task()
-            controller.create({"requirements": [first], "tasks": [original_task], "scratch": {"note": "keep me"}})
+            committed = {"requirements": [first], "tasks": [original_task], "project_policy": declared, "scratch": {"note": "keep me"}}
+            controller.create(committed)
 
             replacement = task(paths=["src/other.py"])
-            second = controller.mutate(1, {"tasks": [replacement]})
+            candidate = {**committed, "tasks": [replacement]}
+            controller.mutate(1, {"tasks": [replacement]}, approval=approval_for(controller, candidate, commitment))
             manifest, artifacts = WorkController(directory).load_committed_artifacts()
             self.assertEqual(2, manifest["revision"])
-            self.assertEqual({"requirements", "tasks", "scratch"}, set(artifacts))
+            self.assertEqual({"requirements", "tasks", "project_policy", "scratch"}, set(artifacts))
             self.assertEqual([first], artifacts["requirements"], "a partial mutation deleted a normative artifact")
             self.assertEqual([replacement], artifacts["tasks"])
             self.assertEqual({"note": "keep me"}, artifacts["scratch"])
             self.assertTrue(manifest["artifacts"]["requirements"]["normative"])
 
-            controller.mutate(2, delete_artifacts=["scratch"])
-            _, after = WorkController(directory).load_committed_artifacts()
-            self.assertEqual({"requirements", "tasks"}, set(after))
+            after_delete = {name: value for name, value in artifacts.items() if name != "requirements"}
+            controller.mutate(2, delete_artifacts=["requirements"], approval=approval_for(controller, after_delete, commitment))
+            _, remaining = WorkController(directory).load_committed_artifacts()
+            self.assertEqual({"tasks", "project_policy", "scratch"}, set(remaining))
 
             with self.assertRaisesRegex(ControllerError, "UNKNOWN_ARTIFACT"):
                 controller.mutate(3, delete_artifacts=["never_committed"])

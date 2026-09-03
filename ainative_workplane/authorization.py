@@ -101,6 +101,36 @@ def _classify(record: Any, policy: Mapping[str, Any] | None, commitment: str, ru
     return record, None
 
 
+def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candidate_digest: str, facts: Any) -> str | None:
+    """Return why a change to the success conditions is not authorized.
+
+    @contract The approval is checked against the policy in force *before* the
+    change. A candidate policy never authorizes its own adoption.
+    """
+
+    if policy is None:
+        return "no policy is in force to authorize a change"
+    if approval is None:
+        return "a change to the success conditions carries no approval"
+    try:
+        validate_artifact(approval)
+    except ContractError as error:
+        return f"the approval is not a valid artifact: {error.code}"
+    if approval.get("schema_name") != "mutation_approval":
+        return "the approval is not a mutation approval"
+    commitment = policy_commitment(policy)
+    if approval.get("policy_digest") != commitment:
+        return "the approval commits to a different policy than the one in force"
+    if approval.get("predicate_id") != policy["approval_predicate"]["predicate_id"]:
+        return "the approval uses a predicate the policy in force does not configure"
+    if approval.get("target_digest") != candidate_digest:
+        return "the approval names a different next state than the one being written"
+    missing = unmet(facts, policy["required_mutation_facts"])
+    if missing:
+        return f"the approval does not establish {', '.join(missing)}"
+    return None
+
+
 def apply_authorizations(gaps: Iterable[Gap], *, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), now: datetime | None = None, facts: Any = None) -> list[Gap]:
     """Remove the gaps a valid, authorized waiver or approval covers.
 

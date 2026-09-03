@@ -31,6 +31,7 @@ SUPPORTED_SCHEMA_VERSIONS = {
     "repository_snapshot": {SCHEMA_VERSION},
     "verification_run": {SCHEMA_VERSION},
     "convergence_run": {SCHEMA_VERSION},
+    "mutation_approval": {SCHEMA_VERSION},
 }
 
 # Artifact names the engine reads as authority. Anything committed under one
@@ -387,6 +388,18 @@ def _validate_approval_root(value: Mapping[str, Any]) -> None:
         _digest(_required(approval, "policy_digest"), "transition_approval.policy_digest")
 
 
+def _validate_mutation_approval(value: Mapping[str, Any]) -> None:
+    """The record that a previous authority accepted one exact next state."""
+
+    _uid_field(value, "approval")
+    _digest(_required(value, "target_digest"), "target_digest")
+    _digest(_required(value, "policy_digest"), "policy_digest")
+    for field in ("predicate_id", "approved_by", "approved_at"):
+        if not isinstance(_required(value, field), str) or not value[field]:
+            _fail("INVALID_FIELD", f"{field} must be non-empty")
+    _provenance(_required(value, "provenance"), "provenance")
+
+
 def _validate_waiver(value: Mapping[str, Any]) -> None:
     _uid_field(value, "waiver")
     _reference(_required(value, "target"), "target")
@@ -480,6 +493,7 @@ _VALIDATORS = {
     "verification_specification": _validate_verification_specification,
     "project_policy": _validate_project_policy,
     "approval_root": _validate_approval_root,
+    "mutation_approval": _validate_mutation_approval,
     "waiver": _validate_waiver,
     "human_approval": _validate_human_approval,
     "repository_snapshot": _validate_repository_snapshot,

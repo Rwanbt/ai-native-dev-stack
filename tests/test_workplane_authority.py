@@ -63,6 +63,24 @@ class GovernedWork:
         WorkController(self.work).create(self.artifacts())
         self.commit_governed_state()
 
+    def approval_for(self, candidate, *, policy_digest=None, predicate_id=None):
+        """The record that the authority in force accepted this exact next state."""
+
+        return {
+            "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
+            "target_digest": WorkController(self.work).normative_digest(candidate),
+            "policy_digest": policy_digest or self.commitment,
+            "predicate_id": predicate_id or self.policy["approval_predicate"]["predicate_id"],
+            "approved_by": "release-board", "approved_at": "2026-09-03T00:00:00Z",
+            "provenance": "GIT_RECORDED",
+        }
+
+    def approval_for_change(self, changes, **overrides):
+        """Approve exactly what mutate will write: the committed set plus the change."""
+
+        _, committed = WorkController(self.work).load_committed_artifacts()
+        return self.approval_for({**committed, **changes}, **overrides)
+
     def commit_governed_state(self):
         """Record the governed state, as a real project would."""
 
@@ -119,7 +137,7 @@ class GovernedWork:
         }]
         artifacts["requirements"] = [dict(artifacts["requirements"][0], acceptance_criteria=[{"uid": self.criterion_uid, "digest": DIGEST}, {"uid": second_criterion, "digest": DIGEST}])]
         artifacts["verification_specifications"] = artifacts["verification_specifications"] + [self.specification(uid=second_uid, command=command, execution_scope=["tests/other.py"])]
-        WorkController(self.work).mutate(1, artifacts)
+        WorkController(self.work).mutate(1, artifacts, approval=self.approval_for_change(artifacts))
         self.commit_governed_state()
         return second_uid
 
@@ -264,8 +282,10 @@ class AuthorityMatrixTests(unittest.TestCase):
             self.assertNotIn(forbidden, parameters, f"the authoritative API accepts {forbidden} from its caller")
 
     def test_a67_a_waiver_cannot_suppress_an_authority_gap(self):
-        work = self.governed(required={"ci_verified": True})
-        work.verify()
+        work = self.governed()
+        failing = "import sys\nprint('Ran 1 test in 0.0s')\nprint('FAILED (failures=1)')\nsys.exit(1)\n"
+        (work.repo / "tests" / "check.py").write_text(failing, encoding="utf-8")
+        git(work.repo, "commit", "-am", "break the check")
         waiver = {
             "schema_name": "waiver", "schema_version": 1, "uid": generate_uid("waiver"),
             "target": {"uid": work.specification_uid, "digest": DIGEST}, "reason": "ship it",
@@ -275,9 +295,11 @@ class AuthorityMatrixTests(unittest.TestCase):
             "approval_predicate": {"predicate_id": "waiver-board", "policy_digest": work.commitment},
             "policy_digest": work.commitment,
         }
-        WorkController(work.work).mutate(1, {"waivers": [waiver]})
+        WorkController(work.work).mutate(1, {"waivers": [waiver]}, approval=work.approval_for_change({"waivers": [waiver]}))
+        work.commit_governed_state()
         evaluation = work.evaluate()
-        self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)
+        self.assertNotEqual("CONVERGED", evaluation.verdict.verdict, "a waiver suppressed a failing verification")
+        self.assertIn("VERIFICATION_FAILED", evaluation.assessments[0].reasons)
 
     def test_a62_a_root_successor_without_transition_approval_is_refused(self):
         work = self.governed()
@@ -286,8 +308,62 @@ class AuthorityMatrixTests(unittest.TestCase):
         successor["predecessor"] = {"uid": work.approval_root["uid"], "digest": work.approval_root["root_digest"]}
         successor["root_digest"] = approval_root_commitment(successor)
         with self.assertRaisesRegex(ControllerError, "INVALID_NORMATIVE_ARTIFACT"):
-            WorkController(work.work).mutate(1, {"approval_root": successor})
+            WorkController(work.work).mutate(1, {"approval_root": successor}, approval=work.approval_for_change({"approval_root": successor}))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+class SuccessConditionMutationTests(unittest.TestCase):
+    """A80-A83: the controlled system may not rewrite the bar it is judged by."""
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def weakened(self, work):
+        """Every way an agent might lower its own bar."""
+
+        _, artifacts = WorkController(work.work).load_committed_artifacts()
+        easy_registry = work.registry()
+        easy_registry["commands"]["check"]["argv"] = [sys.executable, "-c", "print('Ran 1 test in 0.0s'); print('OK')"]
+        narrowed = dict(artifacts["verification_specifications"][0], covered_implementation_paths=[])
+        lowered = dict(work.policy, required_evidence_facts={})
+        swapped = dict(work.policy, approval_predicate={"predicate_id": "its-own", "policy_digest": work.commitment})
+        return {
+            "A80 weaker command": {**artifacts, "command_registry": easy_registry},
+            "A81 narrower specification": {**artifacts, "verification_specifications": [narrowed]},
+            "A82 lower policy bar": {**artifacts, "project_policy": lowered},
+            "A83 replaced predicate": {**artifacts, "project_policy": swapped},
+        }
+
+    def test_a80_to_a83_no_weakening_is_written_without_the_previous_authority(self):
+        work = self.governed()
+        for case, candidate in self.weakened(work).items():
+            with self.subTest(case=case):
+                with self.assertRaises(ControllerError) as refused:
+                    WorkController(work.work).mutate(1, candidate)
+                self.assertIn("UNAUTHORIZED_MUTATION", str(refused.exception))
+                self.assertEqual(1, WorkController(work.work).read()["revision"], "a refused mutation still advanced the revision")
+
+    def test_an_approval_must_name_the_exact_next_state(self):
+        work = self.governed()
+        candidates = self.weakened(work)
+        weaker = candidates["A80 weaker command"]
+        other = candidates["A81 narrower specification"]
+        # An approval for a different candidate does not authorize this one.
+        with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
+            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(other))
+        # Nor does one committing to a policy that is not in force.
+        with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
+            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker, policy_digest="b" * 64))
+        # Nor one under a predicate the policy in force does not configure.
+        with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
+            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker, predicate_id="its-own"))
+        # The authorized change goes through, and is visible as a revision.
+        self.assertEqual(2, WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker))["revision"])
+
+    def test_a_change_that_touches_no_success_condition_needs_no_approval(self):
+        work = self.governed()
+        self.assertEqual(2, WorkController(work.work).mutate(1, {"notes": {"scratch": True}})["revision"])

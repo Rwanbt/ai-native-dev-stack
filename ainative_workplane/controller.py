@@ -14,7 +14,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-from .contracts import NORMATIVE_ARTIFACTS, ContractError, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
+from .authorization import authorize_mutation
+from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
+from .provenance import observe_artifacts
 
 
 class ControllerError(RuntimeError):
@@ -197,12 +199,15 @@ class WorkController:
         finally:
             self._unlock(handle)
 
-    def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = ()) -> dict[str, Any]:
+    def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = (), approval: Mapping[str, Any] | None = None) -> dict[str, Any]:
         """Apply an explicit change to the committed set.
 
         @contract Nothing disappears unless it is named in delete_artifacts.
         A revision is the previous set with the named artifacts replaced and
         the named artifacts removed, never only what the caller supplied.
+        @contract A change to any normative artifact requires an approval that
+        the policy of revision N authorizes for exactly this revision N+1. The
+        controlled system cannot rewrite the conditions it will be judged by.
         """
 
         handle = self._lock()
@@ -212,6 +217,7 @@ class WorkController:
             if expected_revision != current["revision"]:
                 raise ControllerError("STALE_REVISION")
             merged = self._read_artifacts(current)
+            previous_artifacts = dict(merged)
             for name in delete_artifacts:
                 if name not in merged:
                     raise ControllerError(f"UNKNOWN_ARTIFACT:{name}")
@@ -219,9 +225,40 @@ class WorkController:
             merged.update(set_artifacts or {})
             if not merged:
                 raise ControllerError("EMPTY_REVISION")
+            self._require_authorization(current, previous_artifacts, merged, approval)
             return self._commit(current, merged)
         finally:
             self._unlock(handle)
+
+    def normative_digest(self, artifacts: Mapping[str, Any]) -> str:
+        """Digest exactly the artifacts that decide what success means."""
+
+        return canonical_digest({name: artifacts[name] for name in sorted(NORMATIVE_ARTIFACTS) if name in artifacts})
+
+    def authority_paths(self, manifest: Mapping[str, Any]) -> list[Path]:
+        """The manifest and the normative artifacts it points at."""
+
+        paths = [self.manifest_path]
+        for pointer in manifest["artifacts"].values():
+            if pointer.get("normative"):
+                paths.append(self.root / canonical_path(pointer["path"]))
+        return paths
+
+    def _require_authorization(self, manifest: Mapping[str, Any], previous: Mapping[str, Any], candidate: Mapping[str, Any], approval: Mapping[str, Any] | None) -> None:
+        """Refuse a change to the success conditions that nobody authorized."""
+
+        before = {name: value for name, value in previous.items() if name in NORMATIVE_ARTIFACTS}
+        after = {name: value for name, value in candidate.items() if name in NORMATIVE_ARTIFACTS}
+        if before == after:
+            return
+        refusal = authorize_mutation(
+            approval,
+            policy=previous.get("project_policy"),
+            candidate_digest=self.normative_digest(candidate),
+            facts=observe_artifacts(self.authority_paths(manifest)),
+        )
+        if refusal is not None:
+            raise ControllerError(f"UNAUTHORIZED_MUTATION: {refusal}")
 
     def _read_artifacts(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
         """Load the artifacts a validated manifest points at."""
