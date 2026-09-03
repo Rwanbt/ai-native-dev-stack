@@ -12,7 +12,9 @@ properly conducted or visibly not:
             defect matches what was sealed
 
 A case file that reaches `reveal` therefore proves the verdict existed before
-the defect was disclosed. See
+the defect was disclosed. The proof is the state transition, not the
+timestamps: on a coarse clock `recorded_at` and `revealed_at` can be equal, so
+they are metadata rather than evidence of ordering. See
 docs/verified-work-plane-v2-historical-validation-protocol.md.
 """
 

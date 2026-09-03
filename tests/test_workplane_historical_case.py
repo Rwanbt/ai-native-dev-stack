@@ -70,11 +70,17 @@ class HistoricalCaseTests(unittest.TestCase):
 
     def test_a_completed_case_proves_the_verdict_preceded_the_disclosure(self):
         self.sealed()
+        # The proof of ordering is structural, not temporal: reveal refuses
+        # until a verdict is frozen, and a frozen verdict cannot be rewritten.
+        # Timestamps are metadata — on a coarse clock the two can be equal.
+        with self.assertRaisesRegex(CaseError, "NO_FROZEN_VERDICT"):
+            reveal(case_path=self.case, defect=self.defect, classification="DETECTED")
         recorded = record(case_path=self.case, contract=self.contract, verdict=self.verdict)
         self.assertEqual("NOT_CONVERGED", recorded["verdict"])
         revealed = reveal(case_path=self.case, defect=self.defect, classification="MISSED")
         self.assertEqual("MISSED", revealed["classification"])
-        self.assertGreater(revealed["revealed_at"], revealed["recorded_at"])
+        self.assertEqual(recorded["verdict_digest"], revealed["verdict_digest"], "the verdict changed across the reveal")
+        self.assertGreaterEqual(revealed["revealed_at"], revealed["recorded_at"])
         with self.assertRaisesRegex(CaseError, "ALREADY_REVEALED"):
             reveal(case_path=self.case, defect=self.defect, classification="DETECTED")
 
