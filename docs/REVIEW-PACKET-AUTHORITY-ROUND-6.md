@@ -8,10 +8,22 @@ third is unchanged and open by design.
 
 ```text
 reviewed        92875e5
-this packet     see the CI section
+this packet     386b326
 branch          spec
 pull request    #16
 ```
+
+## CI
+
+```text
+run 33801342143   every job green
+                  Verified Work Plane V2 on ubuntu-latest and windows-latest
+```
+
+Local: 139 V2 tests OK (2 platform skips), plus 38 `ai_docs`, 40 `scripts` and
+7 `hooks` tests, the three deterministic scripts, and the scope and convention
+gates. `docs/qualification/claude-code.json` regenerated at this commit —
+still the author's own harness, still not independence.
 
 ## All three reproduced first, against `92875e5`
 
