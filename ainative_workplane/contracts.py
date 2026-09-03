@@ -32,6 +32,7 @@ SUPPORTED_SCHEMA_VERSIONS = {
     "verification_run": {SCHEMA_VERSION},
     "convergence_run": {SCHEMA_VERSION},
     "mutation_approval": {SCHEMA_VERSION},
+    "command_registry": {SCHEMA_VERSION},
 }
 
 # Artifact names the engine reads as authority. Anything committed under one
@@ -70,10 +71,6 @@ def validate_normative(name: str, value: Any) -> None:
             validate_artifact(item)
             if item.get("schema_name") != expected:
                 _fail("UNSUPPORTED_SCHEMA", f"{name} may only contain {expected} artifacts")
-        return
-    if name == "command_registry":
-        if not isinstance(value, Mapping) or value.get("schema_name") != "command_registry":
-            _fail("UNSUPPORTED_SCHEMA", "command_registry must be a command registry")
         return
     validate_artifact(value)
     if value.get("schema_name") != SINGLE_ARTIFACTS[name]:
@@ -385,7 +382,41 @@ def _validate_approval_root(value: Mapping[str, Any]) -> None:
         _provenance(_required(approval, "provenance"), "transition_approval.provenance")
         validate_uid(_required(approval, "successor_uid"), "root")
         _digest(_required(approval, "predecessor_digest"), "transition_approval.predecessor_digest")
+        _digest(_required(approval, "successor_commitment"), "transition_approval.successor_commitment")
         _digest(_required(approval, "policy_digest"), "transition_approval.policy_digest")
+
+
+def _validate_command_registry(value: Mapping[str, Any]) -> None:
+    """The trust base that decides what may execute.
+
+    One validator, used both when the registry is committed and when the runner
+    loads it, so the controller can never accept a registry the runner would
+    refuse.
+    """
+
+    from .substance import SubstanceError, validate_contract as validate_substance
+
+    commands = _mapping(_required(value, "commands"), "commands")
+    if not commands:
+        _fail("INVALID_COMMAND_REGISTRY", "a registry must declare at least one command")
+    for name, definition in commands.items():
+        if not isinstance(name, str) or not name:
+            _fail("INVALID_COMMAND_REGISTRY", "command names must be non-empty strings")
+        declared = _mapping(definition, f"commands.{name}")
+        argv = _required(declared, "argv")
+        if not isinstance(argv, list) or not argv or not all(isinstance(argument, str) for argument in argv):
+            _fail("INVALID_COMMAND_REGISTRY", f"commands.{name}.argv must be a non-empty list of strings")
+        if declared.get("shell", False):
+            _fail("SHELL_COMMAND_FORBIDDEN", f"commands.{name} may not request a shell")
+        for field, minimum in (("timeout_seconds", 1), ("max_output_bytes", 1)):
+            given = declared.get(field, minimum)
+            if not isinstance(given, int) or isinstance(given, bool) or given < minimum:
+                _fail("INVALID_COMMAND_REGISTRY", f"commands.{name}.{field} must be an integer >= {minimum}")
+        if "substance" in declared:
+            try:
+                validate_substance(declared["substance"])
+            except SubstanceError as error:
+                _fail(str(error), f"commands.{name}.substance is not a usable contract")
 
 
 def _validate_mutation_approval(value: Mapping[str, Any]) -> None:
@@ -493,6 +524,7 @@ _VALIDATORS = {
     "verification_specification": _validate_verification_specification,
     "project_policy": _validate_project_policy,
     "approval_root": _validate_approval_root,
+    "command_registry": _validate_command_registry,
     "mutation_approval": _validate_mutation_approval,
     "waiver": _validate_waiver,
     "human_approval": _validate_human_approval,

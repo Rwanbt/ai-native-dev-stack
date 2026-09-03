@@ -12,10 +12,10 @@ from threading import Thread
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .contracts import canonical_digest
+from .contracts import ContractError, canonical_digest, validate_artifact
 from .evidence import VerificationEvidence, build_verification_evidence
 from .isolation import IsolatedProcess, spawn
-from .substance import SubstanceError, evaluate as evaluate_substance, validate_contract as validate_substance
+from .substance import evaluate as evaluate_substance
 
 
 class RunnerError(RuntimeError):
@@ -50,27 +50,16 @@ def redact(text: str) -> str:
 
 
 def load_registry(registry: Mapping[str, Any], expected_digest: str | None = None) -> dict[str, Any]:
-    if registry.get("schema_name") != "command_registry" or registry.get("schema_version") != 1:
-        raise RunnerError("UNSUPPORTED_SCHEMA_VERSION")
-    commands = registry.get("commands")
-    if not isinstance(commands, Mapping) or not commands:
-        raise RunnerError("INVALID_COMMAND_REGISTRY")
-    for name, definition in commands.items():
-        if not isinstance(name, str) or not isinstance(definition, Mapping) or not isinstance(definition.get("argv"), list):
-            raise RunnerError("INVALID_COMMAND_REGISTRY")
-        if not definition["argv"] or not all(isinstance(arg, str) for arg in definition["argv"]):
-            raise RunnerError("INVALID_COMMAND_REGISTRY")
-        if definition.get("shell", False):
-            raise RunnerError("SHELL_COMMAND_FORBIDDEN")
-        if not isinstance(definition.get("timeout_seconds", 30), int) or definition.get("timeout_seconds", 30) < 1:
-            raise RunnerError("INVALID_COMMAND_REGISTRY")
-        if not isinstance(definition.get("max_output_bytes", 1_000_000), int) or definition.get("max_output_bytes", 1_000_000) < 1:
-            raise RunnerError("INVALID_COMMAND_REGISTRY")
-        if "substance" in definition:
-            try:
-                validate_substance(definition["substance"])
-            except SubstanceError as error:
-                raise RunnerError(str(error)) from error
+    """Load a registry, refusing exactly what the contract refuses.
+
+    @contract The validator is the one in contracts.py, so a registry the
+    controller commits can never be one the runner rejects.
+    """
+
+    try:
+        validate_artifact(registry)
+    except ContractError as error:
+        raise RunnerError(error.code) from error
     if expected_digest is not None and canonical_digest(registry) != expected_digest:
         raise RunnerError("COMMAND_REGISTRY_CHANGED")
     return dict(registry)

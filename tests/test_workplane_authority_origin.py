@@ -100,5 +100,49 @@ class EvidenceOriginTests(unittest.TestCase):
         self.assertEqual({"work_dir", "repository_root"}, set(signature(evaluate_work).parameters))
 
 
+
+class RegistrySchemaTests(unittest.TestCase):
+    """A89, A90: one validator, so the controller and the runner agree."""
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def malformed(self, work):
+        return {
+            "A89 no commands": {"schema_name": "command_registry", "schema_version": 1, "commands": {}},
+            "A89 shell requested": {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": ["echo"], "shell": True}}},
+            "A89 empty argv": {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": []}}},
+            "A89 impossible timeout": {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": ["echo"], "timeout_seconds": 0}}},
+            "A89 unknown substance": {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": ["echo"], "substance": {"type": "junit"}}}},
+        }
+
+    def test_a89_a_malformed_registry_cannot_become_committed_authority(self):
+        work = self.governed()
+        for case, registry in self.malformed(work).items():
+            with self.subTest(case=case):
+                with self.assertRaises(ControllerError) as refused:
+                    WorkController(work.work).mutate(1, {"command_registry": registry}, approval=work.approval_for_change({"command_registry": registry}))
+                self.assertIn("INVALID_NORMATIVE_ARTIFACT:command_registry", str(refused.exception))
+
+    def test_a90_what_the_controller_accepts_the_runner_accepts(self):
+        from ainative_workplane.runner import RunnerError, load_registry
+        from ainative_workplane.contracts import ContractError, validate_normative
+
+        work = self.governed()
+        for case, registry in self.malformed(work).items():
+            with self.subTest(case=case):
+                with self.assertRaises(ContractError):
+                    validate_normative("command_registry", registry)
+                with self.assertRaises(RunnerError):
+                    load_registry(registry)
+        # And the committed one satisfies both, by construction.
+        _, artifacts = WorkController(work.work).load_committed_artifacts()
+        validate_normative("command_registry", artifacts["command_registry"])
+        self.assertEqual(artifacts["command_registry"], load_registry(artifacts["command_registry"]))
+
+
+
 if __name__ == "__main__":
     unittest.main()

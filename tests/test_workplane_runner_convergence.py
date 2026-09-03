@@ -7,7 +7,7 @@ from ainative_workplane.convergence import VERDICT_EXIT_CODES, converge
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.runner import RunnerError, VerificationRunner, load_registry
 from ainative_workplane.traceability import analyze
-from ainative_workplane.trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
+from ainative_workplane.trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment, successor_commitment
 from ainative_workplane.freshness import FreshnessResult, evaluate_freshness
 from ainative_workplane.provenance import ProvenanceFacts
 
@@ -140,7 +140,9 @@ class RunnerConvergenceTests(unittest.TestCase):
             "predicate_id": policy["approval_predicate"]["predicate_id"], "approved_by": "release-board",
             "provenance": "GIT_REVIEWED", "successor_uid": chained_root["uid"],
             "predecessor_digest": parent["root_digest"], "policy_digest": policy["approval_predicate"]["policy_digest"],
+            "successor_commitment": "0" * 64,
         }
+        chained_root["transition_approval"]["successor_commitment"] = successor_commitment(chained_root)
         chained_root["root_digest"] = approval_root_commitment(chained_root)
         chained_binding = dict(binding)
         chained_binding["approval_root"] = {"uid": chained_root["uid"], "digest": chained_root["root_digest"]}
@@ -155,6 +157,16 @@ class RunnerConvergenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unauthorized_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=unauthorized_binding)
         self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(unauthorized_evidence, policy=policy, approval_root=unauthorized, approval_chain=[parent], evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
+
+        # A86: the successor's content changes while its UID and approval stay.
+        rewritten = dict(chained_root)
+        rewritten["bootstrap"] = {"initialized_at": "2026-09-03T00:00:00Z", "initialized_by": "someone else"}
+        rewritten["root_digest"] = approval_root_commitment(rewritten)
+        rewritten_binding = dict(binding)
+        rewritten_binding["approval_root"] = {"uid": rewritten["uid"], "digest": rewritten["root_digest"]}
+        with tempfile.TemporaryDirectory() as directory:
+            rewritten_evidence = VerificationRunner(registry).run("check", cwd=directory, binding=rewritten_binding)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(rewritten_evidence, policy=policy, approval_root=rewritten, approval_chain=[parent], evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED).code)
 
         invalid_policy = dict(policy)
         invalid_policy["approval_predicate"] = dict(policy["approval_predicate"])

@@ -47,6 +47,21 @@ def policy_commitment(policy: Mapping[str, Any]) -> str:
     return canonical_digest(_without_digest(policy, "policy_digest"))
 
 
+def successor_commitment(root: Mapping[str, Any]) -> str:
+    """Digest the candidate successor's content, without self-reference.
+
+    WHY: an approval that names only a UID approves a name, not a state. The
+    successor's contents could then change while keeping both the UID and the
+    approval that points at it.
+    """
+
+    stripped = _without_digest(root, "root_digest")
+    approval = stripped.get("transition_approval")
+    if isinstance(approval, Mapping):
+        stripped = {**stripped, "transition_approval": {key: item for key, item in approval.items() if key != "successor_commitment"}}
+    return canonical_digest(stripped)
+
+
 def approval_root_commitment(root: Mapping[str, Any]) -> str:
     """Return the stable approval-root commitment without its self-reference."""
 
@@ -76,6 +91,8 @@ def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, An
     if approval.get("predicate_id") != predicate_id or approval.get("policy_digest") != policy_digest:
         return False
     if approval.get("successor_uid") != successor.get("uid"):
+        return False
+    if approval.get("successor_commitment") != successor_commitment(successor):
         return False
     if approval.get("predecessor_digest") != parent.get("root_digest"):
         return False
