@@ -63,7 +63,20 @@ class GovernedWork:
         WorkController(self.work).create(self.artifacts())
         self.commit_governed_state()
 
-    def approval_for(self, candidate, *, policy_digest=None, predicate_id=None):
+    def record_approval(self, candidate, **overrides):
+        """Write and commit an approval, which is what makes it one.
+
+        An approval nobody recorded is a claim; the controller observes the
+        artifact, so it has to exist where the observation can reach it.
+        """
+
+        path = self.work / "approvals" / f"{generate_uid('approval')}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.approval_record(candidate, **overrides)), encoding="utf-8")
+        self.commit_governed_state()
+        return path
+
+    def approval_record(self, candidate, *, policy_digest=None, predicate_id=None):
         """The record that the authority in force accepted this exact next state."""
 
         return {
@@ -75,11 +88,11 @@ class GovernedWork:
             "provenance": "GIT_RECORDED",
         }
 
-    def approval_for_change(self, changes, **overrides):
+    def record_approval_for_change(self, changes, **overrides):
         """Approve exactly what mutate will write: the committed set plus the change."""
 
         _, committed = WorkController(self.work).load_committed_artifacts()
-        return self.approval_for({**committed, **changes}, **overrides)
+        return self.record_approval({**committed, **changes}, **overrides)
 
     def commit_governed_state(self):
         """Record the governed state, as a real project would."""
@@ -137,7 +150,7 @@ class GovernedWork:
         }]
         artifacts["requirements"] = [dict(artifacts["requirements"][0], acceptance_criteria=[{"uid": self.criterion_uid, "digest": DIGEST}, {"uid": second_criterion, "digest": DIGEST}])]
         artifacts["verification_specifications"] = artifacts["verification_specifications"] + [self.specification(uid=second_uid, command=command, execution_scope=["tests/other.py"])]
-        WorkController(self.work).mutate(1, artifacts, approval=self.approval_for_change(artifacts))
+        WorkController(self.work).mutate(1, artifacts, approval=self.record_approval_for_change(artifacts))
         self.commit_governed_state()
         return second_uid
 
@@ -295,7 +308,7 @@ class AuthorityMatrixTests(unittest.TestCase):
             "approval_predicate": {"predicate_id": "waiver-board", "policy_digest": work.commitment},
             "policy_digest": work.commitment,
         }
-        WorkController(work.work).mutate(1, {"waivers": [waiver]}, approval=work.approval_for_change({"waivers": [waiver]}))
+        WorkController(work.work).mutate(1, {"waivers": [waiver]}, approval=work.record_approval_for_change({"waivers": [waiver]}))
         work.commit_governed_state()
         evaluation = work.evaluate()
         self.assertNotEqual("CONVERGED", evaluation.verdict.verdict, "a waiver suppressed a failing verification")
@@ -308,7 +321,7 @@ class AuthorityMatrixTests(unittest.TestCase):
         successor["predecessor"] = {"uid": work.approval_root["uid"], "digest": work.approval_root["root_digest"]}
         successor["root_digest"] = approval_root_commitment(successor)
         with self.assertRaisesRegex(ControllerError, "INVALID_NORMATIVE_ARTIFACT"):
-            WorkController(work.work).mutate(1, {"approval_root": successor}, approval=work.approval_for_change({"approval_root": successor}))
+            WorkController(work.work).mutate(1, {"approval_root": successor}, approval=work.record_approval_for_change({"approval_root": successor}))
 
 
 if __name__ == "__main__":
@@ -354,15 +367,15 @@ class SuccessConditionMutationTests(unittest.TestCase):
         other = candidates["A81 narrower specification"]
         # An approval for a different candidate does not authorize this one.
         with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
-            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(other))
+            WorkController(work.work).mutate(1, weaker, approval=work.record_approval(other))
         # Nor does one committing to a policy that is not in force.
         with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
-            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker, policy_digest="b" * 64))
+            WorkController(work.work).mutate(1, weaker, approval=work.record_approval(weaker, policy_digest="b" * 64))
         # Nor one under a predicate the policy in force does not configure.
         with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
-            WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker, predicate_id="its-own"))
+            WorkController(work.work).mutate(1, weaker, approval=work.record_approval(weaker, predicate_id="its-own"))
         # The authorized change goes through, and is visible as a revision.
-        self.assertEqual(2, WorkController(work.work).mutate(1, weaker, approval=work.approval_for(weaker))["revision"])
+        self.assertEqual(2, WorkController(work.work).mutate(1, weaker, approval=work.record_approval(weaker))["revision"])
 
     def test_a_change_that_touches_no_success_condition_needs_no_approval(self):
         work = self.governed()

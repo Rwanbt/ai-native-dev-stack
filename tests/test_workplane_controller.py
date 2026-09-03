@@ -31,7 +31,19 @@ def policy():
     return declared, commitment
 
 
-def approval_for(controller, candidate, commitment):
+def approval_for(controller, candidate, commitment, directory):
+    """Write the approval, because the controller observes an artifact.
+
+    This suite's policy requires no provenance fact, so a plain file suffices;
+    the authority suite is where recorded provenance is exercised.
+    """
+
+    path = Path(directory) / f"{generate_uid('approval')}.json"
+    path.write_text(json.dumps(_approval_record(controller, candidate, commitment)), encoding="utf-8")
+    return path
+
+
+def _approval_record(controller, candidate, commitment):
     return {
         "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
         "target_digest": controller.normative_digest(candidate), "policy_digest": commitment,
@@ -163,7 +175,7 @@ class WorkControllerTests(unittest.TestCase):
 
             replacement = task(paths=["src/other.py"])
             candidate = {**committed, "tasks": [replacement]}
-            controller.mutate(1, {"tasks": [replacement]}, approval=approval_for(controller, candidate, commitment))
+            controller.mutate(1, {"tasks": [replacement]}, approval=approval_for(controller, candidate, commitment, directory))
             manifest, artifacts = WorkController(directory).load_committed_artifacts()
             self.assertEqual(2, manifest["revision"])
             self.assertEqual({"requirements", "tasks", "project_policy", "scratch"}, set(artifacts))
@@ -173,7 +185,7 @@ class WorkControllerTests(unittest.TestCase):
             self.assertTrue(manifest["artifacts"]["requirements"]["normative"])
 
             after_delete = {name: value for name, value in artifacts.items() if name != "requirements"}
-            controller.mutate(2, delete_artifacts=["requirements"], approval=approval_for(controller, after_delete, commitment))
+            controller.mutate(2, delete_artifacts=["requirements"], approval=approval_for(controller, after_delete, commitment, directory))
             _, remaining = WorkController(directory).load_committed_artifacts()
             self.assertEqual({"tasks", "project_policy", "scratch"}, set(remaining))
 

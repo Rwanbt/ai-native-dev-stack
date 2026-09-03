@@ -123,7 +123,7 @@ class RegistrySchemaTests(unittest.TestCase):
         for case, registry in self.malformed(work).items():
             with self.subTest(case=case):
                 with self.assertRaises(ControllerError) as refused:
-                    WorkController(work.work).mutate(1, {"command_registry": registry}, approval=work.approval_for_change({"command_registry": registry}))
+                    WorkController(work.work).mutate(1, {"command_registry": registry}, approval=work.record_approval_for_change({"command_registry": registry}))
                 self.assertIn("INVALID_NORMATIVE_ARTIFACT:command_registry", str(refused.exception))
 
     def test_a90_what_the_controller_accepts_the_runner_accepts(self):
@@ -141,6 +141,78 @@ class RegistrySchemaTests(unittest.TestCase):
         _, artifacts = WorkController(work.work).load_committed_artifacts()
         validate_normative("command_registry", artifacts["command_registry"])
         self.assertEqual(artifacts["command_registry"], load_registry(artifacts["command_registry"]))
+
+
+
+class ApprovalOriginTests(unittest.TestCase):
+    """A91, A92: the key to the mutation bar may not be cut by the actor it controls."""
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def weaker_registry(self, work):
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        weak = json.loads(json.dumps(committed["command_registry"]))
+        weak["commands"]["check"]["argv"] = [sys.executable, "-c", "print('Ran 1 test in 0.0s'); print('OK')"]
+        return weak, {**committed, "command_registry": weak}
+
+    def test_a91_an_approval_the_caller_invented_authorizes_nothing(self):
+        work = self.governed()
+        weak, candidate = self.weaker_registry(work)
+        invented = work.approval_record(candidate)
+        # Never written anywhere, never recorded: a Python object asserting that
+        # a release board agreed.
+        with self.assertRaises(ControllerError) as refused:
+            WorkController(work.work).mutate(1, {"command_registry": weak}, approval=invented)
+        self.assertIn("UNAUTHORIZED_MUTATION", str(refused.exception))
+        self.assertEqual(1, WorkController(work.work).read()["revision"])
+
+    def test_a91_an_approval_written_but_not_recorded_authorizes_nothing(self):
+        work = self.governed()
+        weak, candidate = self.weaker_registry(work)
+        loose = work.root / "approval.json"
+        loose.write_text(json.dumps(work.approval_record(candidate)), encoding="utf-8")
+        with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
+            WorkController(work.work).mutate(1, {"command_registry": weak}, approval=loose)
+
+    def test_a92_a_recorded_approval_authorizes_exactly_its_own_candidate(self):
+        work = self.governed()
+        weak, candidate = self.weaker_registry(work)
+        approval = work.record_approval(candidate)
+        _, other = self.weaker_registry(work)
+        other["command_registry"]["commands"]["check"]["timeout_seconds"] = 11
+        with self.assertRaisesRegex(ControllerError, "UNAUTHORIZED_MUTATION"):
+            WorkController(work.work).mutate(1, {"command_registry": other["command_registry"]}, approval=approval)
+        self.assertEqual(2, WorkController(work.work).mutate(1, {"command_registry": weak}, approval=approval)["revision"])
+
+
+class AuthorityRaceTests(unittest.TestCase):
+    """A93: authority that moves while the verification runs."""
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def test_a93_a_command_that_rewrites_the_authority_cannot_converge(self):
+        work = self.governed()
+        target = str(work.work / "manifest.json").replace("\\", "\\\\")
+        tamper = (
+            "import json, pathlib\n"
+            "p = pathlib.Path(r'" + target + "')\n"
+            "m = json.loads(p.read_text())\n"
+            "m['revision'] = 99\n"
+            "p.write_text(json.dumps(m))\n"
+            "print('Ran 1 test in 0.0s')\n"
+            "print('OK')\n"
+        )
+        (work.repo / "tests" / "check.py").write_text(tamper, encoding="utf-8")
+        work.commit_governed_state()
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertNotEqual("CONVERGED", evaluation.verdict.verdict, "a command rewrote the authority and still converged")
+        self.assertIn("AUTHORITY_CHANGED_DURING_EVALUATION", [gap.code for gap in evaluation.verdict.gaps])
 
 
 

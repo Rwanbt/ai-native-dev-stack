@@ -17,6 +17,12 @@ or a freshness result from the caller. An agent that wants a different answer
 has to change committed state through the controller, where the change is
 visible.
 
+It also re-reads the authority after the verifications have run. A
+registered command has a filesystem, and nothing stops it from rewriting the
+manifest, the policy or the registry while it executes; a verdict computed from
+objects loaded before that would be a verdict about state that no longer
+exists.
+
 Nor does it accept evidence. A schema-valid `verification_run` proves shape,
 not origin: every digest in it can be read from committed state and from the
 checkout, so a file written by hand is indistinguishable from one a runner
@@ -210,6 +216,27 @@ def _authority_paths(work_dir: str | Path, manifest: Mapping[str, Any]) -> list[
     return paths
 
 
+def _authority_commitment(authority: Mapping[str, Any], artifacts: Mapping[str, Any]) -> str:
+    """One digest over everything a verdict depends on."""
+
+    return canonical_digest({
+        "manifest": authority["manifest"],
+        "artifacts": {name: value for name, value in sorted(artifacts.items())},
+    })
+
+
+def _authority_drift(work_dir: str | Path, before: str) -> list[Gap]:
+    """Detect authority that moved while the verifications were running."""
+
+    try:
+        artifacts, authority, _ = _authority(work_dir)
+    except EvaluationError as error:
+        return [Gap("AUTHORITY_CHANGED_DURING_EVALUATION", None, f"authority became unreadable during evaluation: {error}")]
+    if _authority_commitment(authority, artifacts) != before:
+        return [Gap("AUTHORITY_CHANGED_DURING_EVALUATION", None, "the committed authority changed while the verifications ran")]
+    return []
+
+
 def _execute_declared_verifications(work_dir: str | Path, repository_root: str | Path, specifications: Mapping[str, Mapping[str, Any]]) -> tuple[list[VerificationEvidence], list[Gap]]:
     """Run every executable declared verification, now.
 
@@ -259,7 +286,9 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     observation = observe(repository_root, scope)
     authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]))
 
+    before = _authority_commitment(authority, artifacts)
     produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
+    execution_gaps.extend(_authority_drift(work_dir, before))
     assessments = tuple(
         _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, authority_observation=authority_observation, relationship_gaps=relationship_gaps)
         for evidence in produced

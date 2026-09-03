@@ -16,7 +16,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 from .authorization import authorize_mutation
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
-from .provenance import observe_artifacts
+from .provenance import UNOBSERVED, observe_artifacts
 
 
 class ControllerError(RuntimeError):
@@ -199,15 +199,19 @@ class WorkController:
         finally:
             self._unlock(handle)
 
-    def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = (), approval: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = (), approval: str | os.PathLike[str] | None = None) -> dict[str, Any]:
         """Apply an explicit change to the committed set.
 
         @contract Nothing disappears unless it is named in delete_artifacts.
         A revision is the previous set with the named artifacts replaced and
         the named artifacts removed, never only what the caller supplied.
         @contract A change to any normative artifact requires an approval that
-        the policy of revision N authorizes for exactly this revision N+1. The
-        controlled system cannot rewrite the conditions it will be judged by.
+        the policy of revision N authorizes for exactly this revision N+1, and
+        `approval` is the *path* to that approval, not the object. The
+        controller observes the artifact's own provenance, so an approval the
+        caller merely constructed authorizes nothing: under a policy requiring
+        `git_recorded` it must already be recorded, and under one requiring
+        `signature_verified` an actor without the key cannot produce it.
         """
 
         handle = self._lock()
@@ -244,21 +248,46 @@ class WorkController:
                 paths.append(self.root / canonical_path(pointer["path"]))
         return paths
 
-    def _require_authorization(self, manifest: Mapping[str, Any], previous: Mapping[str, Any], candidate: Mapping[str, Any], approval: Mapping[str, Any] | None) -> None:
+    def _require_authorization(self, manifest: Mapping[str, Any], previous: Mapping[str, Any], candidate: Mapping[str, Any], approval: str | os.PathLike[str] | None) -> None:
         """Refuse a change to the success conditions that nobody authorized."""
 
         before = {name: value for name, value in previous.items() if name in NORMATIVE_ARTIFACTS}
         after = {name: value for name, value in candidate.items() if name in NORMATIVE_ARTIFACTS}
         if before == after:
             return
+        record, facts = self._read_approval(approval)
         refusal = authorize_mutation(
-            approval,
+            record,
             policy=previous.get("project_policy"),
             candidate_digest=self.normative_digest(candidate),
-            facts=observe_artifacts(self.authority_paths(manifest)),
+            facts=facts,
         )
         if refusal is not None:
             raise ControllerError(f"UNAUTHORIZED_MUTATION: {refusal}")
+
+    @staticmethod
+    def _read_approval(approval: str | os.PathLike[str] | None) -> tuple[Any, Any]:
+        """Load an approval and observe the artifact it actually is.
+
+        WHY a path and not an object: an in-memory mapping carries no
+        provenance of its own, so checking it against the *previous* state's
+        provenance only proves the previous state was clean. The approval has
+        to be a thing that exists, so that what is required of it can be
+        established about it.
+        """
+
+        if approval is None:
+            return None, UNOBSERVED
+        if not isinstance(approval, (str, os.PathLike)):
+            raise ControllerError("UNAUTHORIZED_MUTATION: an approval must be a recorded artifact, not an object")
+        path = Path(approval)
+        if not path.is_file():
+            raise ControllerError("UNAUTHORIZED_MUTATION: the approval is not a readable artifact")
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ControllerError("UNAUTHORIZED_MUTATION: the approval could not be read") from error
+        return record, observe_artifacts([path])
 
     def _read_artifacts(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
         """Load the artifacts a validated manifest points at."""
