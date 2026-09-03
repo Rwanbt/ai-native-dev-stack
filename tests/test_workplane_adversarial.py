@@ -95,8 +95,8 @@ class ContractAdversarialTests(unittest.TestCase):
     def test_a01_to_a06_committed_state_defends_itself(self):
         with tempfile.TemporaryDirectory() as directory:
             controller = WorkController(directory)
-            manifest = controller.create({"tasks": {"done": False}})
-            artifact_path = Path(directory) / manifest["artifacts"]["tasks"]["path"]
+            manifest = controller.create({"notes": {"done": False}})
+            artifact_path = Path(directory) / manifest["artifacts"]["notes"]["path"]
 
             # A05 stale revision writer
             with self.assertRaisesRegex(ControllerError, "STALE_REVISION"):
@@ -111,7 +111,7 @@ class ContractAdversarialTests(unittest.TestCase):
             # A03 bad artifact digest
             artifact_path.write_bytes(original)
             tampered = json.loads(controller.manifest_path.read_text(encoding="utf-8"))
-            tampered["artifacts"]["tasks"]["digest"] = OTHER
+            tampered["artifacts"]["notes"]["digest"] = OTHER
             controller.manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
             with self.assertRaisesRegex(ControllerError, "UNEXPECTED_MUTATION"):
                 controller.read()
@@ -124,8 +124,8 @@ class ContractAdversarialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             # A06 partial mutation deletion
             controller = WorkController(directory)
-            manifest = controller.create({"tasks": {"done": False}, "requirements": {"count": 1}})
-            (Path(directory) / manifest["artifacts"]["requirements"]["path"]).unlink()
+            manifest = controller.create({"notes": {"done": False}, "scratch": {"count": 1}})
+            (Path(directory) / manifest["artifacts"]["scratch"]["path"]).unlink()
             with self.assertRaisesRegex(ControllerError, "UNEXPECTED_MUTATION"):
                 controller.read()
 
@@ -415,13 +415,13 @@ class FilesystemAdversarialTests(unittest.TestCase):
     def test_a51_a52_a53_locks_and_crashes_never_half_commit(self):
         with tempfile.TemporaryDirectory() as directory:
             controller = WorkController(directory)
-            controller.create({"tasks": {"revision": 1}})
+            controller.create({"notes": {"revision": 1}})
 
             # A51 a lock held by a live writer on this host is refused
             import socket
             controller.lock_path.write_text(json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "created_at": "2026-09-02T00:00:00Z", "transaction_id": "held"}), encoding="utf-8")
             with self.assertRaisesRegex(ControllerError, "CONCURRENT_WRITER"):
-                controller.mutate(1, {"tasks": {"revision": 2}})
+                controller.mutate(1, {"notes": {"revision": 2}})
             controller.lock_path.unlink()
 
             for case, step in (("A52 crash after promotion", "after_promotion_before_manifest"), ("A53 crash before manifest replace", "before_manifest_replace")):
@@ -431,7 +431,7 @@ class FilesystemAdversarialTests(unittest.TestCase):
                             raise RuntimeError("injected crash")
 
                     with self.assertRaisesRegex(RuntimeError, "injected crash"):
-                        WorkController(directory, failure_injector=crash).mutate(1, {"tasks": {"revision": 2}})
+                        WorkController(directory, failure_injector=crash).mutate(1, {"notes": {"revision": 2}})
                     self.assertEqual(1, WorkController(directory).read()["revision"])
                     WorkController(directory).recover_staging()
 

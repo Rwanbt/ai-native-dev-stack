@@ -26,8 +26,8 @@ def run() -> bool:
     gap_ok = any(gap.code == "REQ_WITHOUT_TASK" for gap in requirement_gap.gaps)
     with tempfile.TemporaryDirectory() as directory:
         controller = WorkController(directory)
-        committed = controller.create({"requirements": {"historical": True}})
-        target = Path(directory) / committed["artifacts"]["requirements"]["path"]
+        committed = controller.create({"scratch": {"historical": True}})
+        target = Path(directory) / committed["artifacts"]["scratch"]["path"]
         target.write_text('{"historical":false}', encoding="utf-8")
         try:
             controller.read()

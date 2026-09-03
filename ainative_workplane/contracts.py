@@ -33,6 +33,21 @@ SUPPORTED_SCHEMA_VERSIONS = {
     "convergence_run": {SCHEMA_VERSION},
 }
 
+# Artifact names the engine reads as authority. Anything committed under one
+# of these names must be a valid artifact of the matching schema; anything
+# committed under another name is stored, marked non-normative, and never read
+# by the evaluator.
+NORMATIVE_ARTIFACTS = frozenset({
+    "requirements",
+    "acceptance_criteria",
+    "tasks",
+    "verification_specifications",
+    "project_policy",
+    "approval_root",
+    "waivers",
+    "human_approvals",
+})
+
 RELATIONSHIP_MODES = frozenset({"direct_scope", "black_box", "external_artifact", "human_approval"})
 PROVENANCE_VALUES = frozenset({"UNTRACKED", "GIT_DIRTY", "GIT_RECORDED", "GIT_REVIEWED", "CI_APPROVED", "SIGNED", "LOCAL_UNTRUSTED"})
 EFFECTIVE_WAIVER_STATES = frozenset({"effective", "expired", "revoked"})

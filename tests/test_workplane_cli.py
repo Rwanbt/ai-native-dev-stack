@@ -26,7 +26,7 @@ def write(path, payload):
 class WorkCommandTests(unittest.TestCase):
     def test_work_new_then_validate(self):
         with tempfile.TemporaryDirectory() as directory:
-            created = cli("work", "new", directory, "--artifact", 'tasks={"done":false}')
+            created = cli("work", "new", directory, "--artifact", 'notes={"done":false}')
             self.assertEqual(1, created["revision"])
             self.assertEqual(created, cli("work", "validate", directory))
 

@@ -12,9 +12,9 @@ import shutil
 import socket
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
-from .contracts import ContractError, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
+from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 
 
 class ControllerError(RuntimeError):
@@ -158,12 +158,18 @@ class WorkController:
             for name, value in artifacts.items():
                 if not isinstance(name, str) or not name:
                     raise ControllerError("INVALID_ARTIFACT_NAME")
-                if isinstance(value, Mapping) and "schema_name" in value:
+                normative = name in NORMATIVE_ARTIFACTS
+                if normative:
+                    try:
+                        validate_artifact(value)
+                    except ContractError as error:
+                        raise ControllerError(f"INVALID_NORMATIVE_ARTIFACT:{name}:{error.code}") from error
+                elif isinstance(value, Mapping) and "schema_name" in value:
                     validate_artifact(value)
                 filename = f"{name}.json"
                 staged = stage / filename
                 self._write_json(staged, value)
-                pointers[name] = {"path": f"revisions/{revision}/{filename}", "digest": digest_bytes(staged.read_bytes())}
+                pointers[name] = {"path": f"revisions/{revision}/{filename}", "digest": digest_bytes(staged.read_bytes()), "normative": normative}
                 self._step("after_staged_file")
             revision_dir.parent.mkdir(parents=True, exist_ok=True)
             if revision_dir.exists():
@@ -191,16 +197,62 @@ class WorkController:
         finally:
             self._unlock(handle)
 
-    def mutate(self, expected_revision: int, artifacts: Mapping[str, Any]) -> dict[str, Any]:
+    def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = ()) -> dict[str, Any]:
+        """Apply an explicit change to the committed set.
+
+        @contract Nothing disappears unless it is named in delete_artifacts.
+        A revision is the previous set with the named artifacts replaced and
+        the named artifacts removed, never only what the caller supplied.
+        """
+
         handle = self._lock()
         try:
             self._recover_interrupted()
             current = self._load_manifest()
             if expected_revision != current["revision"]:
                 raise ControllerError("STALE_REVISION")
-            return self._commit(current, artifacts)
+            merged = self._read_artifacts(current)
+            for name in delete_artifacts:
+                if name not in merged:
+                    raise ControllerError(f"UNKNOWN_ARTIFACT:{name}")
+                del merged[name]
+            merged.update(set_artifacts or {})
+            if not merged:
+                raise ControllerError("EMPTY_REVISION")
+            return self._commit(current, merged)
         finally:
             self._unlock(handle)
+
+    def _read_artifacts(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
+        """Load the artifacts a validated manifest points at."""
+
+        artifacts: dict[str, Any] = {}
+        for name, pointer in manifest["artifacts"].items():
+            path = self.root / canonical_path(pointer["path"])
+            try:
+                artifacts[name] = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ControllerError("INVALID_COMMITTED_STATE") from error
+        return artifacts
+
+    def load_committed_artifacts(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return the validated manifest and the exact committed artifact set.
+
+        @contract Every pointer is digest-checked before its artifact is read,
+        and every normative artifact is validated against its schema, so a
+        caller cannot receive committed state the controller would refuse to
+        write today.
+        """
+
+        manifest = self._load_manifest()
+        artifacts = self._read_artifacts(manifest)
+        for name, value in artifacts.items():
+            if name in NORMATIVE_ARTIFACTS:
+                try:
+                    validate_artifact(value)
+                except ContractError as error:
+                    raise ControllerError(f"INVALID_NORMATIVE_ARTIFACT:{name}:{error.code}") from error
+        return manifest, artifacts
 
     def recover_staging(self) -> int:
         handle = self._lock()
