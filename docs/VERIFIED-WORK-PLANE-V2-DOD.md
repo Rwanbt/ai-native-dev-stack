@@ -18,18 +18,26 @@ CONVERGENCE:  PASS
 ADVERSARIAL:  PASS (A01-A53 and A71, covered across the Linux and Windows legs)
 CI:           PASS
 
-CONTROLLER_AUTHORITY:   ADDRESSED, awaiting review
-OBSERVED_PROVENANCE:    ADDRESSED, awaiting review
-PER_EVIDENCE_TRUST:     ADDRESSED, awaiting review
-PER_EVIDENCE_FRESHNESS: ADDRESSED, awaiting review
-AUTHORITATIVE_E2E:      ADDRESSED, awaiting review
-ADVERSARIAL_E2E:        PASS (A54-A70)
+CONTROLLER_AUTHORITY:            ADDRESSED, awaiting external review
+AUTHORITATIVE_E2E:               ADDRESSED, awaiting external review
+PER_EVIDENCE_TRUST:              ADDRESSED, awaiting external review
+PER_EVIDENCE_FRESHNESS:          ADDRESSED, awaiting external review
+
+AUTHENTICATED_EVIDENCE:          ADDRESSED, awaiting external review
+PROVENANCE_CAPABILITIES:         ADDRESSED, awaiting external review
+SUCCESS_CONDITION_AUTHORIZATION: ADDRESSED, awaiting external review
+AUTHORIZATION_EVIDENCE:          ADDRESSED, awaiting external review
+ROOT_TRANSITION_BINDING:         ADDRESSED, awaiting external review
+EXACT_WORK_BINDING:              ADDRESSED, awaiting external review
+REGISTRY_SCHEMA:                 ADDRESSED, awaiting external review
+
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A90)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
 
-P0 = not yet claimable
-P1 = not yet claimable
+P0 = not claimable
+P1 = not claimable
 
 → NO-GO
 ```
@@ -37,12 +45,17 @@ P1 = not yet claimable
 `NO-GO` is the plan's own verdict for this state, not a judgement about the
 code.
 
-**P0 = 0 is deliberately not claimed here.** The five authority findings are
-corrected and each is held by an end-to-end case that runs through the
-production boundary, but the standard for closing them is external review, not
-the author's own test passing. Self-certification is exactly the failure mode
-this system exists to prevent; claiming zero on my own evidence would be the
-first violation of it.
+**P0 = 0 is deliberately not claimed here**, and the second review is why the
+rule earns its keep. The first round closed five authority findings, every one
+held by an end-to-end case, all green on two platforms — and an external
+reviewer then found four more P0s in what those cases did not ask. A
+hand-written `verification_run` converged. A signature satisfied a policy
+demanding CI. Rewriting the command under test turned a failing check into
+`CONVERGED`.
+
+Those are corrected now, with the same kind of evidence that proved
+insufficient last time. The standard for closing an authority finding remains
+external review.
 
 ## Closed gates
 
@@ -76,7 +89,20 @@ therefore complete across the pair, not on either OS alone.
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
 
-## Authority corrections, awaiting review
+## Second-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| A hand-written verification_run converged | The evaluator executes the declared verifications and judges only what it produced; recorded runs are an audit trail, and there is no evidence-directory parameter | A72, A73 |
+| A clean checkout capped the provenance of artifacts living elsewhere | Two observations, per object: the checkout for the code, the normative artifacts at their own location | A74-A76 |
+| Provenance was a numeric ladder, so SIGNED satisfied CI_APPROVED | Independent facts a policy names individually; no fact substitutes for another | A77-A79 |
+| Rewriting the command under test turned failure into CONVERGED | Every normative change needs a mutation_approval issued under the policy in force before it, naming the exact next state | A80-A83 |
+| A waiver's approval_provenance proved itself | The claim is not read; the artifact's observed facts are | A84, A85 |
+| A transition approval named a UID, not a state | It binds successor_commitment, a digest of the candidate's content | A86 |
+| Evidence bound only by contract digest | Binding also checks work UID and contract revision, both derived from the manifest | A87, A88 |
+| The registry was validated by two different rules | One validator, called by the contract and by the runner | A89, A90 |
+
+## First-round corrections, awaiting review
 
 | Finding | Correction | Case |
 | --- | --- | --- |
@@ -118,8 +144,8 @@ refactor and a hotfix.
 ## Local verification at the time of writing
 
 ```text
-python -m unittest <16 V2 modules + vault + hooks> -q
-→ 123 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+python -m unittest <17 V2 modules + vault + hooks> -q
+→ 132 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
 ```
@@ -145,3 +171,12 @@ cases execute.
   deliberately changing both the rules and the approvals.
 - The snapshot race check compares size, mtime and inode; a rewrite preserving
   all three is undetected.
+- Convergence now executes the declared verifications, so a verdict costs a
+  full run and evidence is not reusable across invocations. Reuse needs an
+  independently verified attestation, which this build cannot check.
+- Freshness no longer gates staleness on the in-process path — it catches a
+  checkout moving underneath a running verification. Stale *reuse* is prevented
+  by not reusing, not by detection.
+- A mutation approval is a record, not a signature. It stops an agent from
+  silently rewriting its own bar; it does not stop a sole maintainer who
+  writes both the rules and the approvals.

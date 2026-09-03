@@ -26,7 +26,8 @@ are the authority; PR-00 prose is historical.
 | `traceability.py` | Structural graph, deterministic gaps, relationship scope coverage |
 | `authorization.py` | Waivers and human approvals, effective only under the policy that configured them |
 | `convergence.py` | `CONVERGED`, `NOT_CONVERGED`, `INVALID`, `INTERNAL_ERROR` and their exit codes |
-| `provenance.py` | What the checkout can be observed to establish, capping every declared claim |
+| `provenance.py` | Independent provenance facts, observed per object and per domain |
+| `authorization.py` | Waivers, human approvals and the mutation bar |
 | `evaluator.py` | The authoritative boundary: committed state in, verdict out |
 | `cli.py` | Thin headless facade: `work`, `verify`, `converge`, and a labelled `debug` |
 
@@ -46,6 +47,17 @@ There are two convergence surfaces and confusing them is the whole risk:
   verdict or freshness result, and a test asserts that it never will.
 
 Production code and the CLI use the boundary. Tests may use the kernel.
+
+Two properties of the boundary are worth stating because they cost something:
+
+- **It produces the evidence it judges.** A recorded run is a file, and a file
+  is whatever its author wrote; against a local actor no signature settles
+  that. So `evaluate_work` executes the declared verifications rather than
+  reading them, and a verdict costs a full run. See ADR-0003.
+- **It refuses a change to the rules that the previous authority did not
+  approve.** The controller is the only writer, and now also checks that a
+  change to any normative artifact carries a `mutation_approval` issued under
+  the policy in force *before* the change.
 
 Known limitations, stated rather than implied: no blind historical validation has
 been run ([protocol](verified-work-plane-v2-historical-validation-protocol.md)), and

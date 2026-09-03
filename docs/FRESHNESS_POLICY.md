@@ -35,6 +35,20 @@ command-registry digest, and a canonical content digest.
 - Normative JSON uses UTF-8, sorted object keys, fixed separators, and a documented
   Unicode policy before SHA-256 is calculated.
 
+## What freshness still decides
+
+Since the authoritative evaluator executes the verifications it judges,
+evidence is always current for a still checkout: staleness relative to the
+repository is no longer how a stale result gets caught, because a stale result
+is no longer reused. What the freshness engine still decides is:
+
+- a checkout that moves *underneath* a running verification (`STALE_SCOPE`,
+  `STALE_DEPENDENCY`) — a race, and the reason A57 exists;
+- evidence bound to a contract, specification, registry, policy or root other
+  than the one in force, which is a binding failure rather than an age one.
+
+Said plainly rather than left for a reader to infer from a green suite.
+
 ## Where freshness comes from
 
 The authoritative evaluator recomputes freshness from the checkout, once per

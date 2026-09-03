@@ -53,6 +53,22 @@ is refused.
 | Unknown gap waived | Wait for a gap code nobody classified | Future gaps waivable by default | Waiver eligibility is an allowlist of eight completeness gaps | — | A67 |
 | Snapshot read during a write | Rewrite a scoped file while it is hashed | A digest of a state that never existed | Size, mtime and inode are compared before and after hashing | A rewrite preserving all three is undetected | A71 |
 
+## Authority threats found by the second review
+
+The first table above covers attacks that supply authority as an argument.
+These are the harder ones: manufacturing the things the evaluator does accept.
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Forged verification evidence | Write a file in the work directory | A hand-written PASS converges, and masks a verification that actually fails | The evaluator executes the declared verifications and judges only what it produced; recorded runs are an audit trail | Convergence costs a full run, and reusable evidence needs an attestation this build cannot verify | A72, A73 |
+| Provenance domains conflated | Put the work directory anywhere | A directory outside the repository inherits the checkout's cleanliness | Two observations: the checkout for the code, the normative artifacts at their own location | The run log is excluded from the authority observation by name, not by a general rule | A74-A76 |
+| Ranked provenance | Sign a commit | A signature satisfies a policy that demanded CI or review | Independent facts; no fact substitutes for another | `git_reviewed` and `ci_verified` are unobservable here, so policies requiring them cannot be satisfied at all | A77-A79 |
+| Success-condition self-weakening | Commit through the controller | Rewrite the command, specification or policy you are judged by, then pass | Every normative change needs an approval the policy of revision N gives for exactly revision N+1 | The approval is a record, not a signature; a sole maintainer can write both sides | A80-A83 |
+| Forged approval provenance | Write `"SIGNED"` in a waiver | An exception removes a gap on its own say-so | The claim is not read; the artifact's observed facts are | As above | A84, A85 |
+| Successor content swapped after approval | Keep the UID, change the contents | Approved lineage carries unapproved rules | The approval binds `successor_commitment`, a digest of the candidate's content | — | A86 |
+| Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
+| Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
+
 ## Trusted computing base
 
 Everything a verdict depends on, and nothing else:

@@ -52,3 +52,12 @@
 - Waiver eligibility is an allowlist | location: ainative_workplane/authorization.py WAIVABLE_GAPS | proof: A67 -> a waiver scoped at an authority gap suppresses nothing | confirmed
 - A file rewritten while hashed is refused | location: ainative_workplane/snapshot.py _digest_file | proof: A71 -> SNAPSHOT_RACE | confirmed
 - P0 = 0 is deliberately NOT claimed | location: docs/VERIFIED-WORK-PLANE-V2-DOD.md | proof: the standard for closing an authority finding is external review, not the author's own passing test | active decision
+
+### SECOND-ROUND AUTHORITY HARDENING 2026-09-03
+- Four P0 and four P1 from an external review of 13d2550, all reproduced before any change | location: scratchpad probes then tests/test_workplane_authority_origin.py | proof: a hand-written verification_run converged; SIGNED satisfied a policy demanding CI; rewriting the command under test turned a failing check into CONVERGED | confirmed
+- Evidence is produced by the evaluator, never read from files | location: ainative_workplane/evaluator.py | proof: A72 asserts a forged run is not judged; A73 asserts the API takes no evidence directory | confirmed
+- Provenance is independent facts observed per object and per domain | location: ainative_workplane/provenance.py | proof: A77-A79 assert no fact substitutes for another; the authority observation excludes the run log by name | confirmed
+- Every normative change needs an approval issued under the policy in force before it | location: ainative_workplane/controller.py, authorization.authorize_mutation | proof: A80-A83 refuse the four ways to lower the bar; an approval for another candidate, another policy or an unconfigured predicate authorizes nothing | confirmed
+- Waiver and human-approval provenance is verified, not declared | location: ainative_workplane/authorization.py | proof: A84, A85 | confirmed
+- Transition approvals bind the successor's content; evidence binds work UID and revision; the registry has one validator | location: trust.successor_commitment, evaluator._binding_reasons, contracts._validate_command_registry | proof: A86, A87, A88, A89, A90 | confirmed
+- P0 = 0 and P1 = 0 are NOT claimed | location: docs/VERIFIED-WORK-PLANE-V2-DOD.md | proof: the first round closed five findings with green end-to-end cases on two platforms, and an external reviewer then found four more P0s in what those cases did not ask | active decision
