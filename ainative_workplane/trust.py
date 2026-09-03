@@ -104,15 +104,22 @@ def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, An
     return not unmet(facts, required)
 
 
-def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required: Mapping[str, Any], approval_chain: Iterable[Mapping[str, Any]], facts: Any = None, predicate_id: str = "", genesis_digest: str | None = None) -> bool:
+def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_chain: Iterable[Mapping[str, Any]], policies: Mapping[str, Mapping[str, Any]], facts: Any = None, genesis_digest: str | None = None) -> bool:
     """Walk the chain to a genesis the project actually pinned.
 
     @contract A root with no predecessor terminates the walk only when it *is*
     the pinned genesis. Without that, a root could change content, declare no
     predecessor, and be read as another genesis inside an already governed
-    work -- which makes `transition_approval` optional exactly where it
-    decides something. `genesis_digest=None` keeps the older behaviour for
-    callers with no project anchor; the production path always supplies it.
+    work -- which makes `transition_approval` optional exactly where it decides
+    something. `genesis_digest=None` keeps the older behaviour for callers with
+    no project anchor; the production path always supplies it.
+
+    @contract Each transition is judged under the *predecessor's* policy, not
+    the current one. Judging history by today's rules would let a later, weaker
+    policy retroactively authorize a transition it never saw; the invariant is
+    that P0 authorized P1 and P1 authorized P2. Only the current root is
+    required to carry the current policy commitment; every earlier root must
+    carry one the project actually committed, which is what `policies` holds.
     """
 
     roots: dict[str, Mapping[str, Any]] = {root["uid"]: root}
@@ -124,15 +131,22 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required: 
         return False
     current = root
     seen: set[str] = set()
+    is_current = True
     while True:
         uid = current["uid"]
-        if uid in seen or current.get("policy_digest") != policy_digest:
+        if uid in seen:
+            return False
+        in_force = policies.get(current.get("policy_digest"))
+        if in_force is None:
+            return False
+        if is_current and current.get("policy_digest") != policy_digest:
             return False
         if current.get("root_digest") != approval_root_commitment(current):
             return False
-        if unmet(facts, required):
+        if unmet(facts, in_force["required_mutation_facts"]):
             return False
         seen.add(uid)
+        is_current = False
         predecessor = current.get("predecessor")
         if predecessor is None:
             return genesis_digest is None or approval_root_commitment(current) == genesis_digest
@@ -141,12 +155,22 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, required: 
         parent = roots.get(predecessor.get("uid"))
         if parent is None or predecessor.get("digest") != parent.get("root_digest"):
             return False
-        if not _authorized_transition(current, parent, predicate_id=predicate_id, policy_digest=policy_digest, required=required, facts=facts):
+        authorizing = policies.get(parent.get("policy_digest"))
+        if authorizing is None:
+            return False
+        if not _authorized_transition(
+            current,
+            parent,
+            predicate_id=authorizing["approval_predicate"]["predicate_id"],
+            policy_digest=parent.get("policy_digest"),
+            required=authorizing["required_mutation_facts"],
+            facts=facts,
+        ):
             return False
         current = parent
 
 
-def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None) -> TrustVerdict:
+def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None) -> TrustVerdict:
     """Reject missing, malformed, mismatched, or insufficient authority.
 
     @contract Authority comes from facts observed about the objects
@@ -173,6 +197,14 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
         return TrustVerdict(False, "POLICY_CHANGED")
     if unmet(evidence_facts, policy["required_evidence_facts"]):
         return TrustVerdict(False, "INSUFFICIENT_EVIDENCE_PROVENANCE")
-    if not _valid_root_chain(approval_root, policy_digest=commitment, required=policy["required_mutation_facts"], approval_chain=approval_chain, facts=authority_facts, predicate_id=policy["approval_predicate"]["predicate_id"], genesis_digest=genesis_digest):
+    policies: dict[str, Mapping[str, Any]] = {}
+    try:
+        for historical in policy_chain:
+            validate_artifact(historical)
+            policies[policy_commitment(historical)] = historical
+    except ContractError:
+        return TrustVerdict(False, "POLICY_COMMITMENT_INVALID")
+    policies[commitment] = policy
+    if not _valid_root_chain(approval_root, policy_digest=commitment, approval_chain=approval_chain, policies=policies, facts=authority_facts, genesis_digest=genesis_digest):
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
     return TrustVerdict(True, "TRUSTED")

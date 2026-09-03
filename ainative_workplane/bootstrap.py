@@ -191,6 +191,32 @@ def anchor_refusal(path: str | os.PathLike[str], anchor: Mapping[str, Any]) -> s
     return predicate_refusal(anchor["bootstrap_predicate"]["predicate_id"], observe_artifact(path, authorized_signers=anchor["authorized_signers"]))
 
 
+def verified_anchor(start: str | os.PathLike[str]) -> tuple[Path, dict[str, Any]] | None:
+    """The anchor governing this location, only if it currently carries authority.
+
+    One function, used by the controller before it writes and by the evaluator
+    before it decides. The fifth round left the controller loading an anchor and
+    using it without asking whether it was still valid, so the sole normative
+    writer could accept a mutation under an anchor the evaluator would reject a
+    moment later. Fail-closed at evaluation was already true; fail-closed at the
+    writer is what the writer is for.
+
+    @returns None where the project has no anchor at all -- an ungoverned
+    directory is a local scratch, and refusing to converge on it is the
+    evaluator's job, not the controller's.
+    @raises BootstrapError where an anchor exists but establishes nothing.
+    """
+
+    located = locate(start)
+    if located is None:
+        return None
+    anchor = load(located)
+    refusal = anchor_refusal(located, anchor)
+    if refusal is not None:
+        raise BootstrapError(f"PROJECT_TRUST_UNVERIFIED:{refusal}")
+    return located, anchor
+
+
 CREATION_APPROVAL = "creation_approval.json"
 
 
@@ -245,4 +271,4 @@ def read_creation_approval(work_dir: str | os.PathLike[str], anchor: Mapping[str
     return record, observe_artifacts([path], authorized_signers=anchor["authorized_signers"])
 
 
-__all__ = ["CREATION_APPROVAL", "TRUST_RELATIVE", "BootstrapError", "admits", "anchor_refusal", "bootstrap", "creation_approval_path", "governs", "load", "locate", "read_creation_approval", "trust_commitment"]
+__all__ = ["CREATION_APPROVAL", "TRUST_RELATIVE", "BootstrapError", "admits", "anchor_refusal", "bootstrap", "creation_approval_path", "governs", "load", "locate", "read_creation_approval", "trust_commitment", "verified_anchor"]

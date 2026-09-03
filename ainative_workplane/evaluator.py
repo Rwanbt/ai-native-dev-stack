@@ -41,7 +41,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .bootstrap import BootstrapError, admits, anchor_refusal, governs, load as load_trust_anchor, locate as locate_trust_anchor, read_creation_approval
+from .bootstrap import BootstrapError, admits, governs, read_creation_approval, verified_anchor
 from .contracts import canonical_digest, canonical_path
 from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
@@ -152,7 +152,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"])
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], policy_chain=authority["policy_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"])
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -272,13 +272,11 @@ def _project_trust_gaps(work_dir: str | Path, authority: Mapping[str, Any]) -> l
 
     anchor = authority["anchor"]
     if anchor is None:
-        located = authority["anchor_error"]
-        if located is not None:
-            return [Gap("PROJECT_TRUST_INVALID", None, located)]
-        return [Gap("PROJECT_TRUST_UNINITIALIZED", None, "the project has no trust anchor, so this work is governed only by rules it declared for itself")]
-    unverified = anchor_refusal(authority["anchor_path"], anchor)
-    if unverified is not None:
-        return [Gap("PROJECT_TRUST_UNVERIFIED", None, f"the project trust anchor itself is not established: {unverified}")]
+        refused = authority["anchor_error"]
+        if refused is None:
+            return [Gap("PROJECT_TRUST_UNINITIALIZED", None, "the project has no trust anchor, so this work is governed only by rules it declared for itself")]
+        code = "PROJECT_TRUST_UNVERIFIED" if refused.startswith("PROJECT_TRUST_UNVERIFIED") else "PROJECT_TRUST_INVALID"
+        return [Gap(code, None, refused)]
     refusal = governs(anchor, approval_root=authority["approval_root"], root_history=authority["root_history"])
     if refusal is not None:
         return [Gap("PROJECT_TRUST_MISMATCH", None, refusal)]
@@ -369,14 +367,15 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
     approval_root = artifacts.get("approval_root")
     registry = artifacts.get("command_registry")
     history = controller.root_history()
-    anchor_path = locate_trust_anchor(work_dir)
+    anchor_path: Path | None = None
     anchor: dict[str, Any] | None = None
     anchor_error: str | None = None
-    if anchor_path is not None:
-        try:
-            anchor = load_trust_anchor(anchor_path)
-        except BootstrapError as error:
-            anchor_error = str(error)
+    try:
+        located = verified_anchor(work_dir)
+        if located is not None:
+            anchor_path, anchor = located
+    except BootstrapError as error:
+        anchor_error = str(error)
     specifications = {spec["uid"]: spec for spec in artifacts.get("verification_specifications", [])}
     authority = {
         "policy": policy,
@@ -390,6 +389,7 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "revision": manifest["revision"],
         "manifest": manifest,
         "root_history": history,
+        "policy_history": controller.policy_history(),
         "genesis_digest": controller.genesis_normative_digest(),
         "genesis_root_digest": approval_root_commitment(history[0]) if history else None,
         "anchor_path": anchor_path,

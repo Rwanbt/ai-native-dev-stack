@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from .authorization import authorize_mutation
-from .bootstrap import BootstrapError, admits, governs, load as load_trust_anchor, locate as locate_trust_anchor, read_creation_approval
+from .bootstrap import BootstrapError, admits, governs, read_creation_approval, verified_anchor
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 from .provenance import UNOBSERVED, observe_artifacts
-from .trust import approval_root_commitment
+from .trust import approval_root_commitment, policy_commitment
 
 
 class ControllerError(RuntimeError):
@@ -180,7 +180,7 @@ class WorkController:
                 raise ControllerError("REVISION_ALREADY_EXISTS")
             shutil.move(str(stage), str(revision_dir))
             self._step("after_promotion_before_manifest")
-            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers, "root_chain": self._extend_root_chain(previous, artifacts, revision)}
+            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers, "root_chain": self._extend_root_chain(previous, artifacts, revision), "policy_chain": self._extend_policy_chain(previous, artifacts, revision)}
             temporary = self.root / f".manifest.{secrets.token_hex(8)}.tmp"
             self._write_json(temporary, manifest)
             self._step("before_manifest_replace")
@@ -190,6 +190,30 @@ class WorkController:
         finally:
             if stage.exists():
                 shutil.rmtree(stage, ignore_errors=True)
+
+    @staticmethod
+    def _extend_chain(previous: Mapping[str, Any] | None, revision: int, *, field: str, digest: str | None) -> list[dict[str, Any]]:
+        """Append a commitment to a committed chain when it changes."""
+
+        chain = [dict(entry) for entry in (previous.get(field, []) if previous else [])]
+        if digest is None:
+            return chain
+        if not chain or chain[-1]["digest"] != digest:
+            chain.append({"revision": revision, "digest": digest})
+        return chain
+
+    def _extend_policy_chain(self, previous: Mapping[str, Any] | None, artifacts: Mapping[str, Any], revision: int) -> list[dict[str, Any]]:
+        """Carry the committed policy chain forward.
+
+        WHY a chain and not just the current policy: a root transition has to be
+        judged under the policy in force *when it happened*, or a later, weaker
+        policy would retroactively authorize an old transition it never saw.
+        Resolving historical policies needs them to be committed, and the
+        manifest is what makes a revision committed.
+        """
+
+        policy = artifacts.get("project_policy")
+        return self._extend_chain(previous, revision, field="policy_chain", digest=policy_commitment(policy) if isinstance(policy, Mapping) else None)
 
     @staticmethod
     def _extend_root_chain(previous: Mapping[str, Any] | None, artifacts: Mapping[str, Any], revision: int) -> list[dict[str, Any]]:
@@ -203,14 +227,8 @@ class WorkController:
         makes a revision committed at all.
         """
 
-        chain = [dict(entry) for entry in (previous.get("root_chain", []) if previous else [])]
         root = artifacts.get("approval_root")
-        if not isinstance(root, Mapping):
-            return chain
-        digest = approval_root_commitment(root)
-        if not chain or chain[-1]["digest"] != digest:
-            chain.append({"revision": revision, "digest": digest})
-        return chain
+        return WorkController._extend_chain(previous, revision, field="root_chain", digest=approval_root_commitment(root) if isinstance(root, Mapping) else None)
 
     def create(self, artifacts: Mapping[str, Any]) -> dict[str, Any]:
         handle = self._lock()
@@ -224,15 +242,17 @@ class WorkController:
             self._unlock(handle)
 
     def project_anchor(self) -> tuple[Path, dict[str, Any]] | None:
-        """The project trust anchor governing this work, if the project has one."""
+        """The verified project trust anchor governing this work, if any.
 
-        anchor_path = locate_trust_anchor(self.root)
-        if anchor_path is None:
-            return None
+        Verified, not merely loaded: an anchor that no longer establishes
+        anything must not authorize a write. The same function decides this for
+        the evaluator, so the two cannot drift apart.
+        """
+
         try:
-            return anchor_path, load_trust_anchor(anchor_path)
+            return verified_anchor(self.root)
         except BootstrapError as error:
-            raise ControllerError(f"UNGOVERNED_GENESIS: {error}") from error
+            raise ControllerError(f"UNGOVERNED_PROJECT: {error}") from error
 
     def _require_project_trust(self, artifacts: Mapping[str, Any]) -> None:
         """Refuse a work that invents its own authority inside a governed project.
@@ -252,7 +272,7 @@ class WorkController:
         located = self.project_anchor()
         if located is None:
             return
-        anchor_path, anchor = located
+        _, anchor = located
         refusal = governs(anchor, approval_root=artifacts.get("approval_root"))
         if refusal is not None:
             raise ControllerError(f"UNGOVERNED_GENESIS: {refusal}")
@@ -296,6 +316,15 @@ class WorkController:
         finally:
             self._unlock(handle)
 
+    def policy_history(self) -> list[dict[str, Any]]:
+        """Every policy this work actually committed, oldest first.
+
+        @contract Only revisions named in the committed manifest policy chain
+        are read, and each policy must still commit to what the chain recorded.
+        """
+
+        return self._committed_chain("policy_chain", "project_policy.json", policy_commitment)
+
     def root_history(self) -> list[dict[str, Any]]:
         """Every approval root this work actually committed, oldest first.
 
@@ -309,19 +338,24 @@ class WorkController:
         replace is not history, and is never returned.
         """
 
+        return self._committed_chain("root_chain", "approval_root.json", approval_root_commitment)
+
+    def _committed_chain(self, field: str, filename: str, commitment: Callable[[Mapping[str, Any]], str]) -> list[dict[str, Any]]:
+        """Resolve one committed chain from the revisions the manifest names."""
+
         manifest = self._load_manifest()
         history: list[dict[str, Any]] = []
-        for entry in manifest.get("root_chain", []):
-            candidate = self.revisions / str(entry["revision"]) / "approval_root.json"
+        for entry in manifest.get(field, []):
+            candidate = self.revisions / str(entry["revision"]) / filename
             if not candidate.is_file():
                 continue
             try:
-                root = json.loads(candidate.read_text(encoding="utf-8"))
+                artifact = json.loads(candidate.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if not isinstance(root, Mapping) or approval_root_commitment(root) != entry["digest"]:
+            if not isinstance(artifact, Mapping) or commitment(artifact) != entry["digest"]:
                 continue
-            history.append(dict(root))
+            history.append(dict(artifact))
         return history
 
     @staticmethod
@@ -424,6 +458,8 @@ class WorkController:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ControllerError("UNAUTHORIZED_MUTATION: the approval could not be read") from error
+        # Reading the anchor here also verifies it: an approval measured against
+        # the signer set of an anchor nobody can rely on establishes nothing.
         located = self.project_anchor()
         signers = located[1]["authorized_signers"] if located else None
         return record, observe_artifacts([path], authorized_signers=signers)

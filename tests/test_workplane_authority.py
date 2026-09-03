@@ -250,6 +250,16 @@ class GovernedWork:
         self.commit_governed_state()
         return second_uid
 
+    def evolved_policy(self, **changes):
+        """A policy the project may legitimately move to, self-consistent."""
+
+        evolved = {key: (dict(value) if isinstance(value, dict) else value) for key, value in self.policy.items()}
+        evolved.update(changes)
+        commitment = policy_commitment(evolved)
+        for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
+            evolved[field] = dict(evolved[field], policy_digest=commitment)
+        return evolved, commitment
+
     def successor_root(self, previous, *, marker="SIGNED", **overrides):
         """Build a root that names its predecessor and carries a real transition.
 

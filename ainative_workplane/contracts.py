@@ -292,15 +292,17 @@ def _validate_work_manifest(value: Mapping[str, Any]) -> None:
         _digest(_required(pointer, "digest"), f"artifacts.{name}.digest")
     if "approval_root" in value:
         _reference(value["approval_root"], "approval_root", "root")
-    # The committed root chain. Every entry names a revision whose manifest was
-    # actually replaced, which is what stops a revision directory left behind
-    # by a crash from being read as historical authority.
-    for entry in _list(_required(value, "root_chain"), "root_chain"):
-        link = _mapping(entry, "root_chain[]")
-        revision = _required(link, "revision")
-        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
-            _fail("INVALID_FIELD", "root_chain[].revision must be a positive integer")
-        _digest(_required(link, "digest"), "root_chain[].digest")
+    # The committed root and policy chains. Every entry names a revision whose
+    # manifest was actually replaced, which is what stops a revision directory
+    # left behind by a crash from being read as historical authority -- and what
+    # lets a historical transition be judged under the policy in force then.
+    for field in ("root_chain", "policy_chain"):
+        for entry in _list(_required(value, field), field):
+            link = _mapping(entry, f"{field}[]")
+            revision = _required(link, "revision")
+            if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+                _fail("INVALID_FIELD", f"{field}[].revision must be a positive integer")
+            _digest(_required(link, "digest"), f"{field}[].digest")
 
 
 def _validate_requirements(value: Mapping[str, Any]) -> None:

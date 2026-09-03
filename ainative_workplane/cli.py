@@ -46,9 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--delete", action="append", default=[], help="Name an artifact to remove; nothing disappears implicitly.")
     update.add_argument("--approval", type=Path, help="Path to the recorded mutation_approval authorizing this exact next state.")
 
-    trust = commands.add_parser("trust", help="Pin what a project trusts, before any work contract exists.")
+    trust = commands.add_parser("trust", help="Pin what a project trusts, before any work contract exists. PRIVILEGED: see ADR-0006.")
     trust_commands = trust.add_subparsers(dest="trust_command", required=True)
-    initialize = trust_commands.add_parser("bootstrap", help="Establish the project trust anchor. Refuses to replace one.")
+    initialize = trust_commands.add_parser("bootstrap", help="Establish the project trust anchor. PRIVILEGED trust-establishment: the Work Plane cannot verify who performed it, so a controlled agent must not be given authority to run it. Refuses to replace an existing anchor.")
     initialize.add_argument("--repo", type=Path, default=Path.cwd())
     initialize.add_argument("--approval-root", type=Path, required=True)
     initialize.add_argument("--policy", type=Path, required=True)
@@ -106,7 +106,9 @@ def _work(args: argparse.Namespace) -> int:
 def _trust(args: argparse.Namespace) -> int:
     if args.trust_command == "bootstrap":
         path = bootstrap(args.repo, approval_root=_load(args.approval_root), policy=_load(args.policy), initialized_by=args.by, predicate_id=args.predicate, authorized_signers=args.signer)
-        _emit({"anchor": str(path), "trust": load_trust_anchor(path)})
+        # Labelled, because everything downstream derives its authority from
+        # this one act and the runtime cannot verify who performed it.
+        _emit({"authority": "privileged_trust_establishment", "anchor": str(path), "trust": load_trust_anchor(path)})
         return 0
     located = locate_trust_anchor(args.repo)
     if located is None:
