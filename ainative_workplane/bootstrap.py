@@ -33,7 +33,7 @@ from typing import Any, Iterable, Mapping
 
 from .contracts import ContractError, canonical_digest, generate_uid, validate_artifact
 from .predicates import predicate_refusal, predicate_requirements
-from .provenance import observe_artifact
+from .provenance import UNOBSERVED, commit_count, observe_artifact, observe_artifacts
 from .trust import approval_root_commitment, policy_commitment
 
 # Repository-relative, and deliberately beside the work directories rather
@@ -95,12 +95,18 @@ def load(path: str | os.PathLike[str]) -> dict[str, Any]:
     return dict(anchor)
 
 
-def bootstrap(repository_root: str | os.PathLike[str], *, approval_root: Mapping[str, Any], policy: Mapping[str, Any], initialized_by: str, predicate_id: str = "signature") -> Path:
+def bootstrap(repository_root: str | os.PathLike[str], *, approval_root: Mapping[str, Any], policy: Mapping[str, Any], initialized_by: str, predicate_id: str = "signature", authorized_signers: Iterable[str] = ()) -> Path:
     """Pin what this project trusts. Refuses to replace an existing anchor.
 
     @contract A governed project never re-bootstraps silently. Rotating the
     root of a governed project is a root transition, which the trust chain
     already governs; it is not a second genesis.
+    @contract `authorized_signers` is where the trusted verifier configuration
+    stops being the actor's. Git decides whether a signature is valid against
+    whatever keyring or allowed-signers file the repository configures, and an
+    actor can add a key to that file. It cannot add itself here without
+    rewriting the anchor -- which makes the anchor's own last commit unsigned
+    by an authorized identity, and the anchor then establishes nothing.
     """
 
     root = Path(repository_root)
@@ -117,6 +123,7 @@ def bootstrap(repository_root: str | os.PathLike[str], *, approval_root: Mapping
         "policy_digest": policy_commitment(policy),
         "approval_root": {"uid": approval_root["uid"], "digest": approval_root_commitment(approval_root)},
         "bootstrap_predicate": {"predicate_id": predicate_id, "policy_digest": policy_commitment(policy)},
+        "authorized_signers": sorted(set(authorized_signers)),
         "bootstrap": {"initialized_at": datetime.now(timezone.utc).isoformat(), "initialized_by": initialized_by},
     }
     anchor["trust_digest"] = trust_commitment(anchor)
@@ -159,11 +166,83 @@ def governs(anchor: Mapping[str, Any], *, approval_root: Any, root_history: Iter
 def anchor_refusal(path: str | os.PathLike[str], anchor: Mapping[str, Any]) -> str | None:
     """Return why the anchor itself carries no authority, or None.
 
+    Two checks, and the second exists because the first alone is circular.
+
     The anchor is measured the way every other authority artifact is: by
-    observing the object, never by reading what it says about itself.
+    observing the object, against the identities *it* pins. But an actor that
+    rewrites the anchor to add its own key would then be measured against the
+    list it just wrote. So the anchor must also never have been rewritten: one
+    commit in its history, the one that established it. A file with a single
+    commit still says what its author said.
+
+    *Cost, stated:* changing the authorized signers of a governed project is
+    therefore not an edit. It is a new project trust anchor — an explicit,
+    out-of-band decision, which is what a root of trust should cost.
     """
 
-    return predicate_refusal(anchor["bootstrap_predicate"]["predicate_id"], observe_artifact(path))
+    target = Path(path)
+    rewrites = commit_count(target.parent, target.name)
+    if rewrites != 1:
+        return (
+            "the project trust anchor is not recorded exactly once"
+            if rewrites >= 0 else
+            "the project trust anchor's history could not be read"
+        ) + f" ({rewrites} commits touch it); a governed project never re-bootstraps silently"
+    return predicate_refusal(anchor["bootstrap_predicate"]["predicate_id"], observe_artifact(path, authorized_signers=anchor["authorized_signers"]))
 
 
-__all__ = ["TRUST_RELATIVE", "BootstrapError", "anchor_refusal", "bootstrap", "governs", "load", "locate", "trust_commitment"]
+CREATION_APPROVAL = "creation_approval.json"
+
+
+def creation_approval_path(work_dir: str | os.PathLike[str]) -> Path:
+    """Where a work records the approval that admitted its initial contract.
+
+    A fixed name rather than a parameter: the evaluator has to find it too, and
+    an authority artifact whose location the caller chooses is an authority
+    artifact the caller can decline to mention.
+    """
+
+    return Path(work_dir) / CREATION_APPROVAL
+
+
+def admits(anchor: Mapping[str, Any], *, approval: Any, genesis_digest: str, facts: Any) -> str | None:
+    """Return why project authority did not admit this initial contract, or None.
+
+    @contract The approval names the exact initial normative digest and the
+    exact anchor, and satisfies the anchor's predicate as an observed artifact.
+    Creating a work contract proposes what must be accomplished; this is what
+    promotes the proposal to authority.
+    """
+
+    if approval is None:
+        return "the initial work contract carries no creation approval"
+    try:
+        validate_artifact(approval)
+    except ContractError as error:
+        return f"the creation approval is not a valid artifact: {error.code}"
+    if approval.get("schema_name") != "work_creation_approval":
+        return "the creation approval is not a work creation approval"
+    if approval.get("trust_uid") != anchor["uid"] or approval.get("trust_digest") != anchor["trust_digest"]:
+        return "the creation approval was issued under a different project trust anchor"
+    if approval.get("genesis_digest") != genesis_digest:
+        return "the creation approval names a different initial contract than the one being written"
+    predicate = anchor["bootstrap_predicate"]["predicate_id"]
+    if approval.get("predicate_id") != predicate:
+        return "the creation approval uses a predicate the project trust anchor does not configure"
+    return predicate_refusal(predicate, facts)
+
+
+def read_creation_approval(work_dir: str | os.PathLike[str], anchor: Mapping[str, Any]) -> tuple[Any, Any]:
+    """Load a work's creation approval and observe the artifact it actually is."""
+
+    path = creation_approval_path(work_dir)
+    if not path.is_file():
+        return None, UNOBSERVED
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, UNOBSERVED
+    return record, observe_artifacts([path], authorized_signers=anchor["authorized_signers"])
+
+
+__all__ = ["CREATION_APPROVAL", "TRUST_RELATIVE", "BootstrapError", "admits", "anchor_refusal", "bootstrap", "creation_approval_path", "governs", "load", "locate", "read_creation_approval", "trust_commitment"]

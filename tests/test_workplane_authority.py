@@ -14,13 +14,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ainative_workplane.bootstrap import bootstrap
+from ainative_workplane.bootstrap import bootstrap, creation_approval_path
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.controller import ControllerError, WorkController
 from ainative_workplane.evaluator import EvaluationError, evaluate_work, run_verification
-from ainative_workplane.trust import approval_root_commitment, policy_commitment
+from ainative_workplane.trust import approval_root_commitment, policy_commitment, successor_commitment
 
 DIGEST = "a" * 64
+
+
+class SigningIdentity:
+    """A key Git accepts, which is not the same as an identity a project trusts."""
+
+    def __init__(self, *, principal, path, fingerprint):
+        self.principal = principal
+        self.path = path
+        self.fingerprint = fingerprint
 
 
 def git(root, *arguments):
@@ -52,6 +61,9 @@ class GovernedWork:
         self.specification_uid = generate_uid("verify")
         self.requirement_uid = generate_uid("req")
         self.criterion_uid = generate_uid("ac")
+        # Stable, because the genesis digest is taken over these artifacts twice:
+        # once by the approval that admits them and once by the write.
+        self.task_uid = generate_uid("task")
         self.required = {"git_recorded": True} if required is None else required
         self.policy = self._policy(self.required)
         self.commitment = policy_commitment(self.policy)
@@ -69,10 +81,40 @@ class GovernedWork:
         # correction itself: creating a work directory is no longer the act
         # that decides what the project trusts. `anchor=False` is the state the
         # engine used to treat as governed, kept so A95 can exercise it.
-        self.anchor = bootstrap(self.repo, approval_root=self.approval_root, policy=self.policy, initialized_by="project-owner", predicate_id=predicate) if anchor else None
+        self.anchor = bootstrap(self.repo, approval_root=self.approval_root, policy=self.policy, initialized_by="project-owner", predicate_id=predicate, authorized_signers=self.authorized_signers()) if anchor else None
         self.commit_governed_state()
-        WorkController(self.work).create(self.artifacts())
+        declared = self.artifacts()
+        self.admit(self.work, declared)
+        WorkController(self.work).create(declared)
         self.commit_governed_state()
+
+    def authorized_signers(self):
+        return [self.signing_key.fingerprint] if self.signing else []
+
+    def creation_record(self, artifacts, **overrides):
+        """The record that project authority admitted this exact initial contract."""
+
+        anchor = json.loads(Path(self.anchor).read_text(encoding="utf-8"))
+        declared = {
+            "schema_name": "work_creation_approval", "schema_version": 1, "uid": generate_uid("approval"),
+            "trust_uid": anchor["uid"], "trust_digest": anchor["trust_digest"],
+            "genesis_digest": WorkController(self.work).normative_digest(artifacts),
+            "predicate_id": anchor["bootstrap_predicate"]["predicate_id"],
+            "approved_by": "project-owner", "approved_at": "2026-09-03T00:00:00Z",
+        }
+        declared.update(overrides)
+        return declared
+
+    def admit(self, work_dir, artifacts, *, signed=True, **overrides):
+        """Record the creation approval where the controller and evaluator read it."""
+
+        if self.anchor is None:
+            return None
+        path = creation_approval_path(work_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.creation_record(artifacts, **overrides)), encoding="utf-8")
+        self.commit_governed_state(signed=signed)
+        return path
 
     def enable_signing(self):
         """Give the project a signing key and an allowed-signers file.
@@ -82,14 +124,32 @@ class GovernedWork:
         produce a commit that verifies.
         """
 
-        key = self.root / "signing_key"
-        subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(key), "-C", "owner@example.invalid"], check=True, capture_output=True)
-        allowed = self.root / "allowed_signers"
-        allowed.write_text(f"owner@example.invalid {key.with_suffix('.pub').read_text(encoding='utf-8').strip()}\n", encoding="utf-8")
+        self.signing_key = self.add_signer("owner@example.invalid")
+        self.use_signer(self.signing_key)
         git(self.repo, "config", "gpg.format", "ssh")
-        git(self.repo, "config", "user.signingkey", key.with_suffix(".pub").as_posix())
-        git(self.repo, "config", "gpg.ssh.allowedSignersFile", allowed.as_posix())
+        git(self.repo, "config", "gpg.ssh.allowedSignersFile", (self.root / "allowed_signers").as_posix())
         git(self.repo, "config", "commit.gpgsign", "true")
+
+    def add_signer(self, principal):
+        """Create a key Git will accept, and return its fingerprint.
+
+        Accepting a signature and authorizing an approval are different
+        questions: this makes the first true, and only the project trust anchor
+        can make the second true.
+        """
+
+        key = self.root / f"key_{principal.split('@')[0]}"
+        subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(key), "-C", principal], check=True, capture_output=True)
+        public = key.with_suffix(".pub").read_text(encoding="utf-8").strip()
+        allowed = self.root / "allowed_signers"
+        existing = allowed.read_text(encoding="utf-8") if allowed.exists() else ""
+        allowed.write_text(f"{existing}{principal} {public}\n", encoding="utf-8")
+        listing = subprocess.run(["ssh-keygen", "-lf", str(key.with_suffix(".pub"))], check=True, capture_output=True, text=True)
+        return SigningIdentity(principal=principal, path=key, fingerprint=listing.stdout.split()[1])
+
+    def use_signer(self, identity):
+        git(self.repo, "config", "user.email", identity.principal)
+        git(self.repo, "config", "user.signingkey", identity.path.with_suffix(".pub").as_posix())
 
     def record_approval(self, candidate, **overrides):
         """Write and commit an approval, which is what makes it one.
@@ -190,11 +250,34 @@ class GovernedWork:
         self.commit_governed_state()
         return second_uid
 
+    def successor_root(self, previous, *, marker="SIGNED", **overrides):
+        """Build a root that names its predecessor and carries a real transition.
+
+        A root that merely changes content is a second genesis, which the fifth
+        review found the chain was still willing to accept. Rotating properly
+        means saying which committed root this one replaces, and carrying the
+        approval that predecessor's authority issued for exactly this content.
+        """
+
+        successor = dict(previous, uid=generate_uid("root"), root_provenance=marker)
+        successor["predecessor"] = {"uid": previous["uid"], "digest": previous["root_digest"]}
+        successor["transition_approval"] = {
+            "predicate_id": self.policy["approval_predicate"]["predicate_id"],
+            "approved_by": "project-owner", "provenance": "GIT_RECORDED",
+            "successor_uid": successor["uid"], "predecessor_digest": previous["root_digest"],
+            "successor_commitment": DIGEST, "policy_digest": self.commitment,
+        }
+        successor.update(overrides)
+        successor["root_digest"] = DIGEST
+        successor["transition_approval"]["successor_commitment"] = successor_commitment(successor)
+        successor["root_digest"] = approval_root_commitment(successor)
+        return successor
+
     def artifacts(self, **overrides):
         declared = {
             "requirements": [{"schema_name": "requirements", "schema_version": 1, "uid": self.requirement_uid, "statement": "the value stays one", "acceptance_criteria": [{"uid": self.criterion_uid, "digest": DIGEST}]}],
             "acceptance_criteria": [{"schema_name": "acceptance_criteria", "schema_version": 1, "uid": self.criterion_uid, "requirement": {"uid": self.requirement_uid, "digest": DIGEST}, "criterion": "the module still exposes VALUE", "verification_specifications": [{"uid": self.specification_uid, "digest": DIGEST}]}],
-            "tasks": [{"schema_name": "tasks", "schema_version": 1, "uid": generate_uid("task"), "requirements": [{"uid": self.requirement_uid, "digest": DIGEST}], "implementation_paths": ["src/app.py"]}],
+            "tasks": [{"schema_name": "tasks", "schema_version": 1, "uid": self.task_uid, "requirements": [{"uid": self.requirement_uid, "digest": DIGEST}], "implementation_paths": ["src/app.py"]}],
             "verification_specifications": [self.specification()],
             "project_policy": self.policy,
             "approval_root": self.approval_root,
@@ -356,12 +439,9 @@ class AuthorityMatrixTests(unittest.TestCase):
         successor["uid"] = generate_uid("root")
         successor["predecessor"] = {"uid": work.approval_root["uid"], "digest": work.approval_root["root_digest"]}
         successor["root_digest"] = approval_root_commitment(successor)
-        with self.assertRaisesRegex(ControllerError, "INVALID_NORMATIVE_ARTIFACT"):
+        with self.assertRaisesRegex(ControllerError, "transition approval"):
             WorkController(work.work).mutate(1, {"approval_root": successor}, approval=work.record_approval_for_change({"approval_root": successor}))
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 class SuccessConditionMutationTests(unittest.TestCase):
     """A80-A83: the controlled system may not rewrite the bar it is judged by."""
@@ -416,3 +496,7 @@ class SuccessConditionMutationTests(unittest.TestCase):
     def test_a_change_that_touches_no_success_condition_needs_no_approval(self):
         work = self.governed()
         self.assertEqual(2, WorkController(work.work).mutate(1, {"notes": {"scratch": True}})["revision"])
+
+
+if __name__ == "__main__":
+    unittest.main()

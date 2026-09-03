@@ -34,6 +34,7 @@ SUPPORTED_SCHEMA_VERSIONS = {
     "mutation_approval": {SCHEMA_VERSION},
     "command_registry": {SCHEMA_VERSION},
     "project_trust": {SCHEMA_VERSION},
+    "work_creation_approval": {SCHEMA_VERSION},
 }
 
 # Artifact names the engine reads as authority. Anything committed under one
@@ -408,10 +409,32 @@ def _validate_project_trust(value: Mapping[str, Any]) -> None:
     _digest(_required(value, "policy_digest"), "policy_digest")
     _reference(_required(value, "approval_root"), "approval_root", "root")
     _predicate_reference(_required(value, "bootstrap_predicate"), "bootstrap_predicate")
+    # The identities this project authorizes to satisfy a signature predicate.
+    # Git verifying a signature says the signature is valid; it does not say the
+    # signer may approve anything here. See ADR-0005.
+    for identity in _list(_required(value, "authorized_signers"), "authorized_signers"):
+        if not isinstance(identity, str) or not identity:
+            _fail("INVALID_FIELD", "authorized_signers[] must be non-empty strings")
     bootstrap = _mapping(_required(value, "bootstrap"), "bootstrap")
     for field in ("initialized_at", "initialized_by"):
         if not isinstance(_required(bootstrap, field), str) or not bootstrap[field]:
             _fail("INVALID_FIELD", f"bootstrap.{field} must be non-empty")
+
+
+def _validate_work_creation_approval(value: Mapping[str, Any]) -> None:
+    """The record that project authority admitted one exact initial contract.
+
+    Revision 1 states what must be accomplished, so it is a success condition
+    like any other. Creating it is a proposal; this is what makes it authority.
+    """
+
+    _uid_field(value, "approval")
+    validate_uid(_required(value, "trust_uid"), "trust")
+    _digest(_required(value, "trust_digest"), "trust_digest")
+    _digest(_required(value, "genesis_digest"), "genesis_digest")
+    for field in ("predicate_id", "approved_by", "approved_at"):
+        if not isinstance(_required(value, field), str) or not value[field]:
+            _fail("INVALID_FIELD", f"{field} must be non-empty")
 
 
 def _validate_command_registry(value: Mapping[str, Any]) -> None:
@@ -560,6 +583,7 @@ _VALIDATORS = {
     "verification_run": _validate_verification_run,
     "convergence_run": _validate_convergence_run,
     "project_trust": _validate_project_trust,
+    "work_creation_approval": _validate_work_creation_approval,
 }
 
 

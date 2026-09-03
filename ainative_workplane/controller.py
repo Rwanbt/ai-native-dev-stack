@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from .authorization import authorize_mutation
-from .bootstrap import BootstrapError, governs, load as load_trust_anchor, locate as locate_trust_anchor
+from .bootstrap import BootstrapError, admits, governs, load as load_trust_anchor, locate as locate_trust_anchor, read_creation_approval
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 from .provenance import UNOBSERVED, observe_artifacts
 from .trust import approval_root_commitment
@@ -223,26 +223,43 @@ class WorkController:
         finally:
             self._unlock(handle)
 
-    def _require_project_trust(self, artifacts: Mapping[str, Any]) -> None:
-        """Refuse a work that invents its own authority inside a governed project.
-
-        Where no anchor exists this permits the creation and establishes
-        nothing: an ungoverned work directory is a local scratch, and the
-        evaluator refuses to converge on one. What is refused here is the other
-        case -- a project that *is* governed acquiring a second, softer root
-        because someone made a new directory.
-        """
+    def project_anchor(self) -> tuple[Path, dict[str, Any]] | None:
+        """The project trust anchor governing this work, if the project has one."""
 
         anchor_path = locate_trust_anchor(self.root)
         if anchor_path is None:
-            return
+            return None
         try:
-            anchor = load_trust_anchor(anchor_path)
+            return anchor_path, load_trust_anchor(anchor_path)
         except BootstrapError as error:
             raise ControllerError(f"UNGOVERNED_GENESIS: {error}") from error
+
+    def _require_project_trust(self, artifacts: Mapping[str, Any]) -> None:
+        """Refuse a work that invents its own authority inside a governed project.
+
+        Two questions, and the fifth review found only the first being asked:
+        which root governs this work, and who admitted *this* initial contract.
+        Requirements, acceptance criteria and specifications are success
+        conditions, so revision 1 states what must be accomplished. Choosing
+        that is proposing; an approval under project authority is what promotes
+        the proposal.
+
+        Where no anchor exists this permits the creation and establishes
+        nothing: an ungoverned work directory is a local scratch, and the
+        evaluator refuses to converge on one.
+        """
+
+        located = self.project_anchor()
+        if located is None:
+            return
+        anchor_path, anchor = located
         refusal = governs(anchor, approval_root=artifacts.get("approval_root"))
         if refusal is not None:
             raise ControllerError(f"UNGOVERNED_GENESIS: {refusal}")
+        approval, facts = read_creation_approval(self.root, anchor)
+        refusal = admits(anchor, approval=approval, genesis_digest=self.normative_digest(artifacts), facts=facts)
+        if refusal is not None:
+            raise ControllerError(f"UNADMITTED_WORK: {refusal}")
 
     def mutate(self, expected_revision: int, set_artifacts: Mapping[str, Any] | None = None, *, delete_artifacts: Iterable[str] = (), approval: str | os.PathLike[str] | None = None) -> dict[str, Any]:
         """Apply an explicit change to the committed set.
@@ -307,6 +324,53 @@ class WorkController:
             history.append(dict(root))
         return history
 
+    @staticmethod
+    def _require_root_connectivity(before: Any, after: Any) -> None:
+        """A new root must say which committed root it replaces.
+
+        WHY: the chain invariant is that P0 authorizes P1 and P1 authorizes P2.
+        A root that simply changes content and declares no predecessor is a
+        second genesis inside an already governed work, and the fifth review
+        found that `transition_approval` was therefore optional exactly where
+        it decides something. Whether the transition is *authorized* is settled
+        against observed facts in `trust._authorized_transition`; what is
+        settled here is that it was even claimed.
+        """
+
+        if not isinstance(before, Mapping) or not isinstance(after, Mapping):
+            return
+        if approval_root_commitment(after) == approval_root_commitment(before):
+            return
+        predecessor = after.get("predecessor")
+        if not isinstance(predecessor, Mapping):
+            raise ControllerError("UNAUTHORIZED_MUTATION: a new approval root must name the committed root it replaces as its predecessor")
+        if predecessor.get("uid") != before.get("uid") or predecessor.get("digest") != before.get("root_digest"):
+            raise ControllerError("UNAUTHORIZED_MUTATION: the new approval root names a predecessor that is not the committed root")
+        if not isinstance(after.get("transition_approval"), Mapping):
+            raise ControllerError("UNAUTHORIZED_MUTATION: a root transition carries no transition approval")
+
+    def genesis_normative_digest(self) -> str | None:
+        """The normative digest of revision 1, recomputed from what it committed.
+
+        Recomputed rather than remembered: a field in the current manifest
+        would be a claim by whoever last wrote the manifest, and the question
+        is what the project actually admitted.
+        """
+
+        genesis = self.revisions / "1"
+        if not genesis.is_dir():
+            return None
+        artifacts: dict[str, Any] = {}
+        for name in sorted(NORMATIVE_ARTIFACTS):
+            candidate = genesis / f"{name}.json"
+            if not candidate.is_file():
+                continue
+            try:
+                artifacts[name] = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+        return self.normative_digest(artifacts)
+
     def normative_digest(self, artifacts: Mapping[str, Any]) -> str:
         """Digest exactly the artifacts that decide what success means."""
 
@@ -328,6 +392,7 @@ class WorkController:
         after = {name: value for name, value in candidate.items() if name in NORMATIVE_ARTIFACTS}
         if before == after:
             return
+        self._require_root_connectivity(before.get("approval_root"), after.get("approval_root"))
         record, facts = self._read_approval(approval)
         refusal = authorize_mutation(
             record,
@@ -338,8 +403,7 @@ class WorkController:
         if refusal is not None:
             raise ControllerError(f"UNAUTHORIZED_MUTATION: {refusal}")
 
-    @staticmethod
-    def _read_approval(approval: str | os.PathLike[str] | None) -> tuple[Any, Any]:
+    def _read_approval(self, approval: str | os.PathLike[str] | None) -> tuple[Any, Any]:
         """Load an approval and observe the artifact it actually is.
 
         WHY a path and not an object: an in-memory mapping carries no
@@ -360,7 +424,9 @@ class WorkController:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ControllerError("UNAUTHORIZED_MUTATION: the approval could not be read") from error
-        return record, observe_artifacts([path])
+        located = self.project_anchor()
+        signers = located[1]["authorized_signers"] if located else None
+        return record, observe_artifacts([path], authorized_signers=signers)
 
     def _read_artifacts(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
         """Load the artifacts a validated manifest points at."""

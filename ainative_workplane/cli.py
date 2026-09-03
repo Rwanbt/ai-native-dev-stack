@@ -54,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     initialize.add_argument("--policy", type=Path, required=True)
     initialize.add_argument("--by", required=True, help="Who is bootstrapping this project.")
     initialize.add_argument("--predicate", default="signature", help="The predicate the anchor itself must satisfy.")
+    initialize.add_argument("--signer", action="append", default=[], help="A key fingerprint this project authorizes to approve. Required in practice under --predicate signature: Git verifying a signature is not this project authorizing the signer.")
     show = trust_commands.add_parser("show", help="Report the anchor governing a location, if any.")
     show.add_argument("--repo", type=Path, default=Path.cwd())
 
@@ -104,7 +105,7 @@ def _work(args: argparse.Namespace) -> int:
 
 def _trust(args: argparse.Namespace) -> int:
     if args.trust_command == "bootstrap":
-        path = bootstrap(args.repo, approval_root=_load(args.approval_root), policy=_load(args.policy), initialized_by=args.by, predicate_id=args.predicate)
+        path = bootstrap(args.repo, approval_root=_load(args.approval_root), policy=_load(args.policy), initialized_by=args.by, predicate_id=args.predicate, authorized_signers=args.signer)
         _emit({"anchor": str(path), "trust": load_trust_anchor(path)})
         return 0
     located = locate_trust_anchor(args.repo)

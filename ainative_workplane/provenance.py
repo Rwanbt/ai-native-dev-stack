@@ -41,6 +41,10 @@ class ProvenanceFacts:
     signature_verified: bool = False
     local_dirty: bool = True
     reason: str = "not observed"
+    # Reported, never required: which identities Git verified behind the
+    # observed objects. A reviewer reading a refusal should be able to see who
+    # signed rather than only that it was the wrong person.
+    signers: tuple[str, ...] = ()
 
     def unmet(self, required: Mapping[str, Any]) -> tuple[str, ...]:
         """Return the required facts this object does not support."""
@@ -67,37 +71,110 @@ def _git(root: Path, *arguments: str, timeout: int = 10) -> subprocess.Completed
     return subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def signature_verified(target: str | Path, paths: Iterable[str] = ()) -> bool:
-    """Whether Git verifies the signature on the commit that last wrote these paths.
+# Git prints the verification status, the signing key fingerprint and the key
+# id. The fingerprint is the identity: it is what a project can authorize in
+# advance, and it is the same field for GPG and SSH signing.
+_SIGNATURE_FIELDS = "%G?\x1f%GF\x1f%GK"
+_VERIFIED = "G"
 
-    WHY the last commit touching the paths and not HEAD: the question is who
-    signed *this object*. A signed head commit says nothing about a file
-    someone else committed ten commits ago, and a policy asking for a signature
-    on an approval is asking about the approval.
 
-    Git decides, not this module: `%G?` is `G` only when the signature verifies
-    against the configured keyring or allowed-signers file. An actor without
-    the key cannot make it say `G`, which is what makes `signature` the one
-    predicate an agent with commit rights cannot satisfy for itself.
+def _signature_of(root: Path, path: str | None = None) -> str | None:
+    """Return the signing identity behind one object, or None if there is none.
+
+    WHY per path and not per path *set*: `git log -1 -- a b` reports the most
+    recent commit touching *either*, so one signed commit made an entire set
+    look signed while another path's content came from an unsigned one. The
+    fourth-round implementation had exactly that bug (A99).
+    """
+
+    arguments = ["log", "-1", f"--format={_SIGNATURE_FIELDS}", *(["--", path] if path else [])]
+    try:
+        result = _git(root, *arguments)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    fields = result.stdout.strip().split("\x1f")
+    if len(fields) != 3 or fields[0] != _VERIFIED:
+        return None
+    # The fingerprint, or the key id where the signing format supplies no
+    # fingerprint. Empty means Git verified something it cannot name, which is
+    # not an identity and therefore not an authorization.
+    return fields[1] or fields[2] or None
+
+
+def commit_count(target: str | Path, path: str) -> int:
+    """How many commits have touched one path. -1 when Git cannot say.
+
+    Used to establish that an object has never been rewritten, which is the
+    only way an artifact can authorize itself without circularity: a file that
+    has one commit still says what its author said.
+    """
+
+    try:
+        result = _git(Path(target), "log", "--format=%H", "--", path)
+    except (OSError, subprocess.SubprocessError):
+        return -1
+    if result.returncode != 0:
+        return -1
+    return len([line for line in result.stdout.splitlines() if line.strip()])
+
+
+def signature_signers(target: str | Path, paths: Iterable[str] = ()) -> dict[str, str | None]:
+    """The verified signing identity behind each observed path.
+
+    @contract One entry per path, and a path whose last commit is unsigned or
+    fails verification contributes None. A caller requiring a signature over a
+    set must therefore find no None -- never one signed commit standing in for
+    the rest.
     """
 
     root = Path(target)
     named = list(paths)
-    arguments = ["log", "-1", "--format=%G?", *(["--", *named] if named else [])]
-    try:
-        result = _git(root, *arguments)
-    except (OSError, subprocess.SubprocessError):
+    if not named:
+        return {"": _signature_of(root)}
+    return {path: _signature_of(root, path) for path in named}
+
+
+def signature_verified(target: str | Path, paths: Iterable[str] = (), *, authorized_signers: Iterable[str] | None = None) -> bool:
+    """Whether every observed path was last written by an authorized signer.
+
+    Two properties, deliberately separate, because the fifth review found the
+    second one missing:
+
+    - *cryptographic validity*, which Git decides: `%G?` is `G` only when the
+      signature verifies against the configured keyring or allowed-signers
+      file. An actor without a key cannot make it say `G`;
+    - *authorization*, which Git cannot decide: a repository may accept several
+      signing identities, and being able to sign ordinary commits is not being
+      allowed to approve a policy change. The identity must appear in the set
+      the project pinned in advance.
+
+    `authorized_signers=None` establishes nothing. Where no set is pinned there
+    is nobody to have authorized anything, and the answer is False rather than
+    "any valid signature".
+    """
+
+    if authorized_signers is None:
         return False
-    return result.returncode == 0 and result.stdout.strip() == "G"
+    allowed = frozenset(authorized_signers)
+    if not allowed:
+        return False
+    signers = signature_signers(target, paths)
+    return bool(signers) and all(identity in allowed for identity in signers.values())
 
 
-def observe(target: str | Path, paths: Iterable[str] = ()) -> ProvenanceFacts:
+def observe(target: str | Path, paths: Iterable[str] = (), *, authorized_signers: Iterable[str] | None = None) -> ProvenanceFacts:
     """Establish what a checkout supports for the given paths.
 
     `git_reviewed` and `ci_verified` are never set here. They assert that a
     process happened, which a checkout cannot show, and this build ships no
     verifier for either. A policy requiring one fails closed — a real
     functional limit, stated rather than quietly approximated.
+
+    `signature_verified` needs `authorized_signers`, the identities the project
+    pinned. Without them a valid signature by anyone at all would satisfy a
+    policy asking for approval, which is not what it asks.
     """
 
     root = Path(target)
@@ -112,18 +189,20 @@ def observe(target: str | Path, paths: Iterable[str] = ()) -> ProvenanceFacts:
             return ProvenanceFacts(reason="the working tree state could not be read")
         if status.stdout.strip():
             return ProvenanceFacts(reason="the observed paths differ from the commit")
-        signed = signature_verified(root, named)
+        identities = signature_signers(root, named)
+        signed = signature_verified(root, named, authorized_signers=authorized_signers)
         return ProvenanceFacts(
             git_recorded=True,
             signature_verified=signed,
             local_dirty=False,
-            reason="tracked and matching the commit" + (", and its last commit is signed" if signed else ""),
+            reason="tracked and matching the commit" + (", signed by an authorized identity" if signed else ""),
+            signers=tuple(sorted({identity for identity in identities.values() if identity})),
         )
     except (OSError, subprocess.SubprocessError):
         return ProvenanceFacts(reason="Git could not be executed")
 
 
-def observe_artifacts(paths: Iterable[str | Path]) -> ProvenanceFacts:
+def observe_artifacts(paths: Iterable[str | Path], *, authorized_signers: Iterable[str] | None = None) -> ProvenanceFacts:
     """Establish what is known about a specific set of files.
 
     Only the objects named here are observed. An audit trail sitting beside
@@ -146,10 +225,10 @@ def observe_artifacts(paths: Iterable[str | Path]) -> ProvenanceFacts:
             relative.append(target.resolve().relative_to(base.resolve()).as_posix())
         except ValueError:
             return ProvenanceFacts(reason=f"{target.name} is outside its own work tree")
-    return observe(base, relative)
+    return observe(base, relative, authorized_signers=authorized_signers)
 
 
-def observe_artifact(path: str | Path) -> ProvenanceFacts:
+def observe_artifact(path: str | Path, *, authorized_signers: Iterable[str] | None = None) -> ProvenanceFacts:
     """Establish what is known about the file or directory holding an artifact.
 
     An artifact outside any repository inherits nothing from the repository it
@@ -170,4 +249,4 @@ def observe_artifact(path: str | Path) -> ProvenanceFacts:
         relative = target.resolve().relative_to(base.resolve()).as_posix()
     except ValueError:
         return ProvenanceFacts(reason=f"{target.name} is outside its own work tree")
-    return observe(base, [relative])
+    return observe(base, [relative], authorized_signers=authorized_signers)

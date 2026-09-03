@@ -136,12 +136,27 @@ UNINITIALIZED  --explicit bootstrap-->  GOVERNED  --> work creation
 ```
 
 `ainative trust bootstrap` writes `.ai-native/trust/project_trust.json`, which pins the
-approval root the project starts from and names the predicate the anchor itself must
-satisfy. Creating a work directory is a local act and never establishes what a project
-trusts: a work no anchor pins is `PROJECT_TRUST_UNINITIALIZED`, which is `INVALID`, and a
-work naming a root the anchor does not pin is refused as `UNGOVERNED_GENESIS`. Bootstrap
-refuses to replace an existing anchor -- rotating a governed project's root is a root
-transition, which the trust chain already governs. See ADR-0004.
+approval root the project starts from, the key fingerprints it authorizes to approve, and
+the predicate the anchor itself must satisfy. Creating a work directory is a local act and
+never establishes what a project trusts: a work no anchor pins is
+`PROJECT_TRUST_UNINITIALIZED`, which is `INVALID`, and a work naming a root the anchor does
+not pin is refused as `UNGOVERNED_GENESIS`. See ADR-0004.
+
+The anchor is written **exactly once**: it must have a single commit in its history, and
+that commit must satisfy its predicate against the identities the anchor itself pins.
+Without the first condition the second is circular — an actor that rewrites the anchor to
+add its own key would be measured against the list it just wrote. Changing a governed
+project's authorized signers is therefore not an edit but a new anchor, which is what a
+root of trust should cost. See ADR-0005.
+
+### Creating a work contract proposes; admission promotes it
+
+Revision 1 states the whole of what a work must accomplish, so it is a success condition
+exactly as later revisions are. A work is admitted by a `work_creation_approval` at
+`<work>/creation_approval.json`, binding the anchor, the exact initial normative digest and
+the anchor's predicate. The controller refuses to write an unadmitted work; the evaluator
+refuses to converge on one, recomputing the genesis digest from `revisions/1/` rather than
+reading a field. Absent or unsatisfied, the verdict carries `WORK_NOT_ADMITTED`.
 
 ### A predicate is a mechanism
 
@@ -159,9 +174,18 @@ free to interpret:
 A predicate this build does not implement is never satisfied.
 
 **The supported production default is `signature`.** It is the one predicate with a real
-provider here: `git log -1 --format=%G?` over the observed paths must return `G`, which
-Git decides against the configured keyring or allowed-signers file. An actor without the
-key cannot produce it.
+provider here, and it asks two separate questions:
+
+- *cryptographic validity*, which Git decides: `%G?` must be `G` against the configured
+  keyring or allowed-signers file;
+- *authorization*, which Git cannot decide: the signing key fingerprint (`%GF`) must appear
+  in the anchor's `authorized_signers`. A repository may accept several signing identities,
+  and being allowed to sign ordinary commits is not being allowed to approve a policy
+  change. Where no set is pinned, nothing is established — not "any valid signature".
+
+Provenance over a *set* of objects is conjunctive: the signing identity is resolved per
+path, and one signed commit never stands in for a path whose content came from an unsigned
+one.
 
 `git_reviewed` and `ci_verified` are modelled as independent facts because they are real
 and independent, but nothing in this build can establish either, so a policy requiring one

@@ -41,7 +41,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .bootstrap import BootstrapError, anchor_refusal, governs, load as load_trust_anchor, locate as locate_trust_anchor
+from .bootstrap import BootstrapError, admits, anchor_refusal, governs, load as load_trust_anchor, locate as locate_trust_anchor, read_creation_approval
 from .contracts import canonical_digest, canonical_path
 from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
@@ -51,7 +51,7 @@ from .provenance import ProvenanceFacts, observe, observe_artifacts
 from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
-from .trust import TrustVerdict, evaluate_trust, policy_commitment
+from .trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
 
 # Artifacts whose content defines what success means. The contract digest is
 # taken over exactly these, so changing any of them invalidates evidence bound
@@ -152,7 +152,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], evidence_facts=observation, authority_facts=authority_observation)
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"])
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -259,7 +259,7 @@ def _execute_declared_verifications(work_dir: str | Path, repository_root: str |
     return produced, gaps
 
 
-def _project_trust_gaps(repository_root: str | Path, authority: Mapping[str, Any]) -> list[Gap]:
+def _project_trust_gaps(work_dir: str | Path, authority: Mapping[str, Any]) -> list[Gap]:
     """Refuse to converge on a work that is its own root of trust.
 
     WHY here and not only in the controller: creating a work directory is a
@@ -270,19 +270,29 @@ def _project_trust_gaps(repository_root: str | Path, authority: Mapping[str, Any
     observing the object, against the predicate it declares for itself.
     """
 
-    anchor_path = locate_trust_anchor(repository_root)
-    if anchor_path is None:
+    anchor = authority["anchor"]
+    if anchor is None:
+        located = authority["anchor_error"]
+        if located is not None:
+            return [Gap("PROJECT_TRUST_INVALID", None, located)]
         return [Gap("PROJECT_TRUST_UNINITIALIZED", None, "the project has no trust anchor, so this work is governed only by rules it declared for itself")]
-    try:
-        anchor = load_trust_anchor(anchor_path)
-    except BootstrapError as error:
-        return [Gap("PROJECT_TRUST_INVALID", None, str(error))]
-    unverified = anchor_refusal(anchor_path, anchor)
+    unverified = anchor_refusal(authority["anchor_path"], anchor)
     if unverified is not None:
         return [Gap("PROJECT_TRUST_UNVERIFIED", None, f"the project trust anchor itself is not established: {unverified}")]
     refusal = governs(anchor, approval_root=authority["approval_root"], root_history=authority["root_history"])
     if refusal is not None:
         return [Gap("PROJECT_TRUST_MISMATCH", None, refusal)]
+    # Which root governs this work is one question; who admitted *this* initial
+    # contract is another. Revision 1 states what must be accomplished, so
+    # leaving it to whoever created the directory leaves the success conditions
+    # to the party they constrain.
+    approval, facts = read_creation_approval(work_dir, anchor)
+    genesis = authority["genesis_digest"]
+    if genesis is None:
+        return [Gap("PROJECT_TRUST_INVALID", None, "the work's genesis revision could not be read, so nothing can be compared with its creation approval")]
+    admission = admits(anchor, approval=approval, genesis_digest=genesis, facts=facts)
+    if admission is not None:
+        return [Gap("WORK_NOT_ADMITTED", None, admission)]
     return []
 
 
@@ -315,8 +325,9 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     # code under verification, and what is established about the work
     # directory holding the rules, the root and the exceptions. A clean
     # checkout says nothing about a work directory living somewhere else.
-    observation = observe(repository_root, scope)
-    authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]))
+    signers = authority["anchor"]["authorized_signers"] if authority["anchor"] else None
+    observation = observe(repository_root, scope, authorized_signers=signers)
+    authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]), authorized_signers=signers)
 
     before = _authority_commitment(authority, artifacts)
     produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
@@ -326,7 +337,7 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
         for evidence in produced
     )
     eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
-    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps) + tuple(_project_trust_gaps(repository_root, authority))
+    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps) + tuple(_project_trust_gaps(work_dir, authority))
 
     # Trust and freshness were established per evidence above; what remains for
     # the kernel is whether the authority documents exist at all.
@@ -357,6 +368,15 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
     policy = artifacts.get("project_policy")
     approval_root = artifacts.get("approval_root")
     registry = artifacts.get("command_registry")
+    history = controller.root_history()
+    anchor_path = locate_trust_anchor(work_dir)
+    anchor: dict[str, Any] | None = None
+    anchor_error: str | None = None
+    if anchor_path is not None:
+        try:
+            anchor = load_trust_anchor(anchor_path)
+        except BootstrapError as error:
+            anchor_error = str(error)
     specifications = {spec["uid"]: spec for spec in artifacts.get("verification_specifications", [])}
     authority = {
         "policy": policy,
@@ -369,7 +389,12 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "work_uid": manifest["work_uid"],
         "revision": manifest["revision"],
         "manifest": manifest,
-        "root_history": controller.root_history(),
+        "root_history": history,
+        "genesis_digest": controller.genesis_normative_digest(),
+        "genesis_root_digest": approval_root_commitment(history[0]) if history else None,
+        "anchor_path": anchor_path,
+        "anchor": anchor,
+        "anchor_error": anchor_error,
     }
     return artifacts, authority, specifications
 

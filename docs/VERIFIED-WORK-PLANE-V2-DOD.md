@@ -41,9 +41,14 @@ APPROVAL_PREDICATE:              ADDRESSED, awaiting external review
 GENESIS_TRUST_BOOTSTRAP:         ADDRESSED, awaiting external review
 COMMITTED_ROOT_HISTORY:          ADDRESSED, awaiting external review
 PREDICATE_PROVIDER:              ADDRESSED, awaiting external review (signature; git_reviewed and ci_verified remain unimplementable)
+
+INITIAL_CONTRACT_ADMISSION:      ADDRESSED, awaiting external review
+SIGNER_AUTHORIZATION:            ADDRESSED, awaiting external review
+CONJUNCTIVE_PATH_PROVENANCE:     ADDRESSED, awaiting external review
+ROOT_CHAIN_CONNECTIVITY:         ADDRESSED, awaiting external review
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A96)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A100)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -80,17 +85,24 @@ same policy. And `WorkController.create()` still established a project's own
 policy, root, registry and rules, so every N → N+1 protection could be
 sidestepped by choosing a different N.
 
-Four reviews, four sets of findings, each in what the previous round's green
-cases did not ask — twice inside a correction. The standard for closing an
-authority finding remains external review, and the record now argues for the
-rule rather than against it.
+A fifth review then found two more. Both were the boundary of a round-4 fix
+rather than a gap it missed: project trust authenticated the *root* a work used
+but not the initial contract that work claimed to be judged by, so an actor
+could still choose the bar by creating a sibling work under a legitimate root.
+And `signature` proved that Git accepted a signature without ever asking whose,
+so any identity the repository's verifier configuration accepted satisfied the
+production default.
+
+Five reviews, five sets of findings, three of them inside a correction. The
+standard for closing an authority finding remains external review, and the
+record now argues for the rule rather than against it.
 
 ## Closed gates
 
 | Gate | What holds it | Where |
 | --- | --- | --- |
-| Architecture | Frozen invariants preserved; no provider and no language model owns a blocking verdict; the trusted computing base is enumerated; project trust is bootstrapped before work exists | `docs/THREAT_MODEL.md`, ADR-0004 |
-| Contracts | Fifteen declared schemas, stable prefixed ULIDs, canonical NFC JSON and SHA-256, portable paths, unsupported schema fails closed | `contracts.py`, A04 |
+| Architecture | Frozen invariants preserved; no provider and no language model owns a blocking verdict; the trusted computing base is enumerated; project trust is bootstrapped before work exists and admits each initial contract | `docs/THREAT_MODEL.md`, ADR-0004, ADR-0005 |
+| Contracts | Sixteen declared schemas, stable prefixed ULIDs, canonical NFC JSON and SHA-256, portable paths, unsupported schema fails closed | `contracts.py`, A04 |
 | Controller | Single writer, explicit mutation semantics, immutable revisions, manifest written last, crash recovery, stale-lock recovery with owner metadata, direct mutation detection | `controller.py`, A01-A06, A51-A53 |
 | Evidence | One validated `verification_run`, bound to contract, revision, specification, snapshot, checkout head, registry, policy, approval root and provenance | `evidence.py` |
 | Trust | No default reviewed provenance, root pinned to its own commitment, predecessor chain evaluated and acyclic, waivers and human approvals fail closed | `trust.py`, `authorization.py`, A07-A11 |
@@ -116,6 +128,16 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Fifth-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| The initial work contract was self-authoring | A `work_creation_approval` binds the anchor and the exact genesis normative digest; the controller will not write an unadmitted work and the evaluator will not converge on one | A97 |
+| `signature` proved validity, never authorization | The anchor pins `authorized_signers` by key fingerprint, and the signer must appear there; the anchor itself must have exactly one commit, or pinning is circular | A98 |
+| One signed commit signed a whole path set | The signing identity is resolved per path; a set verifies only when every member does | A99 |
+| A predecessor-less root was a second genesis | The controller requires a predecessor plus a transition approval on any root change; the chain terminates only at the pinned genesis | A100 |
+| Selective rerun still not delivered | Unchanged and still stated: `REUSABLE_ATTESTED_EVIDENCE: NOT BUILT` | ADR-0003 §1 |
 
 ## Fourth-round corrections, awaiting review
 
@@ -194,7 +216,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 115 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 131 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -233,9 +255,14 @@ cases execute.
   whole bar. The fourth round named that posture rather than removing it; only
   `signature` excludes an actor without the key.
 - The project trust anchor is a file. Under `recorded_owner_ack` an actor can
-  write and commit one; `bootstrap()` refuses to replace an existing anchor,
-  but nothing stops a direct write to the path. Under `signature` it cannot
-  produce one that verifies, which is the posture to run.
+  write and commit one. Under `signature` it cannot produce one that verifies,
+  and rewriting an existing anchor now makes it establish nothing at all,
+  because an anchor must have exactly one commit in its history.
+- That immutability has an operational cost: changing a governed project's
+  authorized signers, including after a lost key, requires establishing a new
+  project trust anchor rather than editing the existing one.
+- Resolving the signing identity costs one `git log` per observed path. A very
+  large declared scope makes an observation proportionally slower.
 - `scripts/workplane_pilot.py` calls the pure `converge()` kernel directly, not
   `evaluate_work`, so it does not exercise the trust anchor or the mutation
   bar. It is labelled `authority: smoke_pilot_only` for exactly this reason and

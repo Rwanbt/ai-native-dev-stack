@@ -69,6 +69,16 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## Authority threats found by the fifth review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Self-authored initial contract | Create a directory in a governed project | Choose a trivial requirement, criterion and verification for a sibling work under the project's legitimate root, and converge on a bar nobody agreed to | A `work_creation_approval` binds the anchor and the exact genesis normative digest; the controller refuses to write an unadmitted work and the evaluator refuses to converge on one | Under `recorded_owner_ack` the actor can record its own admission | A97 |
+| Valid signature by an unauthorized signer | Hold any key the repository's verifier configuration accepts | Satisfy the production-default predicate without being anyone the project authorized to approve | The anchor pins `authorized_signers` by key fingerprint, and the signer must appear there | A project that loses its key cannot rotate signers without a new anchor | A98 |
+| Widening the verifier configuration | Add a key to `gpg.ssh.allowedSignersFile` or `.git/config` | Make Git verify your own signature and inherit authority from it | Git decides what verifies; the anchor decides what is accepted, and the anchor must have exactly one commit in its history | The anchor file can be overwritten — it then establishes nothing, which fails closed | A98 |
+| One signed commit signing a whole set | Commit one signed change touching any observed path | A path whose content came from an unsigned commit is reported as signed | The signing identity is resolved per path; a set is verified only when every member is | One `git log` per observed path | A99 |
+| Predecessor-less root as second genesis | Change the approval root's content | Replace the root without a transition approval, making the chain invariant optional exactly where it decides something | The controller requires a predecessor naming the committed root plus a transition approval; the chain terminates only at the anchor's pinned genesis | None known for this path | A100 |
+
 ## Authority threats found by the fourth review
 
 | Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
