@@ -117,6 +117,9 @@ jobs:
       - name: Adversarial matrix A01-A53
         run: python -m unittest tests.test_workplane_adversarial -v
 
+      - name: Authority matrix A54-A70, through the production boundary
+        run: python -m unittest tests.test_workplane_authority -v
+
       - name: CLI, integrations and local pilot harnesses
         run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix tests.test_workplane_historical_case -v
 

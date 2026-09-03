@@ -19,6 +19,8 @@ from .runner import PREVIEW_CHARS, RunnerError, VerificationRunner, load_registr
 from .substance import ADAPTERS, Substance, SubstanceError
 from .convergence import ConvergenceVerdict, append_convergence, converge, stall_fingerprint
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_files, snapshot_reference
+from .evaluator import EvaluationError, EvidenceAssessment, WorkEvaluation, evaluate_work, run_verification
+from .provenance import ProvenanceObservation, observe
 from .cli import main as cli_main
 from .integrations import ReadOnlyFinding, collect_findings, memory_summary
 from .metrics import PilotMetrics
@@ -58,6 +60,13 @@ __all__ = [
     "snapshot_files",
     "build_repository_snapshot",
     "snapshot_reference",
+    "evaluate_work",
+    "run_verification",
+    "EvidenceAssessment",
+    "WorkEvaluation",
+    "EvaluationError",
+    "ProvenanceObservation",
+    "observe",
     "cli_main",
     "ReadOnlyFinding",
     "collect_findings",

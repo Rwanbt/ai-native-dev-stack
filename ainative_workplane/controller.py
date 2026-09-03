@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
+from .contracts import NORMATIVE_ARTIFACTS, ContractError, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
 
 
 class ControllerError(RuntimeError):
@@ -161,7 +161,7 @@ class WorkController:
                 normative = name in NORMATIVE_ARTIFACTS
                 if normative:
                     try:
-                        validate_artifact(value)
+                        validate_normative(name, value)
                     except ContractError as error:
                         raise ControllerError(f"INVALID_NORMATIVE_ARTIFACT:{name}:{error.code}") from error
                 elif isinstance(value, Mapping) and "schema_name" in value:
@@ -249,7 +249,7 @@ class WorkController:
         for name, value in artifacts.items():
             if name in NORMATIVE_ARTIFACTS:
                 try:
-                    validate_artifact(value)
+                    validate_normative(name, value)
                 except ContractError as error:
                     raise ControllerError(f"INVALID_NORMATIVE_ARTIFACT:{name}:{error.code}") from error
         return manifest, artifacts

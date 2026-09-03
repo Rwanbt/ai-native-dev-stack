@@ -5,22 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ainative_workplane.contracts import canonical_digest, generate_uid
-from ainative_workplane.trust import approval_root_commitment, policy_commitment
-
-DIGEST = "a" * 64
-HEAD = "0" * 40
+from tests.test_workplane_authority import GovernedWork
 
 
 def cli(*arguments, expect=0):
     process = subprocess.run([sys.executable, "-m", "ainative_workplane", *[str(argument) for argument in arguments]], capture_output=True, text=True)
     assert process.returncode == expect, f"exit {process.returncode} (expected {expect}): {process.stderr or process.stdout}"
     return json.loads(process.stdout) if process.stdout.strip() else None
-
-
-def write(path, payload):
-    Path(path).write_text(json.dumps(payload), encoding="utf-8")
-    return path
 
 
 class WorkCommandTests(unittest.TestCase):
@@ -31,101 +22,53 @@ class WorkCommandTests(unittest.TestCase):
             self.assertEqual(created, cli("work", "validate", directory))
 
 
-class VerifyAndConvergeTests(unittest.TestCase):
-    def fixture(self, root: Path, *, argv, unverified_second_specification=False):
-        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"check": {"argv": argv, "timeout_seconds": 20, "substance": {"type": "exit_only", "minimum_observations": 0}}}}
-        policy = {
-            "schema_name": "project_policy", "schema_version": 1,
-            "approval_predicate": {"predicate_id": "local", "policy_digest": DIGEST},
-            "success_condition_mutation_provenance": "LOCAL_UNTRUSTED",
-            "verification_evidence_provenance": "LOCAL_UNTRUSTED",
-            "waiver_approval_rule": {"predicate_id": "local", "policy_digest": DIGEST},
-            "human_approval_rule": {"predicate_id": "local", "policy_digest": DIGEST},
-            "promotion_policy": "explicit",
-        }
-        commitment = policy_commitment(policy)
-        for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
-            policy[field]["policy_digest"] = commitment
-        approval_root = {"schema_name": "approval_root", "schema_version": 1, "uid": generate_uid("root"), "root_digest": DIGEST, "policy_digest": commitment, "root_provenance": "LOCAL_UNTRUSTED", "bootstrap": {"initialized_at": "2026-09-02T00:00:00Z", "initialized_by": "cli-test"}}
-        approval_root["root_digest"] = approval_root_commitment(approval_root)
+class AuthoritativeCliTests(unittest.TestCase):
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
 
-        specification = generate_uid("verify")
-        criteria = [{"uid": "ac-1", "requirement": {"uid": "req-1", "digest": DIGEST}, "verification_specifications": [{"uid": specification, "digest": DIGEST}]}]
-        specifications = [{"uid": specification, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]}]
-        acceptance_refs = [{"uid": "ac-1", "digest": DIGEST}]
-        if unverified_second_specification:
-            second = generate_uid("verify")
-            criteria.append({"uid": "ac-2", "requirement": {"uid": "req-1", "digest": DIGEST}, "verification_specifications": [{"uid": second, "digest": DIGEST}]})
-            specifications.append({"uid": second, "relationship": "direct_scope", "covered_implementation_paths": ["src/**"]})
-            acceptance_refs.append({"uid": "ac-2", "digest": DIGEST})
-        contract = {
-            "requirements": [{"uid": "req-1", "acceptance_criteria": acceptance_refs}],
-            "acceptance_criteria": criteria,
-            "tasks": [{"uid": "task-1", "requirements": [{"uid": "req-1", "digest": DIGEST}], "implementation_paths": ["src/app.py"]}],
-            "verification_specifications": specifications,
-        }
-        binding = {
-            "work": {"uid": generate_uid("work"), "digest": DIGEST}, "contract_revision": 1, "contract_digest": DIGEST,
-            "verification_specification": {"uid": specification, "digest": DIGEST},
-            "command_registry_digest": canonical_digest(registry), "policy_digest": commitment,
-            "approval_root": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]},
-            "repository_snapshot": {"uid": generate_uid("snapshot"), "digest": DIGEST},
-            "snapshot_content_digest": DIGEST, "snapshot_dependency_digest": DIGEST, "snapshot_head": HEAD,
-            "producer": "cli-test", "producer_version": "1", "evidence_provenance": "LOCAL_UNTRUSTED",
-        }
-        return {
-            "registry": write(root / "registry.json", registry),
-            "policy": write(root / "policy.json", policy),
-            "root": write(root / "root.json", approval_root),
-            "contract": write(root / "contract.json", contract),
-            "binding": write(root / "binding.json", binding),
-        }
+    def test_verify_then_converge_from_committed_state_alone(self):
+        work = self.governed()
+        record = cli("verify", "--work", work.work, "--verification", work.specification_uid, "--repo", work.repo)
+        self.assertEqual("PASS", record["result"])
+        self.assertEqual("verification_run", record["schema_name"])
 
-    def test_verify_reports_the_run_and_converge_maps_verdicts_to_exit_codes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            files = self.fixture(root, argv=[sys.executable, "-c", "print('verified')"])
+        converged = cli("converge", "--work", work.work, "--repo", work.repo, expect=0)
+        self.assertEqual("CONVERGED", converged["verdict"])
+        self.assertEqual("GIT_RECORDED", converged["observed_provenance"]["level"])
+        self.assertTrue(converged["evidence"][0]["eligible"])
 
-            record = cli("verify", "--registry", files["registry"], "--binding", files["binding"], "--command", "check", "--cwd", directory, "--require-substance")
-            self.assertEqual("PASS", record["result"])
-            self.assertEqual("verification_run", record["schema_name"])
-            evidence = write(root / "evidence.json", record)
-            freshness = write(root / "freshness.json", {
-                "contract_digest": record["contract_digest"], "repository_snapshot": record["repository_snapshot"],
-                "command_registry_digest": record["command_registry_digest"], "policy_digest": record["policy_digest"],
-                "approval_root": record["approval_root"], "snapshot_head": record["snapshot_head"],
-            })
+    def test_a_changed_dependency_moves_the_exit_code_to_one(self):
+        work = self.governed()
+        cli("verify", "--work", work.work, "--verification", work.specification_uid, "--repo", work.repo)
+        (work.repo / "src" / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        blocked = cli("converge", "--work", work.work, "--repo", work.repo, expect=1)
+        self.assertEqual("NOT_CONVERGED", blocked["verdict"])
+        self.assertIn("STALE_DEPENDENCY", blocked["evidence"][0]["reasons"])
 
-            converged = cli("converge", "--contract", files["contract"], "--evidence", evidence, "--freshness", freshness, "--policy", files["policy"], "--approval-root", files["root"], expect=0)
-            self.assertEqual("CONVERGED", converged["verdict"])
+    def test_the_authoritative_commands_take_no_contract_policy_or_root(self):
+        help_text = subprocess.run([sys.executable, "-m", "ainative_workplane", "converge", "--help"], capture_output=True, text=True).stdout
+        for forbidden in ("--contract", "--policy", "--approval-root", "--freshness", "--evidence"):
+            self.assertNotIn(forbidden, help_text, f"converge still accepts {forbidden} from its caller")
 
-            # Without a freshness evaluation the engine cannot decide, and says so.
-            invalid = cli("converge", "--contract", files["contract"], "--evidence", evidence, "--policy", files["policy"], "--approval-root", files["root"], expect=2)
-            self.assertEqual("INVALID", invalid["verdict"])
-            self.assertIn("FRESHNESS_UNAVAILABLE", [gap["code"] for gap in invalid["gaps"]])
-
-    def test_a_declared_specification_without_evidence_exits_one(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            files = self.fixture(root, argv=[sys.executable, "-c", "print('verified')"], unverified_second_specification=True)
-            record = cli("verify", "--registry", files["registry"], "--binding", files["binding"], "--command", "check", "--cwd", directory)
-            evidence = write(root / "evidence.json", record)
-            freshness = write(root / "freshness.json", {
-                "contract_digest": record["contract_digest"], "repository_snapshot": record["repository_snapshot"],
-                "command_registry_digest": record["command_registry_digest"], "policy_digest": record["policy_digest"],
-                "approval_root": record["approval_root"], "snapshot_head": record["snapshot_head"],
-            })
-            blocked = cli("converge", "--contract", files["contract"], "--evidence", evidence, "--freshness", freshness, "--policy", files["policy"], "--approval-root", files["root"], expect=1)
-            self.assertEqual("NOT_CONVERGED", blocked["verdict"])
-            self.assertIn("UNVERIFIED_SPECIFICATION", [gap["code"] for gap in blocked["gaps"]])
-
-    def test_a_failing_verification_exits_one(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            files = self.fixture(root, argv=[sys.executable, "-c", "raise SystemExit(3)"])
-            record = cli("verify", "--registry", files["registry"], "--binding", files["binding"], "--command", "check", "--cwd", directory, expect=1)
-            self.assertEqual("FAIL", record["result"])
-            self.assertEqual(3, record["exit_code"])
+    def test_the_loose_helper_is_reachable_only_under_debug_and_says_so(self):
+        work = self.governed()
+        registry = work.root / "registry.json"
+        registry.write_text(json.dumps(work.registry()), encoding="utf-8")
+        binding = work.root / "binding.json"
+        binding.write_text(json.dumps({
+            "work": {"uid": work.approval_root["uid"].replace("root_", "work_"), "digest": "a" * 64}, "contract_revision": 1,
+            "contract_digest": "a" * 64, "verification_specification": {"uid": work.specification_uid, "digest": "a" * 64},
+            "command_registry_digest": __import__("ainative_workplane").canonical_digest(work.registry()),
+            "policy_digest": "a" * 64, "approval_root": {"uid": work.approval_root["uid"], "digest": "a" * 64},
+            "repository_snapshot": {"uid": work.specification_uid.replace("verify_", "snapshot_"), "digest": "a" * 64},
+            "snapshot_content_digest": "a" * 64, "snapshot_dependency_digest": "a" * 64, "snapshot_head": "0" * 40,
+            "producer": "debug", "producer_version": "1", "evidence_provenance": "SIGNED",
+        }), encoding="utf-8")
+        result = cli("debug", "run-command", "--registry", registry, "--binding", binding, "--command", "check", "--cwd", work.repo)
+        self.assertEqual("none", result["authority"], "the loose helper must never present itself as authority")
+        self.assertEqual("PASS", result["record"]["result"])
 
 
 if __name__ == "__main__":

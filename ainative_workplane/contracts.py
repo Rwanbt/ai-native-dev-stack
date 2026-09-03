@@ -37,16 +37,46 @@ SUPPORTED_SCHEMA_VERSIONS = {
 # of these names must be a valid artifact of the matching schema; anything
 # committed under another name is stored, marked non-normative, and never read
 # by the evaluator.
-NORMATIVE_ARTIFACTS = frozenset({
-    "requirements",
-    "acceptance_criteria",
-    "tasks",
-    "verification_specifications",
-    "project_policy",
-    "approval_root",
-    "waivers",
-    "human_approvals",
-})
+# Plural names hold a list of artifacts of the matching schema; singular names
+# hold one. The distinction is what lets a work directory carry a whole
+# contract without inventing a wrapper schema.
+COLLECTION_ARTIFACTS = {
+    "requirements": "requirements",
+    "acceptance_criteria": "acceptance_criteria",
+    "tasks": "tasks",
+    "verification_specifications": "verification_specification",
+    "waivers": "waiver",
+    "human_approvals": "human_approval",
+}
+
+SINGLE_ARTIFACTS = {
+    "project_policy": "project_policy",
+    "approval_root": "approval_root",
+    "command_registry": "command_registry",
+}
+
+NORMATIVE_ARTIFACTS = frozenset(COLLECTION_ARTIFACTS) | frozenset(SINGLE_ARTIFACTS)
+
+
+def validate_normative(name: str, value: Any) -> None:
+    """Validate one committed artifact against the schema its name implies."""
+
+    if name in COLLECTION_ARTIFACTS:
+        expected = COLLECTION_ARTIFACTS[name]
+        if not isinstance(value, list):
+            _fail("INVALID_FIELD", f"{name} must be a list of {expected} artifacts")
+        for item in value:
+            validate_artifact(item)
+            if item.get("schema_name") != expected:
+                _fail("UNSUPPORTED_SCHEMA", f"{name} may only contain {expected} artifacts")
+        return
+    if name == "command_registry":
+        if not isinstance(value, Mapping) or value.get("schema_name") != "command_registry":
+            _fail("UNSUPPORTED_SCHEMA", "command_registry must be a command registry")
+        return
+    validate_artifact(value)
+    if value.get("schema_name") != SINGLE_ARTIFACTS[name]:
+        _fail("UNSUPPORTED_SCHEMA", f"{name} must be a {SINGLE_ARTIFACTS[name]} artifact")
 
 RELATIONSHIP_MODES = frozenset({"direct_scope", "black_box", "external_artifact", "human_approval"})
 PROVENANCE_VALUES = frozenset({"UNTRACKED", "GIT_DIRTY", "GIT_RECORDED", "GIT_REVIEWED", "CI_APPROVED", "SIGNED", "LOCAL_UNTRUSTED"})
