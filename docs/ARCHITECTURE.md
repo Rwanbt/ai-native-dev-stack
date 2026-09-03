@@ -166,9 +166,24 @@ pin the policy. Policy evolves through authorized mutation: each root carries th
 commitment it was established under, the manifest records the committed policy chain
 alongside the root chain, and **a transition is judged under its predecessor's policy** —
 its predicate and its required facts — so a later, weaker policy cannot retroactively
-authorize a transition it never saw. Because the current root must carry the current policy
-commitment, changing the policy rotates the root in the same mutation; the transition
-approval issued under the predecessor's policy is the authorization for both.
+authorize a transition it never saw.
+
+A root must carry the commitment of the policy it is written with, and the controller
+refuses a revision where they disagree. Atomicity follows: a new policy commitment changes
+the root's own commitment, and a changed root already requires a predecessor and a
+transition approval, so policy and root move together in one approved mutation.
+
+**A transition is judged by the evidence bound to it, not by today's authority.** When the
+controller authorizes a rotation it records, in the manifest's `root_chain` entry, the
+commit that carried the approval and that approval's digest. The evaluator re-establishes
+each transition's facts from that commit — immutable, so the same question gets the same
+answer every time — and a transition with no bound evidence is invalid. See ADR-0007.
+
+An approval names both ends of the change it authorizes: `mutation_approval` binds
+`base_digest` as well as `target_digest`, so it authorizes one transition rather than one
+destination and cannot be replayed to undo a later strengthening. `work_creation_approval`
+is content-addressed instead — genesis has no base, and two works with byte-identical
+contracts sit at the same bar.
 
 ### Creating a work contract proposes; admission promotes it
 

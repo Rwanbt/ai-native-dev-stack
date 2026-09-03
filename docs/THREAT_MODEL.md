@@ -69,6 +69,14 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## Authority threats found by the seventh review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Impossible authority written knowingly | Hold a valid mutation approval | Commit a revision where the current policy and the current root disagree, which can never be authority; the refusal arrives at evaluation rather than before the write | A root must carry the commitment of the policy it is written with, checked before the revision is committed | None known for this path | A104 |
+| Retroactive provenance borrowing | Be the current authority | Validate an old transition that never had the required property, because the chain measured every historical transition against today's observation | The manifest records the commit that authorized each rotation; the evaluator re-establishes facts from that commit, and an unbound transition is invalid | A signer removed from the anchor since invalidates its old transitions — fail-closed and, locally, the honest reading | A105 |
+| Approval replay | Keep an approval issued earlier | Replay it from a different state to undo a strengthening committed since | `mutation_approval` binds `base_digest`, so it authorizes one transition rather than one destination | A creation approval remains content-addressed by decision (ADR-0007 §3) | A106 |
+
 ## The bootstrap boundary — an assumption, not a defence
 
 | Question | Answer |

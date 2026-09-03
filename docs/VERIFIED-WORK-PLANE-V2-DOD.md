@@ -49,10 +49,14 @@ ROOT_CHAIN_CONNECTIVITY:         ADDRESSED, awaiting external review
 
 POLICY_EVOLUTION:                ADDRESSED, awaiting external review
 CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
+
+POLICY_ROOT_ATOMICITY:           ADDRESSED, awaiting external review
+HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review
+APPROVAL_SCOPE:                  ADDRESSED, awaiting external review (decided, not left ambiguous)
 BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A103)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A106)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -103,7 +107,12 @@ nothing can — a root of trust cannot prove its own legitimacy from data whose
 authority comes from that root. That one is answered by declaring the boundary
 rather than by building another internal layer.
 
-Six reviews, six sets of findings, three of them inside a correction. The
+The seventh review reported **P0 = 0** for the first time, inside the threat
+model ADR-0006 declares. Its three findings were consistency and
+history-of-proof invariants rather than new ways to manufacture `CONVERGED` —
+a different, healthier class of problem than the earlier rounds.
+
+Seven reviews, seven sets of findings, three of them inside a correction. The
 standard for closing an authority finding remains external review, and the
 record now argues for the rule rather than against it.
 
@@ -138,6 +147,18 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Seventh-round corrections, awaiting review
+
+The seventh review was the first to report **P0 = 0** inside the declared threat
+model. Three findings remained; all three are corrected.
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| The writer committed states that can never be authority | A root must carry the commitment of the policy it is written with; atomicity then follows from the root-connectivity rule rather than needing a second check | A104 |
+| Historical transitions borrowed current provenance | The manifest records the commit that authorized each rotation; the evaluator re-establishes facts from that commit, and an unbound transition is invalid | A105 |
+| An approval authorized a destination, not a transition | `mutation_approval` binds `base_digest`; `work_creation_approval` stays content-addressed by explicit decision | A106 |
+| Selective rerun still not delivered | Unchanged and still stated: `REUSABLE_ATTESTED_EVIDENCE: NOT BUILT` | ADR-0003 §1 |
 
 ## Sixth-round corrections, awaiting review
 
@@ -235,7 +256,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 139 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 148 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -275,9 +296,14 @@ cases execute.
   requirement (trusted bootstrap precedes controlled-agent access), not a
   mechanism. ADR-0006 and case A101 state it; an external trust source is the
   only mechanical answer and is not built.
-- A historical root transition is judged under its predecessor's *policy*, but
-  against facts observed **now**. A local checkout has no record of what was
-  observable at the time.
+- A historical transition's facts are re-established from the commit that
+  authorized it, which is immutable — but against the signer set the anchor
+  pins *today*. Removing a signer therefore invalidates that identity's earlier
+  transitions. Fail-closed, and locally the honest reading: the project no
+  longer trusts them.
+- A `work_creation_approval` is content-addressed by decision, so the same
+  admission may create more than one work carrying byte-identical contracts.
+  ADR-0007 §3 records why and what to add if that is ever wrong.
 - Under the `recorded_owner_ack` predicate — at either level, the mutation
   approval or the project trust anchor — an actor with commit rights is the
   whole bar. The fourth round named that posture rather than removing it; only
