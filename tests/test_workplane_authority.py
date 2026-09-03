@@ -71,7 +71,7 @@ class GovernedWork:
 
     def specification(self, **overrides):
         declared = {
-            "schema_name": "verification_specification", "schema_version": 1, "uid": self.specification_uid,
+            "schema_name": "verification_specification", "schema_version": 1, "uid": overrides.pop("uid", self.specification_uid),
             "acceptance_criteria": [{"uid": self.criterion_uid, "digest": DIGEST}],
             "command_registry": {"uid": generate_uid("work"), "digest": DIGEST},
             "relationship": "black_box", "execution_scope": ["tests/check.py"],
@@ -87,6 +87,29 @@ class GovernedWork:
             "schema_name": "command_registry", "schema_version": 1,
             "commands": {"check": {"argv": [sys.executable, "tests/check.py"], "timeout_seconds": 30, "substance": {"type": "unittest", "minimum_observations": 1}}},
         }
+
+    def with_second_verification(self, *, command, script):
+        """Add a second declared verification with its own command."""
+
+        (self.repo / "tests" / "other.py").write_text(script, encoding="utf-8")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "second check")
+        second_uid = generate_uid("verify")
+        second_criterion = generate_uid("ac")
+        artifacts = self.artifacts()
+        registry = self.registry()
+        registry["commands"][command] = {"argv": [sys.executable, "tests/other.py"], "timeout_seconds": 30, "substance": {"type": "unittest", "minimum_observations": 1}}
+        artifacts["command_registry"] = registry
+        artifacts["acceptance_criteria"] = artifacts["acceptance_criteria"] + [{
+            "schema_name": "acceptance_criteria", "schema_version": 1, "uid": second_criterion,
+            "requirement": {"uid": self.requirement_uid, "digest": DIGEST},
+            "criterion": "the second check holds",
+            "verification_specifications": [{"uid": second_uid, "digest": DIGEST}],
+        }]
+        artifacts["requirements"] = [dict(artifacts["requirements"][0], acceptance_criteria=[{"uid": self.criterion_uid, "digest": DIGEST}, {"uid": second_criterion, "digest": DIGEST}])]
+        artifacts["verification_specifications"] = artifacts["verification_specifications"] + [self.specification(uid=second_uid, command=command, execution_scope=["tests/other.py"])]
+        WorkController(self.work).mutate(1, artifacts)
+        return second_uid
 
     def artifacts(self, **overrides):
         declared = {
@@ -159,55 +182,71 @@ class AuthorityMatrixTests(unittest.TestCase):
         self.assertNotEqual("CONVERGED", forged.verdict.verdict)
         self.assertIn("INSUFFICIENT_EVIDENCE_PROVENANCE", forged.assessments[0].reasons)
 
-    def test_a57_a_stale_scope_is_found_by_recomputation_not_by_a_fixture(self):
+    def test_a57_a_checkout_that_moves_during_the_run_is_not_fresh(self):
+        # Re-execution means evidence is always current for a still checkout.
+        # What freshness still catches is the checkout moving underneath a run:
+        # a race, not a staleness gate. Said plainly rather than implied.
         work = self.governed()
-        work.verify()
-        self.assertEqual("CONVERGED", work.evaluate().verdict.verdict)
-        (work.repo / "src" / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
-        stale = work.evaluate()
-        self.assertNotEqual("CONVERGED", stale.verdict.verdict)
-        self.assertIn("STALE_DEPENDENCY", stale.assessments[0].reasons)
-
-    def test_a58_a59_a69_a70_a_first_good_run_never_carries_a_second_one(self):
-        work = self.governed()
-        work.verify()
-        good = next(work.runs().glob("*.json"))
-        record = json.loads(good.read_text(encoding="utf-8"))
-
-        for case, mutation, expected in (
-            ("A58 stale", {"snapshot_content_digest": "b" * 64}, "STALE_SCOPE"),
-            ("A59 untrusted", {"evidence_provenance": "UNTRACKED"}, "INSUFFICIENT_EVIDENCE_PROVENANCE"),
-            ("A69 wrong root", {"approval_root": {"uid": generate_uid("root"), "digest": "b" * 64}}, "ROOT_OF_TRUST_CHANGED"),
-            ("A70 wrong policy", {"policy_digest": "b" * 64}, "POLICY_CHANGED"),
-        ):
-            with self.subTest(case=case):
-                second = dict(record)
-                second["uid"] = generate_uid("run")
-                second.update(mutation)
-                (work.runs() / f"{second['uid']}.json").write_text(json.dumps(second), encoding="utf-8")
-                evaluation = work.evaluate()
-                self.assertEqual(2, len(evaluation.assessments))
-                weaker = [assessment for assessment in evaluation.assessments if assessment.evidence_uid == second["uid"]][0]
-                self.assertFalse(weaker.eligible, f"{case} inherited the first run's standing")
-                self.assertIn(expected, weaker.reasons)
-                (work.runs() / f"{second['uid']}.json").unlink()
-
-    def test_a60_the_right_specification_uid_with_the_wrong_digest_is_rejected(self):
-        work = self.governed()
-        work.verify()
-        path = next(work.runs().glob("*.json"))
-        record = json.loads(path.read_text(encoding="utf-8"))
-        record["verification_specification"] = {"uid": work.specification_uid, "digest": "b" * 64}
-        path.write_text(json.dumps(record), encoding="utf-8")
+        target = str(work.repo / "src" / "app.py").replace("\\", "\\\\")
+        moving = (
+            "import pathlib\n"
+            "pathlib.Path(r'" + target + "').write_text('VALUE = 2\\n')\n"
+            "print('Ran 1 test in 0.0s')\n"
+            "print('OK')\n"
+        )
+        (work.repo / "tests" / "check.py").write_text(moving, encoding="utf-8")
+        git(work.repo, "commit", "-am", "the check rewrites its own dependency")
         evaluation = work.evaluate()
         self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)
-        self.assertIn("VERIFICATION_SPEC_CHANGED", evaluation.assessments[0].reasons)
+        self.assertIn("STALE_DEPENDENCY", evaluation.assessments[0].reasons)
+
+    def test_a58_a59_a_passing_verification_never_carries_a_failing_one(self):
+        work = self.governed()
+        failing = "import sys\nprint('Ran 1 test in 0.0s')\nprint('FAILED (failures=1)')\nsys.exit(1)\n"
+        second_uid = work.with_second_verification(command="other", script=failing)
+        evaluation = work.evaluate()
+        self.assertEqual(2, len(evaluation.assessments), [a.reasons for a in evaluation.assessments])
+        by_spec = {assessment.verification_spec_uid: assessment for assessment in evaluation.assessments}
+        self.assertTrue(by_spec[work.specification_uid].eligible, by_spec[work.specification_uid].reasons)
+        self.assertFalse(by_spec[second_uid].eligible, "a failing run inherited the passing one's standing")
+        self.assertIn("VERIFICATION_FAILED", by_spec[second_uid].reasons)
+        self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)
+
+    def test_a60_a69_a70_a87_a88_every_binding_identity_is_checked(self):
+        # Evidence is produced in process, so these are checked where they
+        # still apply: the binding comparison itself.
+        from ainative_workplane.evaluator import _binding_reasons
+
+        work = self.governed()
+        evidence = work.verify().artifact
+        current = {
+            "spec_digest": evidence["verification_specification"]["digest"],
+            "contract_digest": evidence["contract_digest"],
+            "registry_digest": evidence["command_registry_digest"],
+            "policy_digest": evidence["policy_digest"],
+            "root_reference": evidence["approval_root"],
+            "work_uid": evidence["work"]["uid"],
+            "revision": evidence["contract_revision"],
+        }
+        self.assertEqual([], _binding_reasons(evidence, **current))
+        for case, override, expected in (
+            ("A60 wrong spec digest", {"spec_digest": "b" * 64}, "VERIFICATION_SPEC_CHANGED"),
+            ("A60 unknown spec", {"spec_digest": None}, "UNRELATED_VERIFICATION_EVIDENCE"),
+            ("A69 wrong root", {"root_reference": {"uid": generate_uid("root"), "digest": "b" * 64}}, "ROOT_OF_TRUST_CHANGED"),
+            ("A70 wrong policy", {"policy_digest": "b" * 64}, "POLICY_CHANGED"),
+            ("A87 wrong revision", {"revision": 99}, "STALE_CONTRACT_REVISION"),
+            ("A88 wrong work", {"work_uid": generate_uid("work")}, "UNRELATED_WORK"),
+            ("wrong registry", {"registry_digest": "b" * 64}, "COMMAND_REGISTRY_CHANGED"),
+            ("wrong contract", {"contract_digest": "b" * 64}, "STALE_CONTRACT"),
+        ):
+            with self.subTest(case=case):
+                self.assertIn(expected, _binding_reasons(evidence, **{**current, **override}))
 
     def test_a65_a66_the_production_api_takes_no_verdict_objects(self):
         from inspect import signature
 
         parameters = set(signature(evaluate_work).parameters)
-        self.assertEqual({"work_dir", "repository_root", "evidence_dir"}, parameters)
+        self.assertEqual({"work_dir", "repository_root"}, parameters)
         for forbidden in ("trust", "freshness", "policy", "contract", "approval_root", "registry"):
             self.assertNotIn(forbidden, parameters, f"the authoritative API accepts {forbidden} from its caller")
 

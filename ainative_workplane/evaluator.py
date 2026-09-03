@@ -16,6 +16,15 @@ Nothing here accepts a contract, a policy, a root, a registry, a trust verdict
 or a freshness result from the caller. An agent that wants a different answer
 has to change committed state through the controller, where the change is
 visible.
+
+Nor does it accept evidence. A schema-valid `verification_run` proves shape,
+not origin: every digest in it can be read from committed state and from the
+checkout, so a file written by hand is indistinguishable from one a runner
+produced. Against a local actor with write access there is no signature that
+actor could not also produce, so the boundary does not try to authenticate
+recorded files — it executes the declared verifications itself and judges only
+what it just produced. Recorded runs remain an audit trail and are never an
+input to a verdict.
 """
 
 from __future__ import annotations
@@ -31,7 +40,7 @@ from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
 from .evidence import EvidenceError, VerificationEvidence
 from .freshness import FreshnessResult, evaluate_checkout_freshness
 from .provenance import ProvenanceObservation, observe
-from .runner import VerificationRunner
+from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
 from .trust import TrustVerdict, evaluate_trust, policy_commitment
@@ -70,6 +79,12 @@ class EvaluationError(RuntimeError):
     """Authoritative state could not be established at all."""
 
 
+def read_recorded_runs(directory: str | Path) -> list[Mapping[str, Any]]:
+    """Read the audit trail. Never authority — see the module docstring."""
+
+    return _load_evidence(Path(directory))
+
+
 def _load_evidence(directory: Path) -> list[Mapping[str, Any]]:
     records: list[Mapping[str, Any]] = []
     if not directory.is_dir():
@@ -87,8 +102,12 @@ def _ineligible(record: Any, reason: str) -> EvidenceAssessment:
     return EvidenceAssessment(str(uid), "", False, False, None, None, False, False, False, (reason,))
 
 
-def _binding_reasons(artifact: Mapping[str, Any], *, spec_digest: str | None, contract_digest: str, registry_digest: str | None, policy_digest: str | None, root_reference: Mapping[str, str] | None) -> list[str]:
+def _binding_reasons(artifact: Mapping[str, Any], *, spec_digest: str | None, contract_digest: str, registry_digest: str | None, policy_digest: str | None, root_reference: Mapping[str, str] | None, work_uid: str | None = None, revision: int | None = None) -> list[str]:
     reasons: list[str] = []
+    if work_uid is not None and artifact["work"]["uid"] != work_uid:
+        reasons.append("UNRELATED_WORK")
+    if revision is not None and artifact["contract_revision"] != revision:
+        reasons.append("STALE_CONTRACT_REVISION")
     if spec_digest is None:
         reasons.append("UNRELATED_VERIFICATION_EVIDENCE")
     elif artifact["verification_specification"]["digest"] != spec_digest:
@@ -120,6 +139,8 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         registry_digest=authority["registry_digest"],
         policy_digest=authority["policy_digest"],
         root_reference=authority["root_reference"],
+        work_uid=authority["work_uid"],
+        revision=authority["revision"],
     )
     reasons = list(binding)
     trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], observed_provenance=observation.level)
@@ -173,12 +194,33 @@ def _freshness(evidence: VerificationEvidence, specification: Mapping[str, Any] 
         return None
 
 
-def evaluate_work(work_dir: str | Path, repository_root: str | Path, *, evidence_dir: str | Path | None = None) -> WorkEvaluation:
+def _execute_declared_verifications(work_dir: str | Path, repository_root: str | Path, specifications: Mapping[str, Mapping[str, Any]]) -> tuple[list[VerificationEvidence], list[Gap]]:
+    """Run every executable declared verification, now.
+
+    WHY here rather than reading recorded runs: a recorded run is a file, and
+    a file is whatever its author wrote. Producing the evidence is the only
+    local way to know where it came from.
+    """
+
+    produced: list[VerificationEvidence] = []
+    gaps: list[Gap] = []
+    for uid in sorted(specifications):
+        if specifications[uid].get("relationship") == "human_approval":
+            continue
+        try:
+            produced.append(run_verification(work_dir, repository_root, uid))
+        except (EvaluationError, RunnerError, SnapshotError, OSError) as error:
+            gaps.append(Gap("VERIFICATION_NOT_EXECUTABLE", uid, f"{type(error).__name__}: {error}"))
+    return produced, gaps
+
+
+def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEvaluation:
     """Decide convergence for a governed work directory against a checkout.
 
     @contract Every input is derived from committed state and from the
-    checkout. No contract, policy, root, registry, trust verdict or freshness
-    result is accepted from the caller.
+    checkout. No contract, policy, root, registry, trust verdict, freshness
+    result or evidence is accepted from the caller: the declared verifications
+    are executed here, and only their results are judged.
     """
 
     artifacts, authority, specifications = _authority(work_dir)
@@ -196,14 +238,13 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path, *, evidence
         scope.extend(specification.get("covered_implementation_paths", []))
     observation = observe(repository_root, scope)
 
-    directory = Path(evidence_dir) if evidence_dir else Path(work_dir) / "runs"
-    records = _load_evidence(directory)
+    produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
     assessments = tuple(
-        _assess(record, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, relationship_gaps=relationship_gaps)
-        for record in records
+        _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, relationship_gaps=relationship_gaps)
+        for evidence in produced
     )
-    eligible = [VerificationEvidence(record) for record, assessment in zip(records, assessments) if assessment.eligible]
-    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible)
+    eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
+    rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps)
 
     # Trust and freshness were established per evidence above; what remains for
     # the kernel is whether the authority documents exist at all.
@@ -225,7 +266,7 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
 
     controller = WorkController(work_dir)
     try:
-        _, artifacts = controller.load_committed_artifacts()
+        manifest, artifacts = controller.load_committed_artifacts()
     except ControllerError as error:
         raise EvaluationError(f"NO_AUTHORITATIVE_STATE:{error}") from error
     policy = artifacts.get("project_policy")
@@ -240,11 +281,13 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "registry_digest": canonical_digest(registry) if registry is not None else None,
         "policy_digest": policy_commitment(policy) if policy is not None else None,
         "root_reference": {"uid": approval_root["uid"], "digest": approval_root["root_digest"]} if approval_root is not None else None,
+        "work_uid": manifest["work_uid"],
+        "revision": manifest["revision"],
     }
     return artifacts, authority, specifications
 
 
-def run_verification(work_dir: str | Path, repository_root: str | Path, specification_uid: str, *, revision: int = 1) -> VerificationEvidence:
+def run_verification(work_dir: str | Path, repository_root: str | Path, specification_uid: str) -> VerificationEvidence:
     """Execute one committed verification and record bound evidence.
 
     @contract The binding is built from committed authority and from the
@@ -272,8 +315,8 @@ def run_verification(work_dir: str | Path, repository_root: str | Path, specific
         policy_digest=authority["policy_digest"],
     )
     binding = {
-        "work": {"uid": WorkController(work_dir).read()["work_uid"], "digest": authority["contract_digest"]},
-        "contract_revision": revision,
+        "work": {"uid": authority["work_uid"], "digest": authority["contract_digest"]},
+        "contract_revision": authority["revision"],
         "contract_digest": authority["contract_digest"],
         "verification_specification": {"uid": specification_uid, "digest": canonical_digest(specification)},
         "command_registry_digest": authority["registry_digest"],

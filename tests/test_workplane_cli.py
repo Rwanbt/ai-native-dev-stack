@@ -39,13 +39,14 @@ class AuthoritativeCliTests(unittest.TestCase):
         self.assertEqual("GIT_RECORDED", converged["observed_provenance"]["level"])
         self.assertTrue(converged["evidence"][0]["eligible"])
 
-    def test_a_changed_dependency_moves_the_exit_code_to_one(self):
+    def test_a_failing_verification_moves_the_exit_code_to_one(self):
         work = self.governed()
-        cli("verify", "--work", work.work, "--verification", work.specification_uid, "--repo", work.repo)
-        (work.repo / "src" / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        failing = "import sys\nprint('Ran 1 test in 0.0s')\nprint('FAILED (failures=1)')\nsys.exit(1)\n"
+        (work.repo / "tests" / "check.py").write_text(failing, encoding="utf-8")
+        subprocess.run(["git", "-C", str(work.repo), "commit", "-am", "break the check"], check=True, capture_output=True)
         blocked = cli("converge", "--work", work.work, "--repo", work.repo, expect=1)
         self.assertEqual("NOT_CONVERGED", blocked["verdict"])
-        self.assertIn("STALE_DEPENDENCY", blocked["evidence"][0]["reasons"])
+        self.assertIn("VERIFICATION_FAILED", blocked["evidence"][0]["reasons"])
 
     def test_the_authoritative_commands_take_no_contract_policy_or_root(self):
         help_text = subprocess.run([sys.executable, "-m", "ainative_workplane", "converge", "--help"], capture_output=True, text=True).stdout
