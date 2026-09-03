@@ -103,6 +103,47 @@ def _signature_of(root: Path, path: str | None = None) -> str | None:
     return fields[1] or fields[2] or None
 
 
+def recording_commit(target: str | Path, path: str) -> str | None:
+    """The commit that last wrote one path, or None."""
+
+    try:
+        result = _git(Path(target), "log", "-1", "--format=%H", "--", path)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    commit = result.stdout.strip()
+    return commit if result.returncode == 0 and commit else None
+
+
+def observe_commit(target: str | Path, commit: str, *, authorized_signers: Iterable[str] | None = None) -> ProvenanceFacts:
+    """Establish what one specific commit supports.
+
+    WHY a commit and not a path: a transition happened once, and asking whether
+    *today's* authority satisfies yesterday's predicate is a different question
+    from whether the transition had the property when it was authorized. A
+    commit is immutable, so this answer is the same every time it is asked --
+    which is what makes a historical chain re-checkable rather than re-narrated.
+    """
+
+    root = Path(target)
+    try:
+        described = _git(root, "log", "-1", f"--format={_SIGNATURE_FIELDS}", commit)
+    except (OSError, subprocess.SubprocessError):
+        return ProvenanceFacts(reason="Git could not be executed")
+    if described.returncode != 0:
+        return ProvenanceFacts(reason=f"commit {commit[:12]} is not in this history")
+    fields = described.stdout.strip().split("\x1f")
+    identity = (fields[1] or fields[2] or None) if len(fields) == 3 and fields[0] == _VERIFIED else None
+    allowed = frozenset(authorized_signers or ())
+    signed = identity is not None and identity in allowed
+    return ProvenanceFacts(
+        git_recorded=True,
+        signature_verified=signed,
+        local_dirty=False,
+        reason=f"commit {commit[:12]}" + (", signed by an authorized identity" if signed else ""),
+        signers=(identity,) if identity else (),
+    )
+
+
 def commit_count(target: str | Path, path: str) -> int:
     """How many commits have touched one path. -1 when Git cannot say.
 

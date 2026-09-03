@@ -1,4 +1,4 @@
-"""Authority attacks A72-A103: who may create evidence, and who may change the rules.
+"""Authority attacks A72-A106: who may create evidence, and who may change the rules.
 
 The A54-A70 matrix proved that the evaluator does not accept authority from its
 caller's arguments. These cases ask the next question: can a caller manufacture
@@ -883,6 +883,190 @@ class ControllerAnchorVerificationTests(unittest.TestCase):
         registry["commands"]["check"]["argv"] = [sys.executable, "tests/easy.py"]
         weaker = {"command_registry": registry}
         WorkController(work.work).mutate(1, weaker, approval=work.record_approval_for_change(weaker))
+        self.assertEqual(2, WorkController(work.work).read()["revision"])
+
+
+class PolicyRootAtomicityTests(unittest.TestCase):
+    """A104: a root must commit to the policy it is written with, and move with it.
+
+    The evaluator requires the current root to carry the current policy
+    commitment, so a revision where they disagree can never be authority. Round
+    6 left the writer able to commit exactly that.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def test_a104_a_policy_only_mutation_is_refused(self):
+        work = self.governed()
+        evolved, _ = work.evolved_policy(promotion_policy="explicit-v2")
+        changes = {"project_policy": evolved}
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        self.assertIn("rotate the root in the same mutation", str(refusal.exception))
+        self.assertEqual(1, WorkController(work.work).read()["revision"])
+
+    def test_a104_a_root_that_commits_to_another_policy_is_refused(self):
+        work = self.governed()
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        evolved, commitment = work.evolved_policy(promotion_policy="explicit-v2")
+        # The root rotates, properly, but still commits to the policy being left.
+        stale = work.successor_root(committed["approval_root"])
+        changes = {"project_policy": evolved, "approval_root": stale}
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        self.assertIn("does not commit to the policy", str(refusal.exception))
+
+    def test_a104_a_root_committing_to_an_unrelated_policy_is_refused(self):
+        work = self.governed()
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        _, other = work.evolved_policy(promotion_policy="somewhere-else")
+        drifting = work.successor_root(committed["approval_root"], policy_digest=other)
+        changes = {"approval_root": drifting}  # the policy itself is unchanged
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        self.assertIn("does not commit to the policy", str(refusal.exception))
+
+    def test_a104_policy_and_root_moving_together_is_accepted(self):
+        """The control: evolution must remain possible in one approved mutation."""
+
+        work = self.governed()
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        evolved, commitment = work.evolved_policy(promotion_policy="explicit-v2")
+        successor = work.successor_root(committed["approval_root"], policy_digest=commitment)
+        changes = {"project_policy": evolved, "approval_root": successor}
+        WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        work.commit_governed_state()
+        self.assertEqual("CONVERGED", evaluate_work(work.work, work.repo).verdict.verdict)
+
+
+class HistoricalTransitionEvidenceTests(unittest.TestCase):
+    """A105: a transition is judged by the evidence bound to it.
+
+    The chain walker used one observation of the *current* authority for every
+    historical transition, so it asked "does today's authority satisfy the
+    historical predicate" rather than "did this transition have the property
+    when it was authorized". Those are different questions.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def chain(self, work):
+        """A committed rotation, plus the pieces needed to judge it directly."""
+
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        parent = committed["approval_root"]
+        successor = work.successor_root(parent)
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        work.commit_governed_state()
+        return parent, successor
+
+    def test_a105_the_commit_marker_records_what_authorized_each_transition(self):
+        work = self.governed()
+        _, successor = self.chain(work)
+        transitions = WorkController(work.work).root_transitions()
+        self.assertIn(successor["uid"], transitions)
+        evidence = transitions[successor["uid"]]
+        self.assertEqual(40, len(evidence["commit"]))
+        self.assertEqual(64, len(evidence["approval_digest"]))
+        # The genesis root authorized nothing inside this work.
+        self.assertEqual(1, len(transitions))
+
+    def test_a105_current_authority_cannot_supply_historical_facts(self):
+        work = self.governed()
+        parent, successor = self.chain(work)
+        unsigned = ProvenanceFacts(git_recorded=True, signature_verified=False, local_dirty=False)
+        strict, commitment = work.evolved_policy()
+        strict["approval_predicate"] = dict(strict["approval_predicate"], predicate_id="signature")
+        commitment = policy_commitment(strict)
+        for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
+            strict[field] = dict(strict[field], policy_digest=commitment)
+        parent = dict(parent, policy_digest=commitment)
+        parent["root_digest"] = approval_root_commitment(parent)
+        rebuilt = work.successor_root(parent, policy_digest=commitment, predicate_id="signature", transition_policy_digest=commitment)
+
+        def verdict(bound):
+            return evaluate_trust(
+                SimpleEvidence(rebuilt, commitment), policy=strict, approval_root=rebuilt,
+                approval_chain=[parent], policy_chain=[strict],
+                evidence_facts=ESTABLISHED, authority_facts=ESTABLISHED,
+                genesis_digest=approval_root_commitment(parent),
+                transition_facts=bound,
+            ).code
+
+        # The authority observed *now* is signed. The transition's own evidence
+        # is not. The transition must stay invalid.
+        self.assertEqual("ROOT_OF_TRUST_INVALID", verdict({rebuilt["uid"]: unsigned}))
+        # A transition with no bound evidence at all is not a transition anyone
+        # can check.
+        self.assertEqual("ROOT_OF_TRUST_INVALID", verdict({}))
+        # The control: evidence bound to the transition, satisfying it.
+        self.assertEqual("TRUSTED", verdict({rebuilt["uid"]: ESTABLISHED}))
+
+    def test_a105_a_committed_rotation_still_converges(self):
+        """The control, end to end: the bound evidence is real and it validates."""
+
+        work = self.governed()
+        self.chain(work)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("CONVERGED", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
+
+
+class ApprovalReplayTests(unittest.TestCase):
+    """A106: an approval authorizes one transition, not one destination.
+
+    An approval named only the state being reached, so an old one could be
+    replayed later to undo a strengthening that happened since. Reproduced
+    before the fix: revision 1 approved a weak registry, revision 3 restored
+    the strong one, and replaying the revision-1 approval reached revision 4
+    with the weak registry back.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def weak(self, work):
+        (work.repo / "tests" / "easy.py").write_text("print('Ran 1 test in 0.0s'); print('OK')\n", encoding="utf-8")
+        work.commit_governed_state()
+        registry = work.registry()
+        registry["commands"]["check"]["argv"] = [sys.executable, "tests/easy.py"]
+        return {"command_registry": registry}
+
+    def test_a106_an_old_approval_cannot_undo_a_later_strengthening(self):
+        work = self.governed()
+        weak = self.weak(work)
+        approval = work.record_approval_for_change(weak)
+        WorkController(work.work).mutate(1, weak, approval=approval)
+        work.commit_governed_state()
+
+        # A third state, stricter than either: not a return to revision 1, so the
+        # base the old approval was issued against is genuinely gone.
+        stricter = work.registry()
+        stricter["commands"]["check"]["timeout_seconds"] = 10
+        strong = {"command_registry": stricter}
+        WorkController(work.work).mutate(2, strong, approval=work.record_approval_for_change(strong))
+        work.commit_governed_state()
+
+        with self.assertRaises(ControllerError) as refusal:
+            WorkController(work.work).mutate(3, weak, approval=approval)
+        self.assertIn("different state than the one being changed", str(refusal.exception))
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        self.assertEqual("tests/check.py", committed["command_registry"]["commands"]["check"]["argv"][1])
+
+    def test_a106_an_approval_issued_against_the_current_state_is_accepted(self):
+        """The control: the same weakening, approved now, still goes through."""
+
+        work = self.governed()
+        weak = self.weak(work)
+        WorkController(work.work).mutate(1, weak, approval=work.record_approval_for_change(weak))
         self.assertEqual(2, WorkController(work.work).read()["revision"])
 
 

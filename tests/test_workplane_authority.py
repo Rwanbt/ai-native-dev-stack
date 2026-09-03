@@ -165,12 +165,15 @@ class GovernedWork:
         self.commit_governed_state(signed=signed)
         return path
 
-    def approval_record(self, candidate, *, policy_digest=None, predicate_id=None):
-        """The record that the authority in force accepted this exact next state."""
+    def approval_record(self, candidate, *, policy_digest=None, predicate_id=None, base_digest=None):
+        """The record that the authority in force accepted this exact transition."""
 
+        controller = WorkController(self.work)
+        _, committed = controller.load_committed_artifacts()
         return {
             "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
-            "target_digest": WorkController(self.work).normative_digest(candidate),
+            "target_digest": controller.normative_digest(candidate),
+            "base_digest": base_digest or controller.normative_digest(committed),
             "policy_digest": policy_digest or self.commitment,
             "predicate_id": predicate_id or self.policy["approval_predicate"]["predicate_id"],
             "approved_by": "release-board", "approved_at": "2026-09-03T00:00:00Z",
@@ -260,7 +263,7 @@ class GovernedWork:
             evolved[field] = dict(evolved[field], policy_digest=commitment)
         return evolved, commitment
 
-    def successor_root(self, previous, *, marker="SIGNED", **overrides):
+    def successor_root(self, previous, *, marker="SIGNED", predicate_id=None, transition_policy_digest=None, **overrides):
         """Build a root that names its predecessor and carries a real transition.
 
         A root that merely changes content is a second genesis, which the fifth
@@ -272,10 +275,10 @@ class GovernedWork:
         successor = dict(previous, uid=generate_uid("root"), root_provenance=marker)
         successor["predecessor"] = {"uid": previous["uid"], "digest": previous["root_digest"]}
         successor["transition_approval"] = {
-            "predicate_id": self.policy["approval_predicate"]["predicate_id"],
+            "predicate_id": predicate_id or self.policy["approval_predicate"]["predicate_id"],
             "approved_by": "project-owner", "provenance": "GIT_RECORDED",
             "successor_uid": successor["uid"], "predecessor_digest": previous["root_digest"],
-            "successor_commitment": DIGEST, "policy_digest": self.commitment,
+            "successor_commitment": DIGEST, "policy_digest": transition_policy_digest or self.commitment,
         }
         successor.update(overrides)
         successor["root_digest"] = DIGEST

@@ -31,7 +31,7 @@ def policy():
     return declared, commitment
 
 
-def approval_for(controller, candidate, commitment, directory):
+def approval_for(controller, candidate, commitment, directory, base=None):
     """Record the approval, because the controller observes an artifact.
 
     Recording it is not optional any more. The weakest predicate this build
@@ -45,16 +45,19 @@ def approval_for(controller, candidate, commitment, directory):
         subprocess.run(["git", "-C", str(root), "config", "user.email", "controller@example.invalid"], check=True, capture_output=True)
         subprocess.run(["git", "-C", str(root), "config", "user.name", "Controller Test"], check=True, capture_output=True)
     path = root / f"{generate_uid('approval')}.json"
-    path.write_text(json.dumps(_approval_record(controller, candidate, commitment)), encoding="utf-8")
+    path.write_text(json.dumps(_approval_record(controller, candidate, commitment, base)), encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(root), "commit", "-m", "approval"], check=True, capture_output=True)
     return path
 
 
-def _approval_record(controller, candidate, commitment):
+def _approval_record(controller, candidate, commitment, base=None):
+    _, committed = controller.load_committed_artifacts()
     return {
         "schema_name": "mutation_approval", "schema_version": 1, "uid": generate_uid("approval"),
-        "target_digest": controller.normative_digest(candidate), "policy_digest": commitment,
+        "target_digest": controller.normative_digest(candidate),
+        "base_digest": base or controller.normative_digest(committed),
+        "policy_digest": commitment,
         "predicate_id": "recorded_owner_ack", "approved_by": "test", "approved_at": "2026-09-03T00:00:00Z",
         "provenance": "GIT_RECORDED",
     }

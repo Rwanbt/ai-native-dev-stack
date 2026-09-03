@@ -107,11 +107,14 @@ def _classify(record: Any, policy: Mapping[str, Any] | None, commitment: str, ru
     return record, None
 
 
-def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candidate_digest: str, facts: Any) -> str | None:
+def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candidate_digest: str, base_digest: str, facts: Any) -> str | None:
     """Return why a change to the success conditions is not authorized.
 
     @contract The approval is checked against the policy in force *before* the
     change. A candidate policy never authorizes its own adoption.
+    @contract An approval authorizes one transition, not one destination. It
+    names the state being left as well as the state being reached, so it cannot
+    be replayed later to undo a strengthening that happened since.
     @contract Satisfying the configured predicate is a separate question from
     the approval artifact being recorded. A `git_recorded` approval satisfies
     `recorded_owner_ack` and nothing else: an actor with commit rights cannot
@@ -135,6 +138,8 @@ def authorize_mutation(approval: Any, *, policy: Mapping[str, Any] | None, candi
         return "the approval uses a predicate the policy in force does not configure"
     if approval.get("target_digest") != candidate_digest:
         return "the approval names a different next state than the one being written"
+    if approval.get("base_digest") != base_digest:
+        return "the approval was issued against a different state than the one being changed"
     unsatisfied = predicate_refusal(policy["approval_predicate"]["predicate_id"], facts)
     if unsatisfied is not None:
         return unsatisfied

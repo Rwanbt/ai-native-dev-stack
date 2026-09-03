@@ -303,6 +303,14 @@ def _validate_work_manifest(value: Mapping[str, Any]) -> None:
             if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
                 _fail("INVALID_FIELD", f"{field}[].revision must be a positive integer")
             _digest(_required(link, "digest"), f"{field}[].digest")
+            if "authority" in link:
+                # What the controller observed when it authorized this
+                # transition, so the chain can be re-checked rather than
+                # re-narrated against today's authority. See ADR-0007.
+                evidence = _mapping(link["authority"], f"{field}[].authority")
+                if not isinstance(_required(evidence, "commit"), str) or not evidence["commit"]:
+                    _fail("INVALID_FIELD", f"{field}[].authority.commit must be non-empty")
+                _digest(_required(evidence, "approval_digest"), f"{field}[].authority.approval_digest")
 
 
 def _validate_requirements(value: Mapping[str, Any]) -> None:
@@ -477,6 +485,10 @@ def _validate_mutation_approval(value: Mapping[str, Any]) -> None:
 
     _uid_field(value, "approval")
     _digest(_required(value, "target_digest"), "target_digest")
+    # The state being left, not only the state being reached. Without it an
+    # approval authorizes arriving somewhere rather than one transition, and an
+    # old one replays to undo a later strengthening. See ADR-0007.
+    _digest(_required(value, "base_digest"), "base_digest")
     _digest(_required(value, "policy_digest"), "policy_digest")
     for field in ("predicate_id", "approved_by", "approved_at"):
         if not isinstance(_required(value, field), str) or not value[field]:

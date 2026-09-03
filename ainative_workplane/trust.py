@@ -104,7 +104,7 @@ def _authorized_transition(successor: Mapping[str, Any], parent: Mapping[str, An
     return not unmet(facts, required)
 
 
-def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_chain: Iterable[Mapping[str, Any]], policies: Mapping[str, Mapping[str, Any]], facts: Any = None, genesis_digest: str | None = None) -> bool:
+def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_chain: Iterable[Mapping[str, Any]], policies: Mapping[str, Mapping[str, Any]], facts: Any = None, genesis_digest: str | None = None, transition_facts: Mapping[str, Any] | None = None) -> bool:
     """Walk the chain to a genesis the project actually pinned.
 
     @contract A root with no predecessor terminates the walk only when it *is*
@@ -114,6 +114,12 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_c
     something. `genesis_digest=None` keeps the older behaviour for callers with
     no project anchor; the production path always supplies it.
 
+    @contract A transition is judged against the evidence bound to it, not
+    against the current authority. `transition_facts` maps a successor UID to
+    what was observed when that transition was authorized; when the mapping is
+    supplied and a transition is absent from it, the transition carries no
+    bound evidence and the chain is invalid. Borrowing today's provenance would
+    let an authority that is signed *now* validate a transition that never was.
     @contract Each transition is judged under the *predecessor's* policy, not
     the current one. Judging history by today's rules would let a later, weaker
     policy retroactively authorize a transition it never saw; the invariant is
@@ -158,19 +164,25 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_c
         authorizing = policies.get(parent.get("policy_digest"))
         if authorizing is None:
             return False
+        if transition_facts is None:
+            bound = facts
+        else:
+            bound = transition_facts.get(current.get("uid"))
+            if bound is None:
+                return False
         if not _authorized_transition(
             current,
             parent,
             predicate_id=authorizing["approval_predicate"]["predicate_id"],
             policy_digest=parent.get("policy_digest"),
             required=authorizing["required_mutation_facts"],
-            facts=facts,
+            facts=bound,
         ):
             return False
         current = parent
 
 
-def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None) -> TrustVerdict:
+def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None, transition_facts: Mapping[str, Any] | None = None) -> TrustVerdict:
     """Reject missing, malformed, mismatched, or insufficient authority.
 
     @contract Authority comes from facts observed about the objects
@@ -205,6 +217,6 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
     except ContractError:
         return TrustVerdict(False, "POLICY_COMMITMENT_INVALID")
     policies[commitment] = policy
-    if not _valid_root_chain(approval_root, policy_digest=commitment, approval_chain=approval_chain, policies=policies, facts=authority_facts, genesis_digest=genesis_digest):
+    if not _valid_root_chain(approval_root, policy_digest=commitment, approval_chain=approval_chain, policies=policies, facts=authority_facts, genesis_digest=genesis_digest, transition_facts=transition_facts):
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
     return TrustVerdict(True, "TRUSTED")

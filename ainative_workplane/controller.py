@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping
 from .authorization import authorize_mutation
 from .bootstrap import BootstrapError, admits, governs, read_creation_approval, verified_anchor
 from .contracts import NORMATIVE_ARTIFACTS, ContractError, canonical_digest, validate_normative, canonical_json_bytes, canonical_path, digest_bytes, generate_uid, validate_artifact
-from .provenance import UNOBSERVED, observe_artifacts
+from .provenance import UNOBSERVED, observe_artifacts, recording_commit
 from .trust import approval_root_commitment, policy_commitment
 
 
@@ -150,7 +150,7 @@ class WorkController:
         except OSError:
             pass
 
-    def _commit(self, previous: dict[str, Any] | None, artifacts: Mapping[str, Any]) -> dict[str, Any]:
+    def _commit(self, previous: dict[str, Any] | None, artifacts: Mapping[str, Any], *, transition_authority: dict[str, Any] | None = None) -> dict[str, Any]:
         revision = 1 if previous is None else previous["revision"] + 1
         transaction = uuid.uuid4().hex
         stage = self.staging / transaction
@@ -180,7 +180,7 @@ class WorkController:
                 raise ControllerError("REVISION_ALREADY_EXISTS")
             shutil.move(str(stage), str(revision_dir))
             self._step("after_promotion_before_manifest")
-            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers, "root_chain": self._extend_root_chain(previous, artifacts, revision), "policy_chain": self._extend_policy_chain(previous, artifacts, revision)}
+            manifest = {"schema_name": "work_manifest", "schema_version": 1, "work_uid": previous["work_uid"] if previous else generate_uid("work"), "revision": revision, "artifacts": pointers, "root_chain": self._extend_root_chain(previous, artifacts, revision, transition_authority), "policy_chain": self._extend_policy_chain(previous, artifacts, revision)}
             temporary = self.root / f".manifest.{secrets.token_hex(8)}.tmp"
             self._write_json(temporary, manifest)
             self._step("before_manifest_replace")
@@ -216,7 +216,7 @@ class WorkController:
         return self._extend_chain(previous, revision, field="policy_chain", digest=policy_commitment(policy) if isinstance(policy, Mapping) else None)
 
     @staticmethod
-    def _extend_root_chain(previous: Mapping[str, Any] | None, artifacts: Mapping[str, Any], revision: int) -> list[dict[str, Any]]:
+    def _extend_root_chain(previous: Mapping[str, Any] | None, artifacts: Mapping[str, Any], revision: int, transition_authority: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Carry the committed root chain forward, appending a rotation.
 
         WHY the chain lives in the manifest: the manifest is the commit marker.
@@ -228,7 +228,10 @@ class WorkController:
         """
 
         root = artifacts.get("approval_root")
-        return WorkController._extend_chain(previous, revision, field="root_chain", digest=approval_root_commitment(root) if isinstance(root, Mapping) else None)
+        chain = WorkController._extend_chain(previous, revision, field="root_chain", digest=approval_root_commitment(root) if isinstance(root, Mapping) else None)
+        if transition_authority is not None and chain and chain[-1]["revision"] == revision:
+            chain[-1] = {**chain[-1], "authority": transition_authority}
+        return chain
 
     def create(self, artifacts: Mapping[str, Any]) -> dict[str, Any]:
         handle = self._lock()
@@ -311,8 +314,8 @@ class WorkController:
             merged.update(set_artifacts or {})
             if not merged:
                 raise ControllerError("EMPTY_REVISION")
-            self._require_authorization(current, previous_artifacts, merged, approval)
-            return self._commit(current, merged)
+            transition = self._require_authorization(current, previous_artifacts, merged, approval)
+            return self._commit(current, merged, transition_authority=transition)
         finally:
             self._unlock(handle)
 
@@ -340,11 +343,30 @@ class WorkController:
 
         return self._committed_chain("root_chain", "approval_root.json", approval_root_commitment)
 
+    def root_transitions(self) -> dict[str, dict[str, Any]]:
+        """What authorized each committed root transition, by successor UID.
+
+        Empty for the genesis entry: nothing inside a work authorized its own
+        first root. That is the project trust anchor's question.
+        """
+
+        transitions: dict[str, dict[str, Any]] = {}
+        for entry, root in self._committed_pairs("root_chain", "approval_root.json", approval_root_commitment):
+            authority = entry.get("authority")
+            if isinstance(authority, Mapping) and isinstance(root.get("uid"), str):
+                transitions[root["uid"]] = dict(authority)
+        return transitions
+
     def _committed_chain(self, field: str, filename: str, commitment: Callable[[Mapping[str, Any]], str]) -> list[dict[str, Any]]:
         """Resolve one committed chain from the revisions the manifest names."""
 
+        return [artifact for _, artifact in self._committed_pairs(field, filename, commitment)]
+
+    def _committed_pairs(self, field: str, filename: str, commitment: Callable[[Mapping[str, Any]], str]) -> list[tuple[Mapping[str, Any], dict[str, Any]]]:
+        """Each committed chain entry with the artifact it actually recorded."""
+
         manifest = self._load_manifest()
-        history: list[dict[str, Any]] = []
+        pairs: list[tuple[Mapping[str, Any], dict[str, Any]]] = []
         for entry in manifest.get(field, []):
             candidate = self.revisions / str(entry["revision"]) / filename
             if not candidate.is_file():
@@ -355,8 +377,34 @@ class WorkController:
                 continue
             if not isinstance(artifact, Mapping) or commitment(artifact) != entry["digest"]:
                 continue
-            history.append(dict(artifact))
-        return history
+            pairs.append((entry, dict(artifact)))
+        return pairs
+
+    @staticmethod
+    def _require_policy_root_atomicity(before: Mapping[str, Any], after: Mapping[str, Any]) -> None:
+        """A root must commit to the policy it is written with, and move with it.
+
+        WHY: the evaluator requires the current root to carry the current policy
+        commitment, so a revision where they disagree can never be authority. The
+        sixth round left the writer able to commit exactly that and leave the
+        evaluator to notice. A sole normative writer that knowingly writes an
+        impossible state is not being a sole normative writer.
+
+        One rule does the whole job. A root must carry the commitment of the
+        policy it is written with; carrying a new one changes the root's own
+        commitment; and a changed root commitment already requires a
+        predecessor and a transition approval. So "a policy change rotates the
+        root in the same mutation" (ADR-0006) falls out of composition rather
+        than needing a second, separately reachable check.
+        """
+
+        after_policy = after.get("project_policy")
+        after_root = after.get("approval_root")
+        if not isinstance(after_policy, Mapping) or not isinstance(after_root, Mapping):
+            return
+        candidate = policy_commitment(after_policy)
+        if after_root.get("policy_digest") != candidate:
+            raise ControllerError("UNAUTHORIZED_MUTATION: the approval root does not commit to the policy it is being written with, so a policy change must rotate the root in the same mutation")
 
     @staticmethod
     def _require_root_connectivity(before: Any, after: Any) -> None:
@@ -420,22 +468,51 @@ class WorkController:
         return paths
 
     def _require_authorization(self, manifest: Mapping[str, Any], previous: Mapping[str, Any], candidate: Mapping[str, Any], approval: str | os.PathLike[str] | None) -> None:
-        """Refuse a change to the success conditions that nobody authorized."""
+        """Refuse a change to the success conditions that nobody authorized.
+
+        @returns what authorized a root transition, when this mutation is one,
+        so the commit marker can record it.
+        """
 
         before = {name: value for name, value in previous.items() if name in NORMATIVE_ARTIFACTS}
         after = {name: value for name, value in candidate.items() if name in NORMATIVE_ARTIFACTS}
         if before == after:
-            return
+            return None
+        self._require_policy_root_atomicity(before, after)
         self._require_root_connectivity(before.get("approval_root"), after.get("approval_root"))
         record, facts = self._read_approval(approval)
         refusal = authorize_mutation(
             record,
             policy=previous.get("project_policy"),
             candidate_digest=self.normative_digest(candidate),
+            base_digest=self.normative_digest(previous),
             facts=facts,
         )
         if refusal is not None:
             raise ControllerError(f"UNAUTHORIZED_MUTATION: {refusal}")
+        return self._transition_authority(before.get("approval_root"), after.get("approval_root"), approval, record)
+
+    def _transition_authority(self, before: Any, after: Any, approval: Any, record: Any) -> dict[str, Any] | None:
+        """What was observed when this root transition was authorized.
+
+        Recorded in the manifest -- the commit marker -- rather than in the root
+        artifact, because the root is written by the caller and this is not the
+        caller's statement. A commit is immutable, so a later walk re-asks the
+        same question of the same object instead of asking today's authority
+        whether it would have approved.
+        """
+
+        if not isinstance(before, Mapping) or not isinstance(after, Mapping):
+            return None
+        if approval_root_commitment(after) == approval_root_commitment(before):
+            return None
+        path = Path(approval) if approval is not None else None
+        if path is None:
+            return None
+        commit = recording_commit(path.parent, path.name)
+        if commit is None:
+            raise ControllerError("UNAUTHORIZED_MUTATION: the approval authorizing this root transition is not recorded in any commit")
+        return {"commit": commit, "approval_digest": canonical_digest(record)}
 
     def _read_approval(self, approval: str | os.PathLike[str] | None) -> tuple[Any, Any]:
         """Load an approval and observe the artifact it actually is.

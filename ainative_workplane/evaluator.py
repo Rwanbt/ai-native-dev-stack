@@ -47,7 +47,7 @@ from .controller import ControllerError, WorkController
 from .convergence import BLOCKING_FRESHNESS, ConvergenceVerdict, converge
 from .evidence import EvidenceError, VerificationEvidence
 from .freshness import FreshnessResult, evaluate_checkout_freshness
-from .provenance import ProvenanceFacts, observe, observe_artifacts
+from .provenance import ProvenanceFacts, observe, observe_artifacts, observe_commit
 from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
@@ -152,7 +152,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], policy_chain=authority["policy_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"])
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], policy_chain=authority["policy_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"], transition_facts=authority["transition_facts"])
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -355,6 +355,20 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     return WorkEvaluation(verdict=verdict, assessments=assessments, contract_digest=authority["contract_digest"], provenance=observation, authority_provenance=authority_observation)
 
 
+def _transition_facts(work_dir: str | Path, transitions: Mapping[str, Mapping[str, Any]], anchor: Mapping[str, Any] | None) -> dict[str, ProvenanceFacts]:
+    """Re-establish, per transition, what authorized it when it happened.
+
+    The commit recorded in the manifest is immutable, so this asks the same
+    question of the same object every time. Judging an old transition by
+    today's authority instead would let an authority that is signed now
+    validate one that never was.
+    """
+
+    signers = anchor["authorized_signers"] if anchor else None
+    root = Path(work_dir)
+    return {uid: observe_commit(root, evidence["commit"], authorized_signers=signers) for uid, evidence in transitions.items()}
+
+
 def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Mapping[str, Any]]]:
     """Load committed state and the identities derived from it."""
 
@@ -390,6 +404,7 @@ def _authority(work_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any], di
         "manifest": manifest,
         "root_history": history,
         "policy_history": controller.policy_history(),
+        "transition_facts": _transition_facts(work_dir, controller.root_transitions(), anchor),
         "genesis_digest": controller.genesis_normative_digest(),
         "genesis_root_digest": approval_root_commitment(history[0]) if history else None,
         "anchor_path": anchor_path,
