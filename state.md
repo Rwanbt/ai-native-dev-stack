@@ -61,3 +61,12 @@
 - Waiver and human-approval provenance is verified, not declared | location: ainative_workplane/authorization.py | proof: A84, A85 | confirmed
 - Transition approvals bind the successor's content; evidence binds work UID and revision; the registry has one validator | location: trust.successor_commitment, evaluator._binding_reasons, contracts._validate_command_registry | proof: A86, A87, A88, A89, A90 | confirmed
 - P0 = 0 and P1 = 0 are NOT claimed | location: docs/VERIFIED-WORK-PLANE-V2-DOD.md | proof: the first round closed five findings with green end-to-end cases on two platforms, and an external reviewer then found four more P0s in what those cases did not ask | active decision
+
+### THIRD-ROUND AUTHORITY HARDENING 2026-09-03
+- Two P0 from the third external review of b40f510, both reproduced first | location: scratchpad repro_round3.py | proof: a self-issued mutation_approval turned a failing check into CONVERGED; a command that rewrote the manifest to revision 99 mid-run still converged | confirmed
+- A mutation approval is now a path the controller observes, not an object the caller builds | location: ainative_workplane/controller.py _read_approval | proof: A91 refuses an invented approval and one written but not recorded; A92 accepts only the recorded approval naming this exact candidate | confirmed
+- Authority is re-read and compared after the verification runs | location: ainative_workplane/evaluator.py _authority_drift | proof: A93 -> AUTHORITY_CHANGED_DURING_EVALUATION, which is unevaluable and therefore INVALID | confirmed
+- Root predecessors are resolved from earlier revisions of the same work | location: controller.root_history, passed as approval_chain | proof: the governed path validates a rotated root instead of reporting ROOT_OF_TRUST_INVALID | confirmed
+- Machine evidence is required only of specifications that expect a run | location: convergence._collect_gaps machine_specs | proof: a human-approval-only contract no longer carries NO_VERIFICATION_EVIDENCE, and still blocks without an authorized approval | confirmed
+- The developer facade can perform an authorized update | location: cli.py work update --approval --delete | confirmed
+- Selective rerun is NOT delivered | location: docs/adr/0003 section 1 | proof: local secure mode re-executes every verification; the attested reusable mode is designed for and not built | active decision

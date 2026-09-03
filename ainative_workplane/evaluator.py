@@ -29,8 +29,9 @@ checkout, so a file written by hand is indistinguishable from one a runner
 produced. Against a local actor with write access there is no signature that
 actor could not also produce, so the boundary does not try to authenticate
 recorded files — it executes the declared verifications itself and judges only
-what it just produced. Recorded runs remain an audit trail and are never an
-input to a verdict.
+what it just produced. Recorded runs are a local execution log, not an audit
+trail: nothing authenticates them and anyone who can write the directory can
+write one. They are never an input to a verdict.
 """
 
 from __future__ import annotations

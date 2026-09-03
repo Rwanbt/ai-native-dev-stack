@@ -31,7 +31,14 @@ ROOT_TRANSITION_BINDING:         ADDRESSED, awaiting external review
 EXACT_WORK_BINDING:              ADDRESSED, awaiting external review
 REGISTRY_SCHEMA:                 ADDRESSED, awaiting external review
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A90)
+APPROVAL_ORIGIN:                 ADDRESSED, awaiting external review
+AUTHORITY_STABILITY:             ADDRESSED, awaiting external review
+ROOT_CHAIN_RESOLUTION:           ADDRESSED, awaiting external review
+HUMAN_APPROVAL_CONVERGENCE:      ADDRESSED, awaiting external review
+AUTHORING_FACADE:                ADDRESSED, awaiting external review
+REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
+
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A93)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -53,9 +60,16 @@ hand-written `verification_run` converged. A signature satisfied a policy
 demanding CI. Rewriting the command under test turned a failing check into
 `CONVERGED`.
 
-Those are corrected now, with the same kind of evidence that proved
-insufficient last time. The standard for closing an authority finding remains
-external review.
+Those were corrected — and a third review then found two more P0s, one of them
+in the correction itself: the mutation bar's key could be cut by the actor it
+controlled, and the first version of the test helper showed exactly how. The
+other was an ordering bug, not a missing check: a verification command could
+rewrite the authority while it ran.
+
+Three reviews, three sets of findings, each in what the previous round's green
+cases did not ask. The standard for closing an authority finding remains
+external review, and the record now argues for the rule rather than against
+it.
 
 ## Closed gates
 
@@ -88,6 +102,17 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Third-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| The mutation approval was self-issuable | It is a path; the controller observes the artifact's own provenance | A91, A92 |
+| Authority could change during evaluation | Re-read and compared after the runs; drift is unevaluable and therefore INVALID | A93 |
+| A rotated root could never validate in production | Predecessors resolved from earlier revisions of the same work | covered by the governed path |
+| A human-approval-only contract could never converge | Machine evidence is required only of specifications that expect a run | `test_convergence_ignores_narrative_and_blocks_failures` |
+| The CLI could not perform an authorized update | `work update --approval --delete` | `test_workplane_cli` |
+| Selective rerun was silently given up | Named as two modes: local secure (built) and attested reusable (designed for, not built) | ADR-0003 §1 |
 
 ## Second-round corrections, awaiting review
 
@@ -145,7 +170,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <17 V2 modules + vault + hooks> -q
-→ 132 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 136 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
 ```
@@ -177,6 +202,12 @@ cases execute.
 - Freshness no longer gates staleness on the in-process path — it catches a
   checkout moving underneath a running verification. Stale *reuse* is prevented
   by not reusing, not by detection.
-- A mutation approval is a record, not a signature. It stops an agent from
-  silently rewriting its own bar; it does not stop a sole maintainer who
-  writes both the rules and the approvals.
+- A mutation approval is a recorded artifact, not a signature, under a
+  `git_recorded` policy: an actor with commit rights can still record one,
+  though visibly and in history. Only a policy requiring `signature_verified`
+  excludes an actor without the key — and this build can verify that.
+- Authority drift is compared before and after the verification runs, not
+  continuously. A change made and reverted within a single run is undetected.
+- Convergence re-executes every declared verification. For a large suite that
+  is prohibitive, and the attested-evidence mode that would fix it is designed
+  for but not built.

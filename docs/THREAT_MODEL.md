@@ -69,6 +69,13 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## Authority threats found by the third review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Self-issued mutation approval | Call the controller API | Build the exact record that authorizes your own weakened next state, and converge behind it | The approval is a path; the controller observes that artifact's own provenance | Under `git_recorded` an actor with commit rights can still record one — visibly, in history. Only `signature_verified` excludes an actor without the key | A91, A92 |
+| Authority rewritten during evaluation | A registered command has a filesystem | Rewrite the manifest, policy or registry mid-run and be judged on the state loaded before | Authority is re-read and compared after the runs; any drift is `AUTHORITY_CHANGED_DURING_EVALUATION`, which is unevaluable | The comparison is at the end, not continuous; a change made and reverted within one run is undetected | A93 |
+
 ## Trusted computing base
 
 Everything a verdict depends on, and nothing else:

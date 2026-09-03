@@ -30,8 +30,8 @@ is no signature that actor could not also produce and no store they could not
 reach, so authentication cannot work at this boundary.
 
 `evaluate_work` therefore executes the declared verifications itself and judges
-only what it just produced. Recorded runs stay as an audit trail and are never
-an input.
+only what it just produced. Recorded runs are a local execution log, not an
+audit trail — nothing authenticates them — and they are never an input.
 
 *Cost, stated:* convergence now runs the verifications. A verdict is no longer
 cheap, and reusable evidence is not a local concept.
@@ -44,6 +44,22 @@ is a race. A57 tests that and nothing more.
 *Where this changes:* independently attested evidence — a signed CI attestation
 this build cannot yet verify — is the case for reusing evidence rather than
 re-running it. That is the extension point, not a gap to fill locally.
+
+*Two modes, named so the second is not forgotten.* The plan introduced
+`STALE_SCOPE`, `STALE_DEPENDENCY` and `STALE_REPO` precisely so an unrelated
+edit would not force a full rerun. Re-execution gives that up:
+
+- **Local secure mode** (what this build does): every convergence re-executes
+  every declared verification. Nothing local is reusable, so nothing stale can
+  be selected. Correct, and prohibitive for a large suite — a monorepo E2E run,
+  an Android build, browser tests.
+- **Attested mode** (designed for, not built): evidence carrying an
+  independently verified CI or signature attestation is reusable, and the
+  freshness states select it. The freshness engine is kept complete for this
+  reason, not because the local mode needs all of it.
+
+Claiming the original selective-rerun objective is delivered requires the
+second mode. It is not delivered.
 
 ### 2. Provenance is independent facts, not a ranking
 
@@ -62,7 +78,20 @@ artifacts are observed at their own location for authority. A work directory
 outside a repository establishes nothing, whatever the repository it describes.
 
 The run log is deliberately excluded from the authority observation: a fresh
-audit entry must not make the rules look tampered with.
+log entry must not make the rules look tampered with.
+
+### 3b. A mutation approval is an artifact, not an argument
+
+Checking an approval's content against the policy while measuring the
+*previous state's* provenance proves the previous state was clean, not that
+anyone approved anything. An actor able to call the API could build the exact
+record that authorized its own weakened state — the third review found this,
+and the first version of the test helper demonstrated it.
+
+`mutate` therefore takes a path, and the controller observes that artifact.
+Under `git_recorded` the approval must already be recorded before the mutation
+it authorizes; under `signature_verified` an actor without the key cannot
+produce one at all. That last case is where the bar stops being a formality.
 
 ### 4. Every normative artifact is behind the mutation bar
 
@@ -94,7 +123,8 @@ candidate's content excluding its own self-referential fields (A86).
 
 Each decision is asserted by a named case: A72-A73 (origin), A74-A79
 (provenance), A80-A83 (mutation bar), A84-A85 (approval provenance), A86
-(successor content), A87-A88 (work and revision binding), A89-A90 (registry).
+(successor content), A87-A88 (work and revision binding), A89-A90 (registry),
+A91-A92 (approval origin), A93 (authority stability).
 
 None of this closes the finding by itself. The standard for an authority
 correction is external review, and this ADR exists so a reviewer can disagree
