@@ -7,10 +7,33 @@ Nothing here is self-certified.
 
 ```text
 reviewed        2a6f838 (the review read the code, not only the round-3 packet)
-this packet     see the commit that adds it
+this packet     2f0420b
 branch          spec
 pull request    #16
 ```
+
+## CI
+
+```text
+run 33783785831   every job green
+                  Verified Work Plane V2 on ubuntu-latest and windows-latest
+```
+
+The signature cases are not skipped on either leg: `ssh-keygen` is present on
+both runners, so A94's satisfied-predicate control and A95's unsigned-anchor
+case executed on Linux and on Windows. The only skips remain the two special-
+file cases Windows cannot create, which the Linux leg runs.
+
+Local: 115 V2 tests OK with those two skips, plus 38 `ai_docs`, 40 `scripts`
+and 7 `hooks` tests, the three deterministic scripts, and the scope and
+convention gates.
+
+`docs/qualification/claude-code.json` records the four gates reproducing at
+`2f0420b` — four gates, exit 0, `authority: qualification_evidence_only`.
+**That is the author's own harness and is not independence.** The `opencode`
+and `codex-desktop` qualifications in the same directory are at older commits
+and would need re-running at this HEAD by those harnesses to mean anything
+about it.
 
 ## Both P0 reproduced first, against `2a6f838`
 
@@ -72,6 +95,18 @@ tests/test_workplane_authority_origin.py
 
 A94 and the signature anchor case are skipped where `ssh-keygen` is absent.
 They execute on both CI legs.
+
+## Commits
+
+```text
+d55b161  fix(workplane): make a predicate a mechanism, and trust a project before its work
+2f0420b  docs: record the fourth round, and name the default that is actually implemented
+```
+
+The first is ~490 lines, over the 400-LOC budget. Splitting it along the two
+P0s would require an intermediate commit whose tests do not pass, because the
+test fixture crosses both; this branch has shipped red twice and will not do it
+a third time to satisfy a line count.
 
 ## What changed in the engine
 
