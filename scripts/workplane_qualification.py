@@ -25,8 +25,28 @@ TESTS = (
 ).split()
 
 
+# Generous on purpose. The V2 suite spawns a process per verification and, since
+# the signature predicate landed, an ssh-keygen and several commits per authority
+# case; a budget sized to yesterday's suite expires silently and reports a
+# timeout as evidence. If a gate genuinely needs longer than this, the right
+# answer is to look at why, not to raise it again.
+GATE_TIMEOUT_SECONDS = 1800
+
+
 def _run(command: list[str]) -> dict[str, object]:
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+    """Run one gate. A gate that could not finish is a failed gate, never absent.
+
+    WHY the catch: an uncaught TimeoutExpired left the previous report file
+    untouched, so a stale `passed: true` at an older commit stayed on disk and
+    read as evidence about this one.
+    """
+
+    try:
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=GATE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return {"command": command, "exit_code": 124, "output_digest": "", "refusal": f"gate exceeded {GATE_TIMEOUT_SECONDS}s"}
+    except OSError as error:
+        return {"command": command, "exit_code": 125, "output_digest": "", "refusal": f"gate could not be executed: {error}"}
     output = result.stdout + result.stderr
     return {"command": command, "exit_code": result.returncode, "output_digest": sha256(output.encode("utf-8")).hexdigest()}
 

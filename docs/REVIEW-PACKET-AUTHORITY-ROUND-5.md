@@ -8,10 +8,42 @@ Nothing here is self-certified.
 
 ```text
 reviewed        2f0420b
-this packet     see the CI section
+this packet     92875e5
 branch          spec
 pull request    #16
 ```
+
+## CI
+
+```text
+run 33790454070   every job green
+                  Verified Work Plane V2 on ubuntu-latest and windows-latest
+```
+
+The A97-A100 signature cases are not skipped on either leg. The only skips
+remain the two special-file cases Windows cannot create, which Linux runs.
+
+Local: 131 V2 tests OK with those two skips, plus 38 `ai_docs`, 40 `scripts`
+and 7 `hooks` tests, the three deterministic scripts, and the scope and
+convention gates.
+
+## A defect in the qualification harness, found by running it
+
+`scripts/workplane_qualification.py` capped each gate at 120 seconds. The V2
+suite now takes about three minutes locally — every authority case spawns an
+`ssh-keygen` and several commits — so gate 1 timed out. Worse than the timeout:
+`subprocess.TimeoutExpired` escaped uncaught, `main()` never ran, and **the
+previous report file was left on disk**, still reading `passed: true` at
+`2f0420b`. A stale pass presented as evidence about a newer commit is exactly
+what this file exists not to be.
+
+Fixed in the same round: a gate that cannot finish is now a *failed* gate with
+a recorded refusal (`exit_code` 124 or 125), never an absent one, and the
+budget is 1800s with a comment saying what to do if it is ever hit again. The
+`claude-code.json` in this commit was regenerated at `92875e5`.
+
+**It remains the author's own harness and is not independence.** The `opencode`
+and `codex-desktop` qualifications are at older commits.
 
 ## All four reproduced first, against `2f0420b`
 
