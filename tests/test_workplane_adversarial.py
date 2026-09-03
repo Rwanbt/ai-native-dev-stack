@@ -144,8 +144,11 @@ class TrustAdversarialTests(unittest.TestCase):
         record = evidence(policy_digest=commitment, root=root_reference, provenance="SIGNED")
 
         # A07 nothing observed establishes nothing, however loud the claim.
-        self.assertEqual("INSUFFICIENT_EVIDENCE_PROVENANCE", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=ProvenanceFacts(), authority_facts=ProvenanceFacts()).code)
+        # The authority itself must hold, or its failure is the answer instead:
+        # authority is decided before evidence, deliberately.
         established = ProvenanceFacts(git_recorded=True, local_dirty=False)
+        self.assertEqual("INSUFFICIENT_EVIDENCE_PROVENANCE", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=ProvenanceFacts(), authority_facts=established).code)
+        self.assertEqual("ROOT_OF_TRUST_INVALID", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=established, authority_facts=ProvenanceFacts()).code)
         self.assertEqual("TRUSTED", evaluate_trust(record, policy=policy, approval_root=root, evidence_facts=established, authority_facts=established).code)
 
         # A08 missing root

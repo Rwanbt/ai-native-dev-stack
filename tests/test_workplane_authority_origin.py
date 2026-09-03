@@ -1,4 +1,4 @@
-"""Authority attacks A72-A107: who may create evidence, and who may change the rules.
+"""Authority attacks A72-A110: who may create evidence, and who may change the rules.
 
 The A54-A70 matrix proved that the evaluator does not accept authority from its
 caller's arguments. These cases ask the next question: can a caller manufacture
@@ -17,6 +17,7 @@ from pathlib import Path
 from ainative_workplane.bootstrap import BootstrapError, anchor_refusal, bootstrap, creation_approval_path, trust_commitment
 from ainative_workplane.contracts import canonical_digest, generate_uid
 from ainative_workplane.controller import ControllerError, WorkController
+from ainative_workplane.convergence import VERDICT_EXIT_CODES
 from ainative_workplane.evaluator import SUCCESS_CONDITION, EvaluationError, evaluate_work
 from ainative_workplane.evidence import VerificationEvidence
 from ainative_workplane.predicates import predicate_refusal
@@ -1162,6 +1163,162 @@ class TransitionApprovalBindingTests(unittest.TestCase):
         self.rotated(work)
         evaluation = evaluate_work(work.work, work.repo)
         self.assertEqual("CONVERGED", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
+
+
+class AuthorityPreflightTests(unittest.TestCase):
+    """A108: an authority nobody established decides nothing, including what runs.
+
+    The verdict was already fail-closed. The *execution* boundary was not: the
+    declared commands ran first and the refusal arrived afterwards, so a work
+    no project ever admitted still chose which command executed.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        return GovernedWork(self.directory, **kwargs)
+
+    def refused(self, work, sentinel):
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
+        self.assertFalse(sentinel.exists(), "a command ran under authority that could not be established")
+        self.assertEqual((), evaluation.assessments)
+        return [gap.code for gap in evaluation.verdict.gaps]
+
+    def test_a108_an_ungoverned_work_executes_nothing(self):
+        work = self.governed(anchor=False)
+        sentinel = self.directory / "ungoverned.txt"
+        work.sentinel_command(sentinel)
+        self.assertIn("PROJECT_TRUST_UNINITIALIZED", self.refused(work, sentinel))
+
+    def test_a108_an_unverifiable_anchor_executes_nothing(self):
+        work = self.governed()
+        sentinel = self.directory / "bad-anchor.txt"
+        work.sentinel_command(sentinel)
+        Path(work.anchor).write_text(Path(work.anchor).read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        work.commit_governed_state()
+        self.assertIn("PROJECT_TRUST_UNVERIFIED", self.refused(work, sentinel))
+
+    def test_a108_a_broken_root_chain_executes_nothing(self):
+        work = self.governed()
+        sentinel = self.directory / "broken-chain.txt"
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        successor = work.successor_root(committed["approval_root"])
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(1, changes, approval=work.record_approval_for_change(changes))
+        manifest = work.work / "manifest.json"
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+        for entry in recorded["root_chain"]:
+            if "authority" in entry:
+                entry["authority"] = {**entry["authority"], "approval_digest": "b" * 64}
+        manifest.write_text(json.dumps(recorded, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        work.sentinel_command(sentinel)
+        self.assertIn("ROOT_OF_TRUST_INVALID", self.refused(work, sentinel))
+
+    def test_a108_valid_authority_still_executes(self):
+        """The control. Without it this suite passes on a build that runs nothing."""
+
+        work = self.governed()
+        sentinel = self.directory / "valid.txt"
+        work.sentinel_command(sentinel)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("CONVERGED", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
+        self.assertTrue(sentinel.exists())
+
+
+class HumanOnlyAuthorityTests(unittest.TestCase):
+    """A109: a contract with nothing to run still has a chain to validate.
+
+    The complete chain walk lived inside the per-evidence check, and a
+    human-approval specification produces no evidence. So a human-only work
+    could converge without the chain ever being walked.
+    """
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def human_only(self, work):
+        artifacts = work.human_only_contract()
+        WorkController(work.work).mutate(1, artifacts, approval=work.record_approval(artifacts))
+        work.commit_governed_state()
+        return artifacts
+
+    def test_a109_a_human_only_contract_converges_on_a_sound_chain(self):
+        """The control, and the reason the finding is not simply 'refuse them'."""
+
+        work = self.governed()
+        self.human_only(work)
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("CONVERGED", evaluation.verdict.verdict, [gap.code for gap in evaluation.verdict.gaps])
+        self.assertEqual((), evaluation.assessments)
+
+    def test_a109_a_human_only_contract_cannot_bypass_the_root_chain(self):
+        work = self.governed()
+        artifacts = self.human_only(work)
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        # A successor that is schema-valid and semantically wrong: its
+        # transition approval commits to a successor other than itself.
+        successor = work.successor_root(committed["approval_root"])
+        successor["transition_approval"] = {**successor["transition_approval"], "successor_commitment": "c" * 64}
+        successor["root_digest"] = approval_root_commitment(successor)
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(2, changes, approval=work.record_approval_for_change(changes))
+        work.commit_governed_state()
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict)
+        self.assertIn("ROOT_OF_TRUST_INVALID", [gap.code for gap in evaluation.verdict.gaps])
+
+
+class AuthorityClassificationTests(unittest.TestCase):
+    """A110: a broken chain is unevaluable, not unfinished."""
+
+    def governed(self, **kwargs):
+        directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(directory.cleanup)
+        return GovernedWork(Path(directory.name), **kwargs)
+
+    def break_chain(self, work, revision=1):
+        _, committed = WorkController(work.work).load_committed_artifacts()
+        successor = work.successor_root(committed["approval_root"])
+        changes = {"approval_root": successor}
+        WorkController(work.work).mutate(revision, changes, approval=work.record_approval_for_change(changes))
+        manifest = work.work / "manifest.json"
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+        for entry in recorded["root_chain"]:
+            if "authority" in entry:
+                entry["authority"] = {**entry["authority"], "approval_path": "src/app.py"}
+        manifest.write_text(json.dumps(recorded, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        work.commit_governed_state()
+
+    def assert_invalid(self, work):
+        evaluation = evaluate_work(work.work, work.repo)
+        self.assertEqual("INVALID", evaluation.verdict.verdict)
+        self.assertEqual(2, VERDICT_EXIT_CODES[evaluation.verdict.verdict])
+        self.assertIn("ROOT_OF_TRUST_INVALID", [gap.code for gap in evaluation.verdict.gaps])
+
+    def test_a110_with_a_machine_specification(self):
+        work = self.governed()
+        self.break_chain(work)
+        self.assert_invalid(work)
+
+    def test_a110_with_a_human_only_specification(self):
+        work = self.governed()
+        artifacts = work.human_only_contract()
+        WorkController(work.work).mutate(1, artifacts, approval=work.record_approval(artifacts))
+        work.commit_governed_state()
+        self.break_chain(work, revision=2)
+        self.assert_invalid(work)
+
+    def test_a110_with_no_runnable_evidence_at_all(self):
+        work = self.governed()
+        artifacts = work.artifacts(verification_specifications=[])
+        WorkController(work.work).mutate(1, artifacts, approval=work.record_approval(artifacts))
+        work.commit_governed_state()
+        self.break_chain(work, revision=2)
+        self.assert_invalid(work)
 
 
 if __name__ == "__main__":

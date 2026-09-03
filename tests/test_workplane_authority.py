@@ -39,7 +39,7 @@ def git(root, *arguments):
 class GovernedWork:
     """A checkout plus a governed work directory that converges."""
 
-    def __init__(self, root: Path, *, required=None, predicate="recorded_owner_ack", signing=False, anchor=True):
+    def __init__(self, root: Path, *, required=None, required_evidence=None, predicate="recorded_owner_ack", signing=False, anchor=True):
         self.root = root
         self.repo = root / "repo"
         self.predicate = predicate
@@ -65,6 +65,10 @@ class GovernedWork:
         # once by the approval that admits them and once by the write.
         self.task_uid = generate_uid("task")
         self.required = {"git_recorded": True} if required is None else required
+        # Authority and evidence may demand different things: a policy that asks
+        # the evidence for a fact nothing can establish makes the work
+        # unverifiable, not ungoverned.
+        self.required_evidence = self.required if required_evidence is None else required_evidence
         self.policy = self._policy(self.required)
         self.commitment = policy_commitment(self.policy)
         for field in ("approval_predicate", "waiver_approval_rule", "human_approval_rule"):
@@ -204,7 +208,7 @@ class GovernedWork:
             "schema_name": "project_policy", "schema_version": 1,
             "approval_predicate": {"predicate_id": self.predicate, "policy_digest": DIGEST},
             "required_mutation_facts": required,
-            "required_evidence_facts": required,
+            "required_evidence_facts": self.required_evidence,
             "waiver_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
             "human_approval_rule": {"predicate_id": "recorded_owner_ack", "policy_digest": DIGEST},
             "promotion_policy": "explicit",
@@ -286,6 +290,44 @@ class GovernedWork:
         successor["root_digest"] = approval_root_commitment(successor)
         return successor
 
+    def sentinel_command(self, sentinel):
+        """Point the declared verification at a command with a visible effect.
+
+        A verdict that fails closed after the fact is not the same as never
+        having run. A file on disk is how a test can tell the difference.
+        """
+
+        script = (
+            "import pathlib\n"
+            f"pathlib.Path(r'{sentinel}').write_text('executed', encoding='utf-8')\n"
+            "print('Ran 1 test in 0.0s')\n"
+            "print('OK')\n"
+        )
+        (self.repo / "tests" / "check.py").write_text(script, encoding="utf-8")
+        self.commit_governed_state()
+
+    def human_only_contract(self):
+        """Replace the machine verification with one satisfied by human approval."""
+
+        artifacts = self.artifacts()
+        specification = self.specification(
+            relationship="human_approval",
+            approval_predicate={"predicate_id": self.policy["human_approval_rule"]["predicate_id"], "policy_digest": self.commitment},
+        )
+        specification.pop("command", None)
+        # The registry stays: a schema-valid one must declare a command, and a
+        # human-only contract simply declares nothing that uses it.
+        artifacts["verification_specifications"] = [specification]
+        artifacts["human_approvals"] = [{
+            "schema_name": "human_approval", "schema_version": 1, "uid": generate_uid("approval"),
+            "target": {"uid": self.specification_uid, "digest": DIGEST},
+            "approved_by": "release-board", "approved_at": "2026-09-03T00:00:00Z",
+            "approval_provenance": "GIT_RECORDED",
+            "approval_predicate": {"predicate_id": self.policy["human_approval_rule"]["predicate_id"], "policy_digest": self.commitment},
+            "policy_digest": self.commitment,
+        }]
+        return artifacts
+
     def artifacts(self, **overrides):
         declared = {
             "requirements": [{"schema_name": "requirements", "schema_version": 1, "uid": self.requirement_uid, "statement": "the value stays one", "acceptance_criteria": [{"uid": self.criterion_uid, "digest": DIGEST}]}],
@@ -342,7 +384,10 @@ class AuthorityMatrixTests(unittest.TestCase):
             evaluate_work(work.root / "not-a-work-directory", work.repo)
 
     def test_a55_a56_a61_a_claimed_provenance_cannot_exceed_what_was_observed(self):
-        work = self.governed(required={"ci_verified": True})
+        # Only the *evidence* requirement is unsatisfiable here. Asking it of the
+        # authority too would make the work unevaluable before anything ran,
+        # which is a different finding (A108).
+        work = self.governed(required_evidence={"ci_verified": True})
         work.verify()
         evaluation = work.evaluate()
         self.assertNotEqual("CONVERGED", evaluation.verdict.verdict)

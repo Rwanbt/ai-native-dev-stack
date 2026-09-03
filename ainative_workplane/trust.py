@@ -182,13 +182,18 @@ def _valid_root_chain(root: Mapping[str, Any], *, policy_digest: str, approval_c
         current = parent
 
 
-def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None, transition_facts: Mapping[str, Any] | None = None) -> TrustVerdict:
-    """Reject missing, malformed, mismatched, or insufficient authority.
+def evaluate_authority_trust(*, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, authority_facts: Any = None, genesis_digest: str | None = None, transition_facts: Mapping[str, Any] | None = None) -> TrustVerdict:
+    """Everything decidable about authority without an evidence run.
 
-    @contract Authority comes from facts observed about the objects
-    themselves — the checkout for evidence, the artifact's own location for the
-    approval root — never from a provenance string an artifact carries about
-    itself.
+    WHY separate from `evaluate_trust`: the chain walk lived inside the
+    per-evidence check, so it happened once per machine verification and never
+    at all for a contract satisfied by human approval. Worse, it happened
+    *after* the declared commands had already executed -- an authority nobody
+    could validate was still choosing what ran. Authority is a property of the
+    committed state alone, so it is decided from the committed state alone,
+    before anything is executed.
+
+    @contract Every check here is independent of any verification result.
     """
 
     if policy is None or approval_root is None:
@@ -198,17 +203,11 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
         validate_artifact(approval_root)
     except ContractError:
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
-    record = evidence.artifact
     commitment = policy_commitment(policy)
     if not _policy_predicates_match(policy, commitment):
         return TrustVerdict(False, "POLICY_COMMITMENT_INVALID")
-    root = record["approval_root"]
-    if root["uid"] != approval_root["uid"] or root["digest"] != approval_root["root_digest"]:
-        return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
-    if record["policy_digest"] != commitment or approval_root["policy_digest"] != commitment:
+    if approval_root["policy_digest"] != commitment:
         return TrustVerdict(False, "POLICY_CHANGED")
-    if unmet(evidence_facts, policy["required_evidence_facts"]):
-        return TrustVerdict(False, "INSUFFICIENT_EVIDENCE_PROVENANCE")
     policies: dict[str, Mapping[str, Any]] = {}
     try:
         for historical in policy_chain:
@@ -219,4 +218,35 @@ def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] 
     policies[commitment] = policy
     if not _valid_root_chain(approval_root, policy_digest=commitment, approval_chain=approval_chain, policies=policies, facts=authority_facts, genesis_digest=genesis_digest, transition_facts=transition_facts):
         return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
+    return TrustVerdict(True, "TRUSTED")
+
+
+def evaluate_trust(evidence: VerificationEvidence, *, policy: Mapping[str, Any] | None, approval_root: Mapping[str, Any] | None, approval_chain: Iterable[Mapping[str, Any]] = (), policy_chain: Iterable[Mapping[str, Any]] = (), governed: bool = True, evidence_facts: Any = None, authority_facts: Any = None, genesis_digest: str | None = None, transition_facts: Mapping[str, Any] | None = None, authority: TrustVerdict | None = None) -> TrustVerdict:
+    """Reject missing, malformed, mismatched, or insufficient authority.
+
+    @contract Authority comes from facts observed about the objects
+    themselves — the checkout for evidence, the artifact's own location for the
+    approval root — never from a provenance string an artifact carries about
+    itself.
+    @contract `authority` is the verdict an earlier preflight already reached.
+    Supplying it avoids walking the same chain once per run; omitting it makes
+    this function self-contained, which is what the unit cases want.
+    """
+
+    established = authority if authority is not None else evaluate_authority_trust(
+        policy=policy, approval_root=approval_root, approval_chain=approval_chain,
+        policy_chain=policy_chain, governed=governed, authority_facts=authority_facts,
+        genesis_digest=genesis_digest, transition_facts=transition_facts,
+    )
+    if not established.trusted:
+        return established
+    record = evidence.artifact
+    commitment = policy_commitment(policy)
+    root = record["approval_root"]
+    if root["uid"] != approval_root["uid"] or root["digest"] != approval_root["root_digest"]:
+        return TrustVerdict(False, "ROOT_OF_TRUST_INVALID")
+    if record["policy_digest"] != commitment:
+        return TrustVerdict(False, "POLICY_CHANGED")
+    if unmet(evidence_facts, policy["required_evidence_facts"]):
+        return TrustVerdict(False, "INSUFFICIENT_EVIDENCE_PROVENANCE")
     return TrustVerdict(True, "TRUSTED")

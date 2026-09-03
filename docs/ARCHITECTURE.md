@@ -185,6 +185,30 @@ destination and cannot be replayed to undo a later strengthening. `work_creation
 is content-addressed instead — genesis has no base, and two works with byte-identical
 contracts sit at the same bar.
 
+### Authority is decided before anything executes
+
+`evaluate_work` establishes the whole of the authority — the verified project anchor, the
+work's admission, the current policy and root, the complete root chain with each
+transition's own evidence — **before a single registered command starts**. If any of it
+cannot be established the verdict is `INVALID` and **zero verification commands run**.
+
+A verdict that fails closed after the fact is not the same as never having let an authority
+nobody could validate decide what executes. `evaluate_authority_trust()` is the pure
+function that answers everything decidable without an evidence run; `evaluate_trust()` then
+adds only the evidence-specific checks — binding, required evidence facts, freshness,
+substance, result. See ADR-0008.
+
+Two consequences worth stating. A contract satisfied entirely by human approval produces no
+evidence, and therefore used to skip the chain walk altogether; it no longer can. And a
+broken chain is now a standalone `ROOT_OF_TRUST_INVALID` gap — `INVALID`, exit code 2 —
+rather than a reason buried in one run's ineligibility, because a chain nobody can evaluate
+is not the same as work that is unfinished.
+
+**Authority precedence.** Authority is decided first, so an authority that cannot be
+established is reported instead of, not alongside, an evidence-level reason. A policy that
+demands a fact of its own authority that nothing can establish makes the work unevaluable,
+not merely unverifiable.
+
 ### Creating a work contract proposes; admission promotes it
 
 Revision 1 states the whole of what a work must accomplish, so it is a success condition

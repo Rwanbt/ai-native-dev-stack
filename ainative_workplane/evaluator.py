@@ -51,7 +51,7 @@ from .provenance import ProvenanceFacts, blob_at_commit, observe, observe_artifa
 from .runner import RunnerError, VerificationRunner
 from .snapshot import SnapshotError, build_repository_snapshot, snapshot_reference
 from .traceability import Gap, analyze
-from .trust import TrustVerdict, approval_root_commitment, evaluate_trust, policy_commitment
+from .trust import TrustVerdict, approval_root_commitment, evaluate_authority_trust, evaluate_trust, policy_commitment
 
 # Artifacts whose content defines what success means. The contract digest is
 # taken over exactly these, so changing any of them invalidates evidence bound
@@ -132,7 +132,7 @@ def _binding_reasons(artifact: Mapping[str, Any], *, spec_digest: str | None, co
     return reasons
 
 
-def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spec_digests: Mapping[str, str], authority: Mapping[str, Any], repository_root: str | Path, observation: ProvenanceFacts, authority_observation: ProvenanceFacts, relationship_gaps: frozenset[str]) -> EvidenceAssessment:
+def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spec_digests: Mapping[str, str], authority: Mapping[str, Any], repository_root: str | Path, observation: ProvenanceFacts, authority_observation: ProvenanceFacts, relationship_gaps: frozenset[str], established: TrustVerdict) -> EvidenceAssessment:
     """Qualify one run on its own, never by inheritance from another."""
 
     try:
@@ -152,7 +152,7 @@ def _assess(record: Any, *, specifications: Mapping[str, Mapping[str, Any]], spe
         revision=authority["revision"],
     )
     reasons = list(binding)
-    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], approval_chain=authority["root_history"], policy_chain=authority["policy_history"], evidence_facts=observation, authority_facts=authority_observation, genesis_digest=authority["genesis_root_digest"], transition_facts=authority["transition_facts"])
+    trust = evaluate_trust(evidence, policy=authority["policy"], approval_root=authority["approval_root"], evidence_facts=observation, authority=established)
     if not trust.trusted:
         reasons.append(trust.code)
     freshness = _freshness(evidence, specifications.get(spec_uid), repository_root=repository_root, authority=authority, spec_digest=spec_digests.get(spec_uid))
@@ -327,26 +327,55 @@ def evaluate_work(work_dir: str | Path, repository_root: str | Path) -> WorkEval
     observation = observe(repository_root, scope, authorized_signers=signers)
     authority_observation = observe_artifacts(_authority_paths(work_dir, authority["manifest"]), authorized_signers=signers)
 
+    # ------------------------------------------------------------------ preflight
+    # Nothing executes until the authority is established. A verdict that fails
+    # closed after the fact is not the same as never having let an authority
+    # nobody could validate decide what runs.
+    machine_specs = frozenset(uid for uid, specification in specifications.items() if specification.get("relationship") != "human_approval")
+    established = evaluate_authority_trust(
+        policy=policy,
+        approval_root=approval_root,
+        approval_chain=authority["root_history"],
+        policy_chain=authority["policy_history"],
+        authority_facts=authority_observation,
+        genesis_digest=authority["genesis_root_digest"],
+        transition_facts=authority["transition_facts"],
+    )
+    # The kernel turns an untrusted verdict into its own gap, so this list holds
+    # only what the kernel cannot see: whether the project ever admitted this work.
+    preflight = _project_trust_gaps(work_dir, authority)
+    if preflight or not established.trusted:
+        refused = converge(
+            replace(graph, gaps=graph.gaps + tuple(preflight)),
+            [],
+            machine_specs=machine_specs,
+            freshness=FreshnessResult(frozenset()),
+            trust=established,
+            policy=policy,
+            waivers=artifacts.get("waivers", []),
+            human_approvals=artifacts.get("human_approvals", []),
+            authorization_facts=authority_observation,
+        )
+        return WorkEvaluation(verdict=refused, assessments=(), contract_digest=authority["contract_digest"], provenance=observation, authority_provenance=authority_observation)
+
     before = _authority_commitment(authority, artifacts)
     produced, execution_gaps = _execute_declared_verifications(work_dir, repository_root, specifications)
     execution_gaps.extend(_authority_drift(work_dir, before))
     assessments = tuple(
-        _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, authority_observation=authority_observation, relationship_gaps=relationship_gaps)
+        _assess(evidence.artifact, specifications=specifications, spec_digests=spec_digests, authority=authority, repository_root=repository_root, observation=observation, authority_observation=authority_observation, relationship_gaps=relationship_gaps, established=established)
         for evidence in produced
     )
     eligible = [evidence for evidence, assessment in zip(produced, assessments) if assessment.eligible]
     rejected = tuple(Gap("INELIGIBLE_VERIFICATION_EVIDENCE", assessment.evidence_uid, "; ".join(assessment.reasons)) for assessment in assessments if not assessment.eligible) + tuple(execution_gaps) + tuple(_project_trust_gaps(work_dir, authority))
 
-    # Trust and freshness were established per evidence above; what remains for
-    # the kernel is whether the authority documents exist at all.
-    authority_present = policy is not None and approval_root is not None and registry is not None
-    machine_specs = frozenset(uid for uid, specification in specifications.items() if specification.get("relationship") != "human_approval")
+    # Trust was established once, before anything ran, and per evidence after.
+    # What remains for the kernel is the graph and the evidence it accepted.
     verdict = converge(
         replace(graph, gaps=graph.gaps + rejected),
         eligible,
         machine_specs=machine_specs,
-        freshness=FreshnessResult(frozenset()) if authority_present else None,
-        trust=TrustVerdict(True, "AUTHORITY_PRESENT") if authority_present else None,
+        freshness=FreshnessResult(frozenset()),
+        trust=established,
         policy=policy,
         waivers=artifacts.get("waivers", []),
         human_approvals=artifacts.get("human_approvals", []),

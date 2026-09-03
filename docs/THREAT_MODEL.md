@@ -69,6 +69,13 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Evidence bound to another work or revision | Reuse a correct digest | A run from elsewhere counts here | Binding checks work UID and contract revision, both derived from the manifest | — | A87, A88 |
 | Registry accepted by one path, refused by the other | Commit a registry the runner would reject | Divergent trust base | One validator, called by both the contract and the runner | — | A89, A90 |
 
+## Authority threats found by the ninth review
+
+| Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |
+| --- | --- | --- | --- | --- | --- |
+| Execution before authority | Commit a work directory and a command registry | The declared commands run first and the refusal arrives afterwards, so a work no project admitted still chooses what executes — the verdict is fail-closed, the execution boundary is not | The whole authority is established before any runner process starts; unevaluable authority returns `INVALID` and executes nothing | `run_verification` is a single-verification developer entry point and runs its command on request; it produces no verdict | A108 |
+| Human-only contract bypassing the chain | Author a contract satisfied entirely by human approval | The complete chain walk lived inside the per-evidence check, and such a contract produces no evidence, so the chain was never walked | The chain is walked in the preflight, independently of whether anything runs | None known for this path | A109, A110 |
+
 ## Authority threats found by the seventh review
 
 | Threat | Attacker capability | Impact if unmitigated | Mitigation | Residual risk | Test |

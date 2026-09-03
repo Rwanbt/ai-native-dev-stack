@@ -52,11 +52,12 @@ CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
 
 POLICY_ROOT_ATOMICITY:           ADDRESSED, awaiting external review
 HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review (commit + path + digest)
+AUTHORITY_PREFLIGHT:             ADDRESSED, awaiting external review (nothing executes before authority holds)
 APPROVAL_SCOPE:                  ADDRESSED, awaiting external review (decided, not left ambiguous)
 BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
-ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A107)
+ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A110)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
@@ -147,6 +148,14 @@ therefore complete across the pair, not on either OS alone.
 
 macOS is not in this job. The plan lists it as optional and the existing
 `installers` and `hooks` jobs already cover it for the surrounding stack.
+
+## Ninth-round corrections, awaiting review
+
+| Finding | Correction | Case |
+| --- | --- | --- |
+| Commands executed before authority was proved | `evaluate_authority_trust()` runs as a preflight; unevaluable authority returns `INVALID` and executes nothing | A108 |
+| A human-only contract never walked the root chain | The walk moved out of the per-evidence check into the preflight, so it happens whether or not anything runs | A109 |
+| A broken chain was `NOT_CONVERGED`, not `INVALID` | It is now a standalone `ROOT_OF_TRUST_INVALID` gap — the round-8 observation, closed by the same change | A110 |
 
 ## Eighth-round correction, awaiting review
 
@@ -262,7 +271,7 @@ refactor and a hotfix.
 
 ```text
 python -m unittest <16 V2 modules + vault + hooks + ai_docs> -q
-→ 153 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
+→ 162 V2 tests, OK (2 skipped: FIFO and symlink creation on Windows)
 → 38 ai_docs tests, OK;  40 scripts tests, OK
 python scripts/measure_scope.py       → figures match AGENTS.md
 python scripts/validate_conventions.py → thresholds agree
@@ -302,11 +311,12 @@ cases execute.
   requirement (trusted bootstrap precedes controlled-agent access), not a
   mechanism. ADR-0006 and case A101 state it; an external trust source is the
   only mechanical answer and is not built.
-- A broken root chain surfaces as `ROOT_OF_TRUST_INVALID` inside the reasons
-  an individual run was ruled ineligible for, rather than as a standalone gap,
-  so the verdict is `NOT_CONVERGED` where `INVALID` would classify it better.
-  It never produces a false `CONVERGED`; it is noted rather than changed,
-  because the eighth review asked for a narrow round.
+- `run_verification` — the `ainative verify` entry point — runs one declared
+  command on request without the authority preflight. It produces evidence, not
+  a verdict, and the evaluator never reads recorded evidence; but it is a
+  production entry point that executes a registry-chosen command, and the
+  preflight was scoped to `evaluate_work` because that is where the review
+  located the finding.
 - A historical transition's facts are re-established from the commit that
   authorized it, which is immutable — but against the signer set the anchor
   pins *today*. Removing a signer therefore invalidates that identity's earlier
