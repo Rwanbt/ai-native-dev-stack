@@ -172,7 +172,12 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
                 # Unreadable lock file: it is not a valid claim, so replace it.
                 path.unlink(missing_ok=True)
                 continue
-            if attempt == 0 and (force or _reclaim_if_dead(project, existing)):
+            if attempt == 0 and force:
+                # A human said this lock is stale. Retrying without removing it
+                # just failed again on the next O_EXCL (EMP-LC-008).
+                path.unlink(missing_ok=True)
+                continue
+            if attempt == 0 and _reclaim_if_dead(project, existing):
                 continue
             raise LifecycleError(
                 "LOCK_HELD",

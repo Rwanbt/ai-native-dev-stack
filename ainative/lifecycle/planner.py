@@ -194,6 +194,13 @@ def _install_change(project: Path, destination: str, source_relative: str | None
         # Present, differing, and never recorded: it is not ours to replace.
         return Change(CONFLICT, destination, component.identifier, component.ownership,
                       "exists but was not installed by ainative", source_relative, None)
+    if not known.created_by_ainative:
+        # Adopted from a legacy install because it sat where a managed file
+        # goes, but its bytes were never ours. Recording it made it trackable;
+        # it did not make it ours to overwrite.
+        return Change(CONFLICT, destination, component.identifier, component.ownership,
+                      "adopted but not written by ainative - left in place",
+                      source_relative, None)
     if digestlib.is_safe_to_replace(status):
         return Change(REPLACE, destination, component.identifier, component.ownership,
                       "managed file is unchanged since install", source_relative, new_digest)
@@ -284,7 +291,15 @@ def plan_component_removal(project: Path, component: Component, state: InstallSt
             continue
         if entry.ownership == manifestlib.USER_DATA and not purge:
             changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  "user data — preserved"))
+                                  "user data - preserved"))
+            continue
+        if not entry.created_by_ainative:
+            # Adoption may never make the uninstaller delete a file the stack
+            # did not write (ADR-0009, consequences). `--purge` does not lift
+            # this: purge removes AI Native's own data roots, not a file whose
+            # bytes were always the user's.
+            changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
+                                  "adopted but not written by ainative - preserved"))
             continue
         status = digestlib.classify(target, entry.digest_at_install)
         if status == digestlib.MISSING:

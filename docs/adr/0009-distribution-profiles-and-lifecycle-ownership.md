@@ -200,11 +200,19 @@ work is not.
 - Every user-visible mutation gains `--dry-run`, and every confirmation gains
   `--yes`, so the CLI is usable from CI without a TTY.
 - Existing installations have no lifecycle state. They are detected as
-  `LEGACY_INSTALL` and adopted conservatively: a file is adopted as
-  `MANAGED_IMMUTABLE` only when its digest matches a file the distribution
-  currently ships. Anything else is adopted as `MANAGED_MUTABLE` or left
-  unmanaged, so adoption can never make the uninstaller delete a file it did
-  not write.
+  `LEGACY_INSTALL` and adopted conservatively. A file is adopted as
+  `MANAGED_IMMUTABLE`, with `created_by_ainative = true`, only when its digest
+  matches a file the distribution currently ships — that is the proof an earlier
+  version of the stack wrote it. A file that sits where a managed file goes but
+  holds different bytes is adopted as `MANAGED_MUTABLE` with
+  `created_by_ainative = false`, and that flag is what the planner reads: such a
+  file is never replaced and never removed, by any operation, `--purge`
+  included. Adoption makes a file *trackable*; it never makes it *ours*.
+
+  Recording the on-disk digest alone is not enough, and the first
+  implementation that did only that let the very next install overwrite a
+  customised `AGENTS.md` (EMP-LC-007): the file compared `UNCHANGED` against its
+  own adopted digest, so the replace path opened.
 - `install.py`'s unconditional prune is a behaviour change: it now prunes only
   unchanged managed files. A user who edited a shipped skill keeps the edit.
 - The lifecycle state schema, the stack release version and the Work Plane

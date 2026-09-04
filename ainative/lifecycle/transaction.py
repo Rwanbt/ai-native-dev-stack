@@ -172,15 +172,26 @@ class Applier:
     # --- backup ---------------------------------------------------------
 
     def _backup(self, change: Change, target: Path) -> None:
+        """Copy what is about to be replaced or deleted, file or whole tree.
+
+        A `data_root` change names a directory, and `--purge` deletes it. A
+        file-only backup made that deletion unrecoverable (EMP-LC-006).
+        """
+
         if not target.exists() or target.is_symlink():
             return
         destination = self.backup_root / change.path
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_dir():
+            shutil.copytree(target, destination, dirs_exist_ok=True, symlinks=True)
+            return
         shutil.copy2(target, destination)
 
     def _restore(self, change: Change, target: Path) -> None:
         saved = self.backup_root / change.path
-        if saved.is_file():
+        if saved.is_dir():
+            shutil.copytree(saved, target, dirs_exist_ok=True, symlinks=True)
+        elif saved.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(saved, target)
         elif target.exists() and change.action in (plannerlib.CREATE,):
@@ -343,7 +354,10 @@ def recover(project: Path, journal: Journal) -> dict:
             continue
         target = resolve_within(project, path)
         saved = backup_root / path if backup_root else None
-        if saved is not None and saved.is_file():
+        if saved is not None and saved.is_dir():
+            shutil.copytree(saved, target, dirs_exist_ok=True, symlinks=True)
+            restored.append(path)
+        elif saved is not None and saved.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(saved, target)
             restored.append(path)

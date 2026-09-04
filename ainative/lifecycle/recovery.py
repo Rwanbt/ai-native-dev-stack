@@ -82,7 +82,15 @@ class Diagnosis:
 def _file_finding(project: Path, entry: statelib.ManagedFile,
                   distribution: Distribution) -> dict:
     component = distribution.components.get(entry.component)
-    target = resolve_within(project, entry.path)
+    try:
+        target = resolve_within(project, entry.path)
+    except LifecycleError as escape:
+        # A recorded path that no longer resolves inside the project means the
+        # state was edited by something other than this code. Report it; do not
+        # let it abort the diagnostic that exists to find exactly this.
+        return {"path": entry.path, "component": entry.component, "status": CORRUPTED,
+                "unresolvable": True,
+                "detail": f"recorded path is not inside the project ({escape.message})"}
 
     if component is None:
         return {"path": entry.path, "component": entry.component, "status": ORPHANED,
@@ -193,6 +201,39 @@ class RepairResult:
         }
 
 
+def _state_unreadable(diagnosis: Diagnosis) -> bool:
+    return any(item["status"] == CORRUPTED and item["path"] == statelib.STATE_RELATIVE.as_posix()
+               for item in diagnosis.findings)
+
+
+def _quarantine_state(project: Path, result: "RepairResult", distribution: Distribution, *,
+                      dry_run: bool) -> "RepairResult":
+    """An unreadable state cannot be repaired — only set aside, and never lost.
+
+    Reconstructing ownership from a corrupt file would mean inventing install
+    digests, which is precisely the guess that makes a later uninstall delete a
+    user's edit. So the file is moved aside with its bytes intact and the next
+    `ainative init` adopts the project conservatively, exactly as it does for a
+    legacy install.
+    """
+
+    target = project / statelib.STATE_RELATIVE
+    quarantined = target.with_name(f"state.json.corrupt-{statelib.now().replace(':', '')}")
+    result.dropped = [statelib.STATE_RELATIVE.as_posix()]
+    if dry_run:
+        result.diagnosis.notes.append(
+            f"would move the unreadable state to {quarantined.name}; "
+            "`ainative init` then re-adopts the project without overwriting your files")
+        return result
+    target.replace(quarantined)
+    result.diagnosis = diagnose(project, distribution=distribution)
+    result.diagnosis.notes.append(
+        f"the unreadable lifecycle state was moved to {quarantined.name}. "
+        "Run `ainative init --profile <standard|verified>` to re-adopt this project; "
+        "your files are untouched.")
+    return result
+
+
 def repair(project: Path, *, dry_run: bool = False,
            distribution: Distribution | None = None,
            source: sourcelib.DistributionSource | None = None,
@@ -206,10 +247,18 @@ def repair(project: Path, *, dry_run: bool = False,
     diagnosis = diagnose(project, distribution=distribution)
     result = RepairResult(diagnosis=diagnosis, dry_run=dry_run)
 
+    if _state_unreadable(diagnosis):
+        return _quarantine_state(project, result, distribution, dry_run=dry_run)
+
     result.preserved = [item["path"] for item in diagnosis.findings
                         if item["status"] == USER_MODIFIED]
     missing = [item["path"] for item in diagnosis.findings if item["status"] == MISSING]
-    orphaned = [item["path"] for item in diagnosis.findings if item["status"] == ORPHANED]
+    # Dropped: a component nobody declares any more, and a record whose path no
+    # longer resolves inside the project. Nothing may be deleted through the
+    # latter, and leaving it would make every later operation refuse.
+    orphaned = [item["path"] for item in diagnosis.findings
+                if (item["status"] == ORPHANED or item.get("unresolvable"))
+                and item["path"] != "-"]
     result.reinstalled = missing
     result.dropped = orphaned
 

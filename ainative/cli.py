@@ -121,22 +121,40 @@ def build_parser() -> argparse.ArgumentParser:
 # --- lifecycle commands ---------------------------------------------------
 
 
+def _ask(prompt: str) -> str | None:
+    """Read one answer, or None when nobody is there to give one.
+
+    `isatty()` alone is not enough: a piped or redirected stdin can still report
+    a terminal and then raise EOFError on the first read, which surfaced as a
+    traceback and exit 1 instead of a clean refusal (EMP-LC-009).
+    """
+
+    if not sys.stdin.isatty():
+        return None
+    try:
+        return input(prompt).strip()
+    except (EOFError, OSError):
+        return None
+
+
 def _choose_profile(args: argparse.Namespace) -> str:
     if args.profile:
         return args.profile
-    if not sys.stdin.isatty():
-        raise LifecycleError(
-            "PROFILE_INVALID",
-            "no profile given and no terminal to ask on. "
-            "Use `ainative init --profile standard` or `--profile verified`.")
     print(PROFILE_PROMPT)
-    while True:
-        answer = input("Profile [1/2] (1): ").strip().lower() or "1"
+    for _ in range(3):
+        answer = _ask("Profile [1/2] (1): ")
+        if answer is None:
+            break
+        answer = answer.lower() or "1"
         if answer in ("1", "standard"):
             return "standard"
         if answer in ("2", "verified"):
             return "verified"
         print("Enter 1 for Standard or 2 for Verified.")
+    raise LifecycleError(
+        "PROFILE_INVALID",
+        "no profile given and no terminal to ask on. "
+        "Use `ainative init --profile standard` or `--profile verified`.")
 
 
 def _report(args: argparse.Namespace, record: dict, text: str) -> int:
@@ -217,7 +235,8 @@ def _confirm_purge(args: argparse.Namespace, project: Path) -> bool:
     print("The following paths will be permanently deleted:")
     for path in sorted(preview.removed):
         print(f"  {path}")
-    return input("Delete them? [y/N]: ").strip().lower() in ("y", "yes")
+    answer = _ask("Delete them? [y/N]: ")
+    return (answer or "").lower() in ("y", "yes")
 
 
 def _uninstall_text(result) -> str:
@@ -292,10 +311,15 @@ def _cmd_uninstall(args: argparse.Namespace) -> int:
         print("The following paths will be permanently deleted:")
         for path in sorted(preview.removed):
             print(f"  {path}")
-        interactive = input("Delete them? [y/N]: ").strip().lower() in ("y", "yes")
-        if not interactive:
-            print("Aborted. Nothing was removed.")
-            return EXIT_OK
+        answer = _ask("Delete them? [y/N]: ")
+        if answer is not None:
+            interactive = answer.lower() in ("y", "yes")
+            if not interactive:
+                print("Aborted. Nothing was removed.")
+                return EXIT_OK
+        # answer is None: the terminal claimed to exist but gave nothing back.
+        # Fall through, so the uninstaller refuses with CONFIRMATION_REQUIRED
+        # rather than this command silently reporting success.
 
     result = uninstaller.uninstall(project, purge=args.purge, dry_run=args.dry_run,
                                    assume_yes=args.yes, interactive=interactive,

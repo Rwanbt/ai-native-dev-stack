@@ -101,13 +101,17 @@ def _adopt_component(project: Path, component, source: DistributionSource,
             except OSError:
                 shipped = None
         if shipped is not None and shipped == current:
-            # Byte-identical to what we ship: provably ours to manage.
+            # Byte-identical to what the distribution ships: an earlier version
+            # of the stack provably wrote it, so it is ours to replace and to
+            # remove.
             adopted.append(ManagedFile(destination, component.identifier, component.ownership,
-                                       current, created_by_ainative=False))
+                                       current, created_by_ainative=True))
         else:
-            # Present but different. Record it as mutable at its current digest:
-            # it is now UNCHANGED, so nothing will delete it, and the moment the
-            # user edits it again it becomes USER_MODIFIED and stays protected.
+            # Present but different. The stack did not write these bytes, so it
+            # may never replace or remove them. `created_by_ainative=False` is
+            # what the planner reads to enforce that; recording the current
+            # digest alone made the file look UNCHANGED and let the very first
+            # install overwrite a customisation (EMP-LC-007).
             adopted.append(ManagedFile(destination, component.identifier,
                                        manifestlib.MANAGED_MUTABLE, current,
                                        created_by_ainative=False))
