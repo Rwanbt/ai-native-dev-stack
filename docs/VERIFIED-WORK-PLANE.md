@@ -34,7 +34,11 @@ parameter that skips it.
     pip install .
     ainative --help
 
-Python 3.8+ on Linux, Windows and macOS. No runtime dependencies.
+Python 3.11+ on Linux, Windows and macOS. No runtime dependencies.
+`ainative` is one dispatcher: the commands below are the Verified surface,
+and the lifecycle commands (`init`, `status`, `update`, `uninstall`) are
+documented in `docs/DISTRIBUTION-LIFECYCLE.md`. Installing the Standard
+profile loads none of this package.
 
 ## Use it
 

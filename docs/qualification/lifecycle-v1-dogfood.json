@@ -1,0 +1,93 @@
+{
+  "authority": "production_boundary",
+  "authority_claim": "none - dogfood evidence only",
+  "contract_digest": "ea8a5aabadcd920e65ff28de46929c85d5e24fff2b6b9690eec8a58026e64d9c",
+  "fingerprint": "0ca833706b9c3eb98e2e97aad83faf6d6bd0bf73670837e2ce53fdb2ab9ab0d7",
+  "gaps": [
+    {
+      "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+      "detail": "SUSPICIOUS_VERIFICATION; VERIFICATION_FAILED",
+      "uid": "run_01M1PFQCAD05ENCRFVFFW7YR56"
+    },
+    {
+      "code": "UNVERIFIED_SPECIFICATION",
+      "detail": "declared verification specification has no passing evidence",
+      "uid": "verify_01M1PFJAYCK6SFP4C31KM91W79"
+    }
+  ],
+  "reason": "structural, freshness, or verification gaps remain",
+  "recorded_at": "2026-09-04T15:14:07Z",
+  "requirements": 8,
+  "schema_version": 1,
+  "source_commit": "c747da6eeeb67f5ba5206471d2e33be8fed9a639",
+  "subject": "Distribution & Lifecycle Manager v1",
+  "surface": "evaluate_work",
+  "trust_provenance": "agent_bootstrapped_in_a_throwaway_clone",
+  "verdict": "NOT_CONVERGED",
+  "verifications": [
+    {
+      "command": "profiles",
+      "duration_seconds": 4.3,
+      "evidence_uid": "run_01M1PFJG9B9448GZXD2V50PDWG",
+      "requirement": "profiles",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYCH9PWTH6JP41Y6QQ6"
+    },
+    {
+      "command": "transitions",
+      "duration_seconds": 15.1,
+      "evidence_uid": "run_01M1PFJZ1MC7202JWF8GSQJ6XW",
+      "requirement": "transitions",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYCAAY7J9B2B0JZWAK6"
+    },
+    {
+      "command": "ownership",
+      "duration_seconds": 9.6,
+      "evidence_uid": "run_01M1PFK8CKSYTY0J2E1M0ZG80W",
+      "requirement": "ownership",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYC5GCCET0GHVXT15AJ"
+    },
+    {
+      "command": "transactions",
+      "duration_seconds": 8.9,
+      "evidence_uid": "run_01M1PFKH4CWGF4YSK4B8QG816A",
+      "requirement": "transactions",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYCS5KPQP3KVDYYECMN"
+    },
+    {
+      "command": "updates",
+      "duration_seconds": 12.9,
+      "evidence_uid": "run_01M1PFKXPD837ZRPJEM4TA3T8X",
+      "requirement": "updates",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYCQSPJQJWRNC45AY19"
+    },
+    {
+      "command": "safety",
+      "duration_seconds": 5.8,
+      "evidence_uid": "run_01M1PFM3BS829YY4809RK4SDCY",
+      "requirement": "safety",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYC8P0NFKNKDSJKAFKZ"
+    },
+    {
+      "command": "cli",
+      "duration_seconds": 15.4,
+      "evidence_uid": "run_01M1PFMJBK651J7P3EF1XM46DP",
+      "requirement": "cli",
+      "result": "PASS",
+      "specification": "verify_01M1PFJAYC0GRBDZ0DZZA6ZDEQ"
+    },
+    {
+      "command": "non_vacuity",
+      "duration_seconds": 28.0,
+      "evidence_uid": "run_01M1PFNDPZ30AVTGBZYW4AST87",
+      "requirement": "non_vacuity",
+      "result": "SUSPICIOUS_VERIFICATION",
+      "specification": "verify_01M1PFJAYCK6SFP4C31KM91W79"
+    }
+  ]
+}

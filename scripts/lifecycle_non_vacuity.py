@@ -285,7 +285,12 @@ def main() -> int:
 
     failures = [item for item in results if item["status"] != "NON_VACUOUS"]
     if args.json:
-        print(json.dumps({"cases": results, "passed": not failures},
+        # `observations` is what a substance adapter reads: how many guards were
+        # actually proved, not how many were attempted. A run that proves fewer
+        # than the caller declared is suspicious rather than a silent pass.
+        print(json.dumps({"observations": len(results) - len(failures),
+                          "attempted": len(results),
+                          "cases": results, "passed": not failures},
                          indent=2, sort_keys=True))
     else:
         print(f"\n{len(results) - len(failures)}/{len(results)} guards proved non-vacuous.")
