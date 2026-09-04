@@ -234,8 +234,10 @@ class UpdateRecovery(LocalReleaseFixture):
                                                 "standard", operation="update")
         applier = txnlib.Applier(self.project, self.distribution, source_v2, plan)
         applier.journal.state = txnlib.APPLYING
+        # `applier.project`, not `self.project`: the applier resolves the root
+        # it is given, and on macOS the resolved form is a different string.
         applier.journal.backup_location = str(
-            applier.backup_root.relative_to(self.project).as_posix())
+            applier.backup_root.relative_to(applier.project).as_posix())
         txnlib.write_journal(self.project, applier.journal)
         first = plan.mutating[0]
         applier._apply(first)

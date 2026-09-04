@@ -77,7 +77,11 @@ class LifecycleTestCase(unittest.TestCase):
     """A throwaway project, a throwaway distribution, and no ambient state."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="ainative-test-"))
+        # Resolved, because the CLI resolves every project root it is given and
+        # the two are not the same path on macOS: `/var` is a symlink to
+        # `/private/var`, so an unresolved temp path is not a prefix of what the
+        # installer works with, and `relative_to` raises (EMP-LC-011).
+        self.root = Path(tempfile.mkdtemp(prefix="ainative-test-")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.project = self.root / "project"
         (self.project / "src").mkdir(parents=True)
