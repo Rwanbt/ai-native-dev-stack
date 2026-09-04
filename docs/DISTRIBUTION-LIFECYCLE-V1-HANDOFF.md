@@ -12,9 +12,9 @@ human needs to finish this, in the order they need it.
 | Branch | `feat/distribution-lifecycle-v1` |
 | Base | `spec` @ `2381abb` (not an ancestor of `main`; `main` is 0 commits ahead of `spec`) |
 | PR | [#17](https://github.com/Rwanbt/ai-native-dev-stack/pull/17) — **open, not merged** |
-| Qualified implementation | `38ccd2f60e24fe895743966db092438b2a0723a2` |
-| Packet finalization | local changes complete; commit and exact-SHA CI still pending |
-| Verdict | **GO / MERGE-READY pending exact CI on packet finalization** — see §4 |
+| Qualified implementation | `0af098c0d3110c47f22bd162a499f263c809da46` |
+| Exact CI | [run 33924950336](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33924950336) — SUCCESS |
+| Verdict | **GO / MERGE-READY** — see §4 |
 
 Read in this order: `docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md`
 (the decisions), then `docs/DISTRIBUTION-LIFECYCLE.md` (the operating manual),
@@ -40,17 +40,20 @@ and a concurrency lock.
 | LOC gate | 186 files, 0 blocking (one pre-existing 1464-LOC Work Plane warning) | `node hooks/pretool-loc-gate/run_gate.js --all` |
 | Scope + conventions | green | `python scripts/measure_scope.py && python scripts/validate_conventions.py` |
 | Work Plane | not re-run; no Work Plane source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
-| CI | `38ccd2f` is green ([run 33921500321](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33921500321)), including lifecycle Windows 3.11/3.13 | `gh pr checks 17` |
+| CI | `0af098c` is green ([run 33924950336](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33924950336)), including lifecycle Windows 3.11/3.13 | `gh pr checks 17` |
 
 ---
 
-## 3. What is left — the only remaining work
+## 3. What is left
 
 **The independent review converged.** Round 8 found no new P0/P1 after
 EMP-LC-042, and the focused Round 9 found no reproducible P0/P1 across claim
 identity, mutation serialization, force replacement, dead-owner reclaim,
 release, and equivalent project paths. EMP-LC-043 is FALSE: the bounded Windows
 probe mapped dot, parent, case-variant, and directory-link aliases to one guard.
+
+No product or review work remains. The attestation commit carrying this update
+must receive its own exact green CI run before the branch is reported complete.
 
 ### The loop to close it
 
@@ -88,11 +91,9 @@ original mandate plus the closed-findings list in §5 below.
 
 ### Then, to finish
 
-1. Re-run the full local gates after the two final P2 closure changes.
-2. Commit and push the packet-finalization state.
-3. Confirm CI green on that exact SHA (`gh pr checks 17`).
-4. Render the verdict. `PRODUCTION = GO` only if P0 = 0, P1 = 0 **and** a review
-   round produced no new finding.
+1. If a new empirical failure appears, classify it against the closed list.
+2. Reopen only with a deterministic reproducer or a failing exact-SHA CI job.
+3. Apply the bounded convergence loop above, then rerun every release gate.
 
 **Do not merge.** The mandate withheld that authority and it should stay
 withheld until a human has read the qualification packet's §11 (review) and §12

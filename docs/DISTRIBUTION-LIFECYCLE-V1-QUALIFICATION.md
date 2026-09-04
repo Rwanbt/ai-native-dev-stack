@@ -10,13 +10,13 @@ true that a reader should know before merging.
 | | |
 |---|---|
 | Branch | `feat/distribution-lifecycle-v1` |
-| Qualified implementation SHA | `38ccd2f60e24fe895743966db092438b2a0723a2` |
-| Packet finalization | documentation and equivalent-path regression pending an exact-SHA CI run |
+| Qualified implementation SHA | `0af098c0d3110c47f22bd162a499f263c809da46` |
+| Exact CI | [run 33924950336](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33924950336) — SUCCESS |
 | Base | `spec` @ `2381abb7ec46a0113056c2597d32b16bcdb86fa1` |
 | Merge base | `2381abb7ec46a0113056c2597d32b16bcdb86fa1` (linear; no merges) |
 | Pull request | [#17](https://github.com/Rwanbt/ai-native-dev-stack/pull/17) |
-| Commits | 19 |
-| Diff | 55 files, +11 536 / −434 |
+| Commits | 20 |
+| Diff | 55 files, +11 538 / −434 |
 
 **Base selection.** `2381abb` is not an ancestor of `origin/main`, and
 `origin/main` is 0 commits ahead of `origin/spec`. Per the mandate's rule the
@@ -132,8 +132,7 @@ created, put the state back.
 ## 7. Gate results
 
 The implementation baseline was executed at `38ccd2f`. The two final P2 closure
-changes were then validated locally on the packet-finalization tree; its exact
-CI run is the remaining gate.
+changes were validated locally and by exact CI on `0af098c`.
 
 | Gate | Result | Evidence |
 |---|---|---|
@@ -197,7 +196,7 @@ tests/test_lifecycle_cli.py            20
 | updated | rollback | previous state | PASS |
 | interrupted | repair | valid state | PASS |
 
-### Cross-platform matrix (CI run `33921500321`, exact SHA `38ccd2f`)
+### Cross-platform matrix (CI run `33924950336`, exact SHA `0af098c`)
 
 | Job | ubuntu | windows | macos |
 |---|---|---|---|
@@ -449,8 +448,8 @@ qualification recorded on `spec` is not regressed.
 ## 14. Verdict
 
 ```
-PRODUCTION  = PENDING EXACT CI
-MERGE-READY = PENDING EXACT CI
+PRODUCTION  = GO
+MERGE-READY = YES
 ```
 
 ```
@@ -474,6 +473,6 @@ external review                        CLOSED after bounded Round 8 + focused Ro
 ```
 
 **Merge recommendation.** Merge `feat/distribution-lifecycle-v1` into `spec`
-after the packet-finalization SHA receives an exact green CI run, squashed. Not
+squashed after the attestation commit receives its own exact green CI run. Not
 merged by this work: the mandate withheld that authority, and it should stay
 withheld until a human has read §11 and §12.
