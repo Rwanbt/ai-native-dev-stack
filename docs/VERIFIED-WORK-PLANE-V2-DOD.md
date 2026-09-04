@@ -60,8 +60,12 @@ REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A112)
 EXECUTION_SURFACES:              PASS (converge and verify gated; debug run-command non-authoritative by design)
 
-HISTORICAL:   OPEN, 1 of >=3 cases (H01 = DETECTED, integration/orchestration)
-PILOT:        OPEN, 0 of 5 real items, 1 of 2 real harnesses available
+HISTORICAL:   PASSED  3 conclusive cases, 0 false CONVERGED
+                      H01 DETECTED | H02 DETECTED | H03 INDIRECTLY_EXPOSED
+PILOT:        PASSED  5 real items, 2 real harnesses, pilot_evidence = true
+                      5/5 CONVERGED, 0 false CONVERGED, 0 false NOT_CONVERGED
+SCALABILITY:  REUSABLE_ATTESTED_EVIDENCE = POST-V1 (measured, see PILOT_REPORT)
+              SELECTIVE_RERUN            = POST-V1 (measured, see PILOT_REPORT)
 
 EMP-002 (evidence execution window)  FIXED, non-vacuity proven, 1126419
 

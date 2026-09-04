@@ -1,0 +1,40 @@
+{
+  "classification": "DETECTED",
+  "contract_digest": "2a71ef62a77abe3f334ec1d8048a2134868223a945d30d619bd85d35724dbc4b",
+  "defect_digest": "cbd2952739f53a898dd858c070d73a821a661f81fa984972457d0adf894a470d",
+  "input_bundle_digest": "c2bc420c99a9de39601b7af9d375e8a341b4cf83ab51928b203118474ce1a524",
+  "issue": "H02",
+  "pre_fix_commit": "fc0b3a5dff7eab37a7aef6a34b1e0e57207f7f70",
+  "recorded_at": "2026-09-04T11:21:04.620578+00:00",
+  "revealed_at": "2026-09-04T11:21:22.282283+00:00",
+  "schema_version": 1,
+  "sealed_at": "2026-09-04T11:17:46.154253+00:00",
+  "verdict": {
+    "fingerprint": "cd42423129836384511a0ac218b180e221bc404643e9f0a2a987b117d0615351",
+    "gaps": [
+      {
+        "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+        "detail": "VERIFICATION_FAILED",
+        "uid": "run_01M1P2CTY5EGRY0QHYAJCBGDSP"
+      },
+      {
+        "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+        "detail": "VERIFICATION_FAILED",
+        "uid": "run_01M1P2CV7KS0BXARH95M7X5CWV"
+      },
+      {
+        "code": "UNVERIFIED_SPECIFICATION",
+        "detail": "declared verification specification has no passing evidence",
+        "uid": "verify_01M1P2CHCRMJ1A5FBB77W6RF1Y"
+      },
+      {
+        "code": "UNVERIFIED_SPECIFICATION",
+        "detail": "declared verification specification has no passing evidence",
+        "uid": "verify_01M1P2CHCRWXS2T965AH1M6JHZ"
+      }
+    ],
+    "reason": "structural, freshness, or verification gaps remain",
+    "verdict": "NOT_CONVERGED"
+  },
+  "verdict_digest": "b2b2e28398a0a2c2adbf4d96b7f44d87792473b9458be9c55ff4fbada0301f1a"
+}

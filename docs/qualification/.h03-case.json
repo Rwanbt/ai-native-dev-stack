@@ -1,0 +1,50 @@
+{
+  "classification": "INDIRECTLY_EXPOSED",
+  "contract_digest": "37720d40393f2b101b141ad0f2146c711049cc3e7e1cb534932ccf2227989a11",
+  "defect_digest": "f4e6af1f36527affa0da853ff1bae0e62181ceadc0ac6349042cca6ac0977802",
+  "input_bundle_digest": "af555059b1be1168c7a8336257854e6dbf2ad99fd85d1bc8ae90a4cbdf8fbc86",
+  "issue": "H03",
+  "pre_fix_commit": "d0f48ff1307096d27720c3a0d6a1961a550157f3",
+  "recorded_at": "2026-09-04T11:50:26.275620+00:00",
+  "revealed_at": "2026-09-04T11:51:04.912291+00:00",
+  "schema_version": 1,
+  "sealed_at": "2026-09-04T11:47:15.432316+00:00",
+  "verdict": {
+    "fingerprint": "e0e3f3fd69e6d59687970010295d70c89e7cc85b73ad80a801260ca0ef8573dc",
+    "gaps": [
+      {
+        "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+        "detail": "VERIFICATION_FAILED",
+        "uid": "run_01M1P42VBC27FF0843PWF7FQAP"
+      },
+      {
+        "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+        "detail": "VERIFICATION_FAILED",
+        "uid": "run_01M1P42VR1E7QVGF20JD3NGT0S"
+      },
+      {
+        "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
+        "detail": "VERIFICATION_FAILED",
+        "uid": "run_01M1P42W4FNEFD0NTC4GMXSX77"
+      },
+      {
+        "code": "UNVERIFIED_SPECIFICATION",
+        "detail": "declared verification specification has no passing evidence",
+        "uid": "verify_01M1P42ESKE32SJFH4QM59X420"
+      },
+      {
+        "code": "UNVERIFIED_SPECIFICATION",
+        "detail": "declared verification specification has no passing evidence",
+        "uid": "verify_01M1P42ESKEBEPFJTT485QPYVX"
+      },
+      {
+        "code": "UNVERIFIED_SPECIFICATION",
+        "detail": "declared verification specification has no passing evidence",
+        "uid": "verify_01M1P42ESKM8MKXF5H4Y7X4175"
+      }
+    ],
+    "reason": "structural, freshness, or verification gaps remain",
+    "verdict": "NOT_CONVERGED"
+  },
+  "verdict_digest": "84a2f47704e0c732879a906695544c18289f3b6cff8ece80a6cb40259dcf791d"
+}

@@ -88,9 +88,17 @@ speculative pass.
 **Historical validation.** Real defects, from real project history, given to
 the plane blind — the contract author does not know the defect.
 
-| case | category | classification |
-|---|---|---|
-| H01 | integration / orchestration invariant | **DETECTED** |
+| case | project | category | classification |
+|---|---|---|---|
+| H01 | HireLens | integration / orchestration invariant | **DETECTED** |
+| H02 | Seno Dynama | exposed state surface / audio-thread contention | **DETECTED** |
+| H03 | Seno Materia | cross-platform GPU, FFI safety, resource release | **INDIRECTLY_EXPOSED** |
+
+Three conclusive cases, zero false CONVERGED. Twice the plane named a defect
+from requirements alone while the project's own suite was green. H03 shows the
+ceiling honestly: the plane verifies what the contract declares, and a
+requirement nobody wrote a specification for is checked by nothing. Full
+analysis in `docs/HISTORICAL-VALIDATION-REPORT.md`.
 
 H01 is worth understanding, because it shows what the gate is actually for.
 The project's own unit tests were green and its documented validation boundary
