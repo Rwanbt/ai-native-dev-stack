@@ -142,6 +142,11 @@ jobs:
           python scripts/workplane_harness_matrix.py
           python scripts/workplane_pilot.py --self-check
 
+      - name: The complexity budget AGENTS.md declares blocking
+        # It was published and never measured: traceability.analyze shipped at
+        # ~32 branches, in the module every convergence verdict passes through.
+        run: python scripts/check_complexity_budget.py
+
   installers:
     name: Installers (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

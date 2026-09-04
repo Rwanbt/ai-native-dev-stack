@@ -10,10 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .bootstrap import BootstrapError, anchor_refusal, bootstrap, load as load_trust_anchor, locate as locate_trust_anchor
+from .bootstrap import BootstrapError, anchor_refusal, bootstrap, creation_approval_path, load as load_trust_anchor, locate as locate_trust_anchor, verified_anchor
+from .contracts import ContractError, generate_uid
 from .controller import ControllerError, WorkController
 from .convergence import VERDICT_EXIT_CODES
 from .evaluator import EvaluationError, evaluate_work, run_verification
@@ -32,14 +34,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ainative")
     commands = parser.add_subparsers(dest="entrypoint", required=True)
 
-    work = commands.add_parser("work")
+    work = commands.add_parser("work", help="Create, read, and mutate a committed work contract under a recorded approval.")
     work_commands = work.add_subparsers(dest="work_command", required=True)
-    new = work_commands.add_parser("new")
+    new = work_commands.add_parser("new", help="Create a new work contract at PATH.")
     new.add_argument("path", type=Path)
     new.add_argument("--artifact", action="append", default=[])
-    validate = work_commands.add_parser("validate")
+    admit = work_commands.add_parser("admit", help="Approve creating a work at PATH, before the contract exists. Binds the project's trust anchor to the exact genesis the contract will carry.")
+    admit.add_argument("path", type=Path)
+    admit.add_argument("--artifact", action="append", default=[], help="The same artifacts `work new` will be given; the approval binds their digest.")
+    admit.add_argument("--by", required=True, help="Who is approving this work's creation.")
+    admit.add_argument("--repo", type=Path, default=Path("."))
+    validate = work_commands.add_parser("validate", help="Read a work contract at PATH and emit its manifest.")
     validate.add_argument("path", type=Path)
-    update = work_commands.add_parser("update")
+    update = work_commands.add_parser("update", help="Apply a recorded mutation approval to update a work contract at PATH.")
     update.add_argument("path", type=Path)
     update.add_argument("expected_revision", type=int)
     update.add_argument("--artifact", action="append", default=[])
@@ -71,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     # authoritative: everything they evaluate comes from the caller.
     debug = commands.add_parser("debug", help="Non-authoritative helpers. Never a production verdict.")
     debug_commands = debug.add_subparsers(dest="debug_command", required=True)
-    loose = debug_commands.add_parser("run-command")
+    loose = debug_commands.add_parser("run-command", help="Run a verification command against caller-supplied files. Non-authoritative: never a production verdict.")
     loose.add_argument("--registry", type=Path, required=True)
     loose.add_argument("--binding", type=Path, required=True)
     loose.add_argument("--command", required=True)
@@ -91,7 +98,37 @@ def _artifacts(values: list[str]) -> dict[str, object]:
     return result
 
 
+def _admit(args: argparse.Namespace) -> int:
+    """Write the approval that lets a work be created at all.
+
+    Without this the documented flow has a hole: `trust bootstrap` establishes
+    the anchor and `work new` refuses an unadmitted genesis, and nothing shipped
+    could produce what sits between them. See EMP-003.
+    """
+
+    located = verified_anchor(args.repo)
+    if located is None:
+        raise BootstrapError(f"PROJECT_TRUST_UNVERIFIED:{anchor_refusal(args.repo)}")
+    _, anchor = located
+    approval = {
+        "schema_name": "work_creation_approval", "schema_version": 1,
+        "uid": generate_uid("approval"),
+        "trust_uid": anchor["uid"], "trust_digest": anchor["trust_digest"],
+        "genesis_digest": WorkController(args.path).normative_digest(_artifacts(args.artifact)),
+        "predicate_id": anchor["bootstrap_predicate"]["predicate_id"],
+        "approved_by": args.by,
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path = creation_approval_path(args.path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(approval, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    _emit({"approval": str(path), "work_creation_approval": approval})
+    return 0
+
+
 def _work(args: argparse.Namespace) -> int:
+    if args.work_command == "admit":
+        return _admit(args)
     controller = WorkController(args.path)
     if args.work_command == "new":
         manifest = controller.create(_artifacts(args.artifact))
@@ -166,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.entrypoint == "debug":
             return _debug_run_command(args)
         return _converge(args)
-    except (EvaluationError, ControllerError, BootstrapError) as refusal:
+    except (EvaluationError, ControllerError, BootstrapError, ContractError, json.JSONDecodeError, OSError, ValueError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
 

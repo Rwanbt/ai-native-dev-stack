@@ -1,5 +1,6 @@
 import sys
 import tempfile
+from pathlib import Path
 from datetime import datetime
 import time
 import unittest
@@ -89,6 +90,18 @@ class RunnerConvergenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(RunnerError, "COMMAND_REGISTRY_BINDING_MISMATCH"):
                 VerificationRunner(registry).run("slow", cwd=directory, binding=binding)
+
+    def test_a_timeout_still_records_evidence_when_runs_are_persisted(self):
+        """EMP-008. The full-output feature bound stdout inside the try, so a
+        timeout under a runs_dir raised NameError instead of recording TIMEOUT.
+        evaluate_work always sets runs_dir, so one slow verification would have
+        taken down the whole evaluation."""
+
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"slow": {"argv": [sys.executable, "-c", "import time; time.sleep(5)"], "timeout_seconds": 1, "substance": {"type": "exit_only", "minimum_observations": 0}}}}
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = VerificationRunner(registry, runs_dir=directory).run("slow", cwd=directory, binding=self.binding(registry))
+            self.assertEqual("TIMEOUT", evidence.result)
+            self.assertTrue((Path(directory) / f"{evidence.uid}.json").is_file())
 
     def test_runner_timeout_terminates_child_process_tree(self):
         with tempfile.TemporaryDirectory() as directory:

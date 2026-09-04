@@ -79,6 +79,7 @@ class VerificationRunner:
             raise RunnerError("COMMAND_REGISTRY_BINDING_MISMATCH")
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
+        stdout = stderr = ""
         try:
             completed, stdout_bytes, stderr_bytes = self._run_bounded(definition, cwd)
             stdout = redact(stdout_bytes.decode("utf-8", errors="replace"))
@@ -95,6 +96,9 @@ class VerificationRunner:
             self.runs_dir.mkdir(parents=True, exist_ok=True)
             path = self.runs_dir / f"{result.uid}.json"
             path.write_text(json.dumps(result.to_record(), sort_keys=True, separators=(",", ":")), encoding="utf-8")
+            for suffix, body in (("stdout.txt", stdout), ("stderr.txt", stderr)):
+                if body:
+                    (self.runs_dir / f"{result.uid}.{suffix}").write_text(body, encoding="utf-8")
         return result
 
     def _run_bounded(self, definition: Mapping[str, Any], cwd: str | Path) -> tuple[subprocess.Popen[bytes], bytes, bytes]:

@@ -56,8 +56,27 @@ only the easy one would not have been answering the ticket.
 
 ## Classification
 
-Pending the organiser's reveal. The verdict was frozen at `a5246e6` before any
-disclosure, and the git history is the ordering proof.
+    H01 CLASSIFICATION = DETECTED
+    BLINDNESS          = VALID, with a declared SHA-prefix leak (never used)
+    FALSE_CONVERGED    = NO
+
+Revealed by the organiser after the verdict was frozen at `a5246e6`; the git
+history is the ordering proof.
+
+The sealed defect: the anti-hallucination skill whitelist was derived *after*
+`enrich_skills()`, so a model could introduce a skill absent from the source CV
+upstream and have `validate_adaptation()` accept it downstream. The historical
+fix captured `allowed_skills` from the source CV before enrichment and validated
+against that immutable reference.
+
+Scenario C observed exactly that orchestration, and it was reached without any
+knowledge of the defect. What produced it was one distinction taken seriously
+while writing the contract:
+
+    "present in the source CV"  is not  "present in cv.skills later in the pipeline"
+
+The ticket said the first; ADR-0001 said the second. Testing only the second
+would have produced a green run over the live defect.
 
 H01 was sealed by the organiser by hand rather than through
 `scripts/workplane_historical_case.py`. Its blindness therefore rests on
