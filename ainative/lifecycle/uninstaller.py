@@ -17,6 +17,7 @@ prints those paths first, and without a TTY it requires `--yes`.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from . import state as statelib
 from . import transaction as txnlib
 from .errors import LifecycleError
 from .manifest import Distribution
+from .paths import is_within
 from .planner import Plan
 from .state import InstallState
 
@@ -79,25 +81,44 @@ def _classify_plan(plan: Plan, state: InstallState) -> tuple[list[str], list[str
     return removed, user_modified, user_data
 
 
-def _purge_leftovers(project: Path, plan: Plan) -> list[plannerlib.Change]:
-    """Lifecycle bookkeeping that only a purge removes, and only inside our roots."""
+def _remove_lifecycle_bookkeeping(project: Path) -> list[str]:
+    """Delete the lifecycle's own directory — after the transaction, never inside it.
 
-    extra: list[plannerlib.Change] = []
-    for relative in (statelib.STATE_RELATIVE, statelib.UPDATE_CACHE_RELATIVE,
-                     statelib.TRANSACTIONS_RELATIVE, statelib.BACKUPS_RELATIVE):
-        path = relative.as_posix()
-        if (project / relative).exists():
-            extra.append(plannerlib.Change(plannerlib.REMOVE, path, "lifecycle",
-                                           manifestlib.MANAGED_IMMUTABLE,
-                                           "lifecycle bookkeeping"))
-    return extra
+    This cannot be a change in the plan. The journal and the backups live under
+    `.ai-native/lifecycle/`, so backing that directory up copies it into itself
+    and recurses until the interpreter gives up (EMP-LC-010). By the time this
+    runs the transaction has committed, and a purge is exactly the operation
+    that gives up the ability to roll it back.
+    """
+
+    removed: list[str] = []
+    root = project / statelib.LIFECYCLE_DIRNAME
+    if not is_within(project, root):
+        return removed
+    if root.is_dir():
+        shutil.rmtree(root, ignore_errors=True)
+        removed.append(statelib.LIFECYCLE_DIRNAME.as_posix())
+    # `.ai-native/` itself belongs to us; remove it only once it is empty, so a
+    # directory somebody else put something in survives.
+    parent = root.parent
+    if parent.is_dir() and parent != project and is_within(project, parent):
+        try:
+            next(parent.iterdir())
+        except StopIteration:
+            parent.rmdir()
+            removed.append(parent.relative_to(project).as_posix())
+        except OSError:
+            pass
+    return removed
 
 
 def plan_uninstall(project: Path, distribution: Distribution, state: InstallState, *,
                    purge: bool) -> Plan:
     plan = plannerlib.build_uninstall_plan(project, distribution, state, purge=purge)
     if purge:
-        plan.changes.extend(_purge_leftovers(project, plan))
+        plan.notes.append("--purge also removes .ai-native/lifecycle/ (state, journal, "
+                          "backups, update cache) once the transaction has committed; "
+                          "rollback is not possible afterwards")
     return plan
 
 
@@ -119,6 +140,8 @@ def uninstall(project: Path, *, purge: bool = False, dry_run: bool = False,
     removed, user_modified, user_data = _classify_plan(plan, state)
 
     if dry_run:
+        if purge:
+            removed = removed + [statelib.LIFECYCLE_DIRNAME.as_posix()]
         return UninstallResult(plan, applied=False, dry_run=True, purge=purge,
                                removed=removed, preserved_user_modified=user_modified,
                                preserved_user_data=user_data)
@@ -143,6 +166,8 @@ def uninstall(project: Path, *, purge: bool = False, dry_run: bool = False,
         removed, user_modified, user_data = _classify_plan(plan, state)
         applier = txnlib.Applier(project, distribution, None, plan)
         journal = applier.run(lambda: _commit(project, state, plan, purge))
+        if purge:
+            removed += _remove_lifecycle_bookkeeping(project)
 
     return UninstallResult(plan, applied=True, dry_run=False, purge=purge, removed=removed,
                            preserved_user_modified=user_modified,

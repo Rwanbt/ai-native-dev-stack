@@ -30,7 +30,10 @@ PAYLOAD = ROOT / "ainative" / "_payload"
 PAYLOAD_TREES = ("skills", "tools/ai_docs", "templates")
 PAYLOAD_FILES = ("AGENTS.md", "VERSION", "conventions.json",
                  "docs/VERIFIED-WORK-PLANE.md")
-EXCLUDED = {"__pycache__", ".pytest_cache", "tests"}
+# Only build noise. A skill's own `tests/` directory is part of the skill, so
+# pruning it here would make a wheel install differ from a checkout install —
+# the one thing the payload exists to prevent.
+EXCLUDED = {"__pycache__", ".pytest_cache"}
 
 
 def _copy_tree(relative: str) -> None:

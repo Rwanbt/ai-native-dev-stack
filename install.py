@@ -1,67 +1,44 @@
 #!/usr/bin/env python3
-"""install.py — Set up the AI-Native Dev Stack in an existing project.
+"""install.py — bootstrap entry point for the AI-Native Dev Stack.
 
-One cross-platform implementation: Linux, macOS and Windows, with or without
-a POSIX shell. `install.sh` is a thin shim that delegates here.
+The lifecycle manager is the single authority for installing, switching,
+uninstalling and updating a project (ADR-0009). This script exists for the one
+situation it cannot cover: a fresh machine where `pip install` has not been run
+and `ainative` is not on PATH. It resolves the lifecycle CLI from this checkout
+and hands over.
 
-What this does (per-project AI-docs stack):
-  1. Copies tooling to tools/ai_docs/
-  2. Installs the first-party skills into every detected agent root
-  3. Copies AGENTS.md (the canonical engineering method) to the project root
-  4. Installs gstack (third-party global skills) — opt-in, pinned
-  5. Creates config.sh from the template
-  6. Detects Python and validates it works
-  7. Generates all AI_SUMMARY.md files
+    python install.py                             # asks which profile
+    python install.py --profile standard
+    python install.py --profile verified --dry-run
 
-The GLOBAL, multi-agent setup lives in scripts/install_agents.py
-(`bash scripts/setup-agents.sh` / `pwsh scripts/setup-agents.ps1`).
+Everything afterwards goes through the installed CLI:
 
-Usage:
-    python install.py [--project-root PATH] [--with-gstack | --skip-gstack]
-                      [--gstack-ref REF] [--dry-run]
+    ainative status
+    ainative profile switch verified
+    ainative update check
+    ainative uninstall
+
+Two things this script still owns, because neither is part of a project's
+lifecycle state:
+
+  * the optional gstack clone — third-party global skills, opt-in, pinned;
+  * nothing else. The global multi-agent setup (harness instruction files,
+    machine-wide skill links) is `scripts/install_agents.py`.
+
+The pre-lifecycle flags (`--project-root`, `--skip-gstack`) still work, so a
+script written against the old installer keeps running.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 STACK_ROOT = Path(__file__).resolve().parent
-
-AI_DOCS_FILES = [
-    "source_config.py",
-    "module_discovery.py",
-    "generate_ai_summary.py",
-    "update_on_edit.py",
-    "generate_all.py",
-    "generate_metrics.py",
-    "assemble_context.py",
-    "run_hook.sh",
-    "find_python.sh",
-    "config.sh.example",
-]
-
-def first_party_skills() -> list[Path]:
-    """Every skills/*/SKILL.md in the stack, discovered rather than listed.
-
-    A hardcoded list silently stops shipping a skill the day one is added —
-    the same drift this stack exists to prevent.
-    """
-    return sorted(p.parent for p in (STACK_ROOT / "skills").glob("*/SKILL.md"))
-
-# Per-project skill roots, by CLI. `.agents/skills` is the cross-CLI convention
-# used by Codex, OpenCode and recent Cursor; Claude Code keeps its own tree.
-# Hardcoding only `.claude/skills` is why an OpenCode user used to get skills
-# installed into a directory their CLI never reads.
-PROJECT_SKILL_ROOTS = [
-    (".claude/skills", "Claude Code"),
-    (".agents/skills", "Codex / OpenCode / Cursor"),
-]
 
 GSTACK_URL = "https://github.com/garrytan/gstack.git"
 
@@ -71,279 +48,119 @@ GSTACK_URL = "https://github.com/garrytan/gstack.git"
 #
 # So the default is a commit that was cloned and inspected before being written
 # here (setup script present, 61 SKILL.md files, self-described v1.71.0.0).
-# Override with --gstack-ref, or set this to None to track the default branch.
-# When you move it, verify the new commit the same way and say so here.
+# Override with --gstack-ref, or pass 'main' to track the default branch.
 GSTACK_DEFAULT_REF = "394db326f2d3"  # v1.71.0.0 — verified 2026-08-27
 
 
-class Installer:
-    def __init__(self, project_root: Path, dry_run: bool) -> None:
-        self.project = project_root.resolve()
-        self.dry_run = dry_run
-        self.warnings: list[str] = []
+def install_gstack(project: Path, choice: str, ref: str | None, dry_run: bool) -> None:
+    """Clone gstack into the user's global skills directory. Opt-in, always."""
 
-    # --- primitives -------------------------------------------------------
+    target = Path.home() / ".claude" / "skills" / "gstack"
+    if target.exists():
+        print(f"gstack: already installed at {target} — skipping")
+        return
+    if choice != "yes":
+        print("gstack: skipped (third-party code). Re-run with --with-gstack to install it.")
+        return
+    if not shutil.which("git"):
+        print("gstack: WARNING — git not found, cannot install", file=sys.stderr)
+        return
+    if dry_run:
+        print(f"gstack: would clone {GSTACK_URL} -> {target}")
+        return
 
-    def step(self, number: int, total: int, title: str) -> None:
-        print(f"\n[{number}/{total}] {title}")
-
-    def info(self, message: str) -> None:
-        print(f"   {message}")
-
-    def warn(self, message: str) -> None:
-        self.warnings.append(message)
-        print(f"   WARNING: {message}")
-
-    def mkdir(self, path: Path) -> None:
-        if not self.dry_run:
-            path.mkdir(parents=True, exist_ok=True)
-
-    def copy(self, source: Path, target: Path) -> bool:
-        if not source.is_file():
-            return False
-        self.mkdir(target.parent)
-        if not self.dry_run:
-            shutil.copy2(source, target)
-        return True
-
-    def copy_tree(self, source: Path, target: Path) -> None:
-        """Mirror a stack-owned directory into the project.
-
-        Prunes files the source no longer has. A plain copy leaves a file
-        deleted upstream sitting in every project that installed it earlier —
-        the same silent drift this stack exists to prevent. These directories
-        are entirely stack-managed, so nothing user-authored is at risk.
-        """
-        if not source.is_dir():
-            return
-        self.mkdir(target)
-
-        wanted: set[Path] = set()
-        for item in source.rglob("*"):
-            if item.is_dir():
-                continue
-            relative = item.relative_to(source)
-            wanted.add(relative)
-            self.copy(item, target / relative)
-
-        if not target.is_dir():
-            return
-        for existing in sorted(target.rglob("*"), reverse=True):
-            if existing.is_dir():
-                if not any(existing.iterdir()) and not self.dry_run:
-                    existing.rmdir()
-                continue
-            if existing.relative_to(target) not in wanted:
-                self.info(f"pruned {existing.relative_to(self.project)} (removed upstream)")
-                if not self.dry_run:
-                    existing.unlink()
-
-    # --- steps ------------------------------------------------------------
-
-    def copy_ai_docs(self) -> None:
-        self.step(1, 7, "Copying tooling to tools/ai_docs/ ...")
-        destination = self.project / "tools" / "ai_docs"
-        copied = sum(
-            self.copy(STACK_ROOT / "tools" / "ai_docs" / name, destination / name)
-            for name in AI_DOCS_FILES
-        )
-        hook = destination / "run_hook.sh"
-        if hook.is_file() and os.name != "nt":
-            hook.chmod(hook.stat().st_mode | 0o111)
-        self.info(f"OK ({copied} files)")
-
-    def install_skills(self) -> None:
-        self.step(2, 7, "Installing first-party skills into every agent root ...")
-        skills = first_party_skills()
-        if not skills:
-            self.warn("no skills found under the stack's skills/ directory")
-            return
-        for relative_root, label in PROJECT_SKILL_ROOTS:
-            root = self.project / relative_root
-            for source in skills:
-                self.copy_tree(source, root / source.name)
-            validator = root / "commit-convention" / "bin" / "validate-commit.sh"
-            if validator.is_file() and os.name != "nt":
-                validator.chmod(validator.stat().st_mode | 0o111)
-            names = ", ".join(s.name for s in skills)
-            self.info(f"{relative_root:<18} <- {len(skills)} skills  ({label})")
-            self.info(f"{'':<18}    {names}")
-
-    def copy_agents_md(self) -> None:
-        self.step(3, 7, "Copying AGENTS.md (cross-tool universal rules) ...")
-        target = self.project / "AGENTS.md"
-        if target.exists():
-            self.info("SKIP — AGENTS.md already exists (not overwriting)")
-            return
-        self.copy(STACK_ROOT / "AGENTS.md", target)
-        self.info("Created AGENTS.md — reference it from your agent's global config")
-
-        conventions = self.project / "conventions.json"
-        if not conventions.exists():
-            self.copy(STACK_ROOT / "conventions.json", conventions)
-            self.info("Created conventions.json — machine-readable thresholds")
-
-    def install_gstack(self, choice: str, ref: str | None) -> None:
-        self.step(4, 7, "gstack — third-party global skills (github.com/garrytan/gstack)")
-        target = Path.home() / ".claude" / "skills" / "gstack"
-
-        if target.exists():
-            self.info(f"ALREADY INSTALLED at {target} — skipping")
-            return
-        if choice != "yes":
-            self.info("Skipped. Re-run with --with-gstack to install it.")
-            return
-        if not shutil.which("git"):
-            self.warn("git not found — cannot install gstack")
-            return
-        if self.dry_run:
-            self.info(f"would clone {GSTACK_URL} -> {target}")
-            return
-
-        self.info(f"Cloning {GSTACK_URL} ...")
-        try:
-            subprocess.run(["git", "clone", GSTACK_URL, str(target)],
+    print(f"gstack: cloning {GSTACK_URL} ...")
+    try:
+        subprocess.run(["git", "clone", GSTACK_URL, str(target)],
+                       check=True, capture_output=True, text=True)
+        if ref:
+            subprocess.run(["git", "-C", str(target), "checkout", "--quiet", ref],
                            check=True, capture_output=True, text=True)
-            if ref:
-                subprocess.run(["git", "-C", str(target), "checkout", "--quiet", ref],
-                               check=True, capture_output=True, text=True)
-            sha = subprocess.run(["git", "-C", str(target), "rev-parse", "HEAD"],
-                                 check=True, capture_output=True, text=True).stdout.strip()
-        except subprocess.CalledProcessError as err:
-            self.warn(f"gstack install failed: {(err.stderr or err.stdout or '').strip()}")
-            return
+        sha = subprocess.run(["git", "-C", str(target), "rev-parse", "HEAD"],
+                             check=True, capture_output=True, text=True).stdout.strip()
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip()
+        print(f"gstack: WARNING — install failed: {detail}", file=sys.stderr)
+        return
 
-        self.record_lock("gstack", {"url": GSTACK_URL, "ref": ref or "default-branch",
+    record_lock(project, "gstack", {"url": GSTACK_URL, "ref": ref or "default-branch",
                                     "commit": sha})
-        self.info(f"Installed at commit {sha[:12]} — recorded in .stack-lock.json")
-        self.info("Re-run with --gstack-ref <commit> to reproduce this exact version.")
-
-    def record_lock(self, name: str, entry: dict) -> None:
-        """Record what was actually installed, so a re-install is reproducible."""
-        lock_path = self.project / ".stack-lock.json"
-        data: dict = {}
-        if lock_path.is_file():
-            try:
-                data = json.loads(lock_path.read_text(encoding="utf-8"))
-            except ValueError:
-                self.warn(".stack-lock.json is malformed — rewriting it")
-        data.setdefault("tools", {})[name] = entry
-        if not self.dry_run:
-            lock_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-    def create_config(self) -> None:
-        self.step(5, 7, "Creating tools/ai_docs/config.sh ...")
-        config = self.project / "tools" / "ai_docs" / "config.sh"
-        if config.exists():
-            self.info("SKIP — config.sh already exists (not overwriting)")
-            return
-        self.copy(STACK_ROOT / "tools" / "ai_docs" / "config.sh.example", config)
-        self.info("Created config.sh — set your Obsidian vault path and graphify binary")
-
-    def detect_python(self) -> str | None:
-        self.step(6, 7, "Detecting Python ...")
-        for candidate in (sys.executable, "python3", "python", "py"):
-            if not candidate:
-                continue
-            try:
-                out = subprocess.run(
-                    [candidate, "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"],
-                    capture_output=True, text=True, timeout=10)
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if out.returncode == 0:
-                version = out.stdout.strip()
-                if tuple(int(p) for p in version.split(".")[:2]) >= (3, 8):
-                    self.info(f"Found: {candidate} ({version})")
-                    return candidate
-        self.warn("No Python 3.8+ found — set PYTHON_BIN in tools/ai_docs/config.sh")
-        return None
-
-    def generate_summaries(self, python: str | None) -> None:
-        self.step(7, 7, "Generating AI_SUMMARY.md ...")
-        if python is None:
-            self.info("SKIP — Python not found")
-            return
-        contexts = [p for p in self.project.rglob("AI_CONTEXT.md")
-                    if ".git" not in p.parts and "node_modules" not in p.parts]
-        if not contexts:
-            self.info("SKIP — no AI_CONTEXT.md files yet.")
-            self.info("Create one per module from templates/AI_CONTEXT_template.md, then run:")
-            self.info("   python tools/ai_docs/generate_all.py")
-            return
-        if self.dry_run:
-            self.info(f"would generate summaries for {len(contexts)} module(s)")
-            return
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        subprocess.run([python, "tools/ai_docs/generate_all.py"],
-                       cwd=self.project, env=env, check=False)
-
-    def update_gitignore(self) -> None:
-        gitignore = self.project / ".gitignore"
-        existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
-        if "tools/ai_docs/config.sh" in existing:
-            return
-        if self.dry_run:
-            return
-        with gitignore.open("a", encoding="utf-8") as handle:
-            handle.write("\n# AI docs stack — machine-specific config (never commit)\n")
-            handle.write("tools/ai_docs/config.sh\n")
-        print("\n   Added config.sh to .gitignore")
+    print(f"gstack: installed at commit {sha[:12]} — recorded in .stack-lock.json")
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+def record_lock(project: Path, name: str, entry: dict) -> None:
+    """Record what was actually installed, so a re-install is reproducible."""
+
+    path = project / ".stack-lock.json"
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            print("WARNING: .stack-lock.json is malformed — rewriting it", file=sys.stderr)
+    data.setdefault("tools", {})[name] = entry
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--profile", choices=("standard", "verified"), default=None,
+                        help="install this profile without asking")
+    parser.add_argument("--project", "--project-root", dest="project", type=Path,
+                        default=Path.cwd(),
+                        help="project root (--project-root is the pre-lifecycle name)")
+    parser.add_argument("--dry-run", action="store_true", help="show the plan, change nothing")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
     gstack = parser.add_mutually_exclusive_group()
     gstack.add_argument("--with-gstack", dest="gstack", action="store_const", const="yes",
-                        help="install gstack (third-party code from GitHub)")
+                        help="also install gstack (third-party code from GitHub)")
     gstack.add_argument("--skip-gstack", dest="gstack", action="store_const", const="no")
     parser.add_argument("--gstack-ref", default=GSTACK_DEFAULT_REF,
-                        help=f"commit to pin gstack to (default: {GSTACK_DEFAULT_REF}); "
-                             "pass 'main' to track the default branch instead")
-    parser.add_argument("--dry-run", action="store_true", help="show actions, change nothing")
+                        help=f"commit to pin gstack to (default: {GSTACK_DEFAULT_REF})")
     parser.set_defaults(gstack="no")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
-    project = args.project_root.resolve()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(list(sys.argv[1:] if argv is None else argv))
+    project = args.project.resolve()
 
-    print("\nAI-Native Dev Stack — Installer")
-    print("=" * 32)
+    if str(STACK_ROOT) not in sys.path:
+        sys.path.insert(0, str(STACK_ROOT))
+    try:
+        from ainative.cli import main as lifecycle_main
+    except ImportError as error:  # pragma: no cover - a broken checkout
+        print(f"ERROR: cannot load the lifecycle CLI from {STACK_ROOT}: {error}",
+              file=sys.stderr)
+        return 2
+
+    print("AI-Native Dev Stack — installer")
     print(f"Source:  {STACK_ROOT}")
     print(f"Project: {project}")
+    print("(this is a bootstrap; `ainative` is the CLI from here on)\n")
+
+    # Everything the old installer copied — tooling, skills, AGENTS.md,
+    # config.sh, the .gitignore entry — is now a declared component with
+    # recorded ownership, so it can be updated and removed as well as written.
+    forwarded = ["init", "--project", str(project)]
+    if args.profile:
+        forwarded += ["--profile", args.profile]
     if args.dry_run:
-        print("(dry-run — nothing will be written)")
+        forwarded.append("--dry-run")
+    if args.json:
+        forwarded.append("--json")
 
-    if not (project / ".git").exists():
-        print(f"\nERROR: {project} is not a git repository.", file=sys.stderr)
-        return 1
+    status = lifecycle_main(forwarded)
+    if status != 0:
+        return status
 
-    installer = Installer(project, args.dry_run)
-    installer.copy_ai_docs()
-    installer.install_skills()
-    installer.copy_agents_md()
-    # gstack is third-party code executed by your agent: opt-in, never a
-    # timed prompt that defaults to yes when nobody is looking at the screen.
-    installer.install_gstack(args.gstack, args.gstack_ref)
-    installer.create_config()
-    python = installer.detect_python()
-    installer.generate_summaries(python)
-    installer.update_gitignore()
-
-    print("\n" + "=" * 52)
-    print("  INSTALL COMPLETE" + ("  (dry-run)" if args.dry_run else ""))
-    print("=" * 52)
-    if installer.warnings:
-        print(f"\n{len(installer.warnings)} warning(s):")
-        for warning in installer.warnings:
-            print(f"  - {warning}")
+    # gstack is third-party code executed by your agent: opt-in, never a timed
+    # prompt that defaults to yes when nobody is looking at the screen.
+    install_gstack(project, args.gstack, args.gstack_ref, args.dry_run)
 
     print("""
-NEXT STEPS:
+NEXT STEPS
 
 1. Reference AGENTS.md from your agent's global config (one line, never a copy):
      Claude Code   ~/.claude/CLAUDE.md          -> @<project>/AGENTS.md
@@ -352,15 +169,15 @@ NEXT STEPS:
 
 2. Edit tools/ai_docs/config.sh (Obsidian vault, graphify binary, memory key).
 
-3. Register the PostToolUse hook — see templates/settings_hook_example.json.
+3. Register the PostToolUse hook — see .ai-native/templates/settings_hook_example.json.
 
-4. Write AI_CONTEXT.md per module — see templates/AI_CONTEXT_template.md.
+4. Write AI_CONTEXT.md per module — see .ai-native/templates/AI_CONTEXT_template.md.
 
-5. Verify:  /verify-ai-docs
-
-6. Global multi-agent setup (once per machine):
+5. Global multi-agent setup (once per machine):
      bash scripts/setup-agents.sh          (Linux / macOS / Git Bash)
      pwsh -File scripts/setup-agents.ps1   (Windows)
+
+6. From now on:  ainative status | ainative profile switch <p> | ainative update
 """)
     return 0
 

@@ -183,9 +183,24 @@ class Applier:
         destination = self.backup_root / change.path
         destination.parent.mkdir(parents=True, exist_ok=True)
         if target.is_dir():
+            if self._contains_backup_root(target):
+                # Copying a directory that holds the backup root into a
+                # subdirectory of itself recurses forever (EMP-LC-010). Such a
+                # path must be handled outside the transaction, not backed up.
+                raise LifecycleError(
+                    "APPLY_FAILED",
+                    f"refusing to back up {change.path}: it contains this "
+                    "transaction's own backup directory")
             shutil.copytree(target, destination, dirs_exist_ok=True, symlinks=True)
             return
         shutil.copy2(target, destination)
+
+    def _contains_backup_root(self, directory: Path) -> bool:
+        try:
+            self.backup_root.resolve(strict=False).relative_to(directory.resolve(strict=False))
+        except ValueError:
+            return False
+        return True
 
     def _restore(self, change: Change, target: Path) -> None:
         saved = self.backup_root / change.path

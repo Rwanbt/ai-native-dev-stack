@@ -8,6 +8,56 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+#### Distribution & Lifecycle Manager v1
+
+- **Two profiles, `standard` and `verified`**, declared in
+  `ainative/lifecycle/data/profiles.json`. `verified` extends `standard` and
+  lists only what it adds; the resolver computes the effective component set.
+  The dependency runs one way — the lifecycle layer may invoke the Verified
+  Work Plane, never the reverse, and installing Standard loads no authority
+  module. Proved by inspecting `sys.modules`, not by convention.
+- **`ainative` as a top-level dispatcher** — `init`, `profile status|switch|purge`,
+  `status`, `doctor`, `repair`, `uninstall`, `update check|apply|rollback`, plus
+  the unchanged Verified surface (`trust`, `work`, `verify`, `converge`,
+  `debug`), handed over verbatim with their own exit codes.
+- **Recorded file ownership.** Four classes (`MANAGED_IMMUTABLE`,
+  `MANAGED_MUTABLE`, `USER_DATA`, `EXTERNAL_CONFIG`) and a SHA-256 per managed
+  file taken at the moment the stack writes it. This is what makes uninstall and
+  update possible at all: a file the stack wrote is now distinguishable from a
+  file the user rewrote.
+- **Transactional mutations** — backup, apply, verify, then commit the install
+  state *last*, with a journal at `.ai-native/lifecycle/transactions/`. An
+  interruption leaves the old valid state or the new one; `ainative repair`
+  completes the rollback. An `O_EXCL` lock with liveness-checked stale detection
+  keeps two mutations from interleaving.
+- **Non-destructive downgrade.** `profile switch standard` deactivates Verified
+  governance and preserves `.ai-native/{trust,work,runs}` as dormant state.
+  Deleting it is a separate, explicit `ainative profile purge verified`.
+- **Update lifecycle** — cached detection (24 h TTL, bounded timeout, `OFFLINE`
+  is not fatal), transactional application with archive digest and path-safety
+  verification, `.new` files instead of merges for user-modified content, and
+  `ainative update rollback` for the project's assets. Detection is automatic;
+  application never is, and no authority command ever reaches the network.
+- **Legacy adoption.** A project installed before the lifecycle existed is
+  detected and adopted on the next `init`. A file is claimed only when its bytes
+  match what the distribution ships; anything else is tracked but never replaced
+  and never removed.
+- `--dry-run` on every mutation, `--yes` on every confirmation, `--json` on
+  every command a script would parse, and stable exit codes (0/1/2/3).
+- `docs/DISTRIBUTION-LIFECYCLE.md` and
+  [ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
+- `scripts/lifecycle_non_vacuity.py` — reverts each guard in a scratch copy and
+  requires the matching test to fail. Three cases were reported VACUOUS on the
+  first run and were real: two guards were layered so removing one proved
+  nothing, and one test could not see commit ordering at all.
+- `scripts/lifecycle_clean_install.py` + a CI job on all three OSes — builds the
+  wheel, installs it into a throwaway venv, and drives the console script from a
+  directory with no `PYTHONPATH` and no checkout, asserting that the staged
+  payload installs exactly what a checkout installs.
+- An in-tree PEP 517 backend (`_build_backend.py`) that stages the installable
+  payload into the wheel, so the repository keeps one copy of its own method and
+  a user with no checkout can still install a profile.
+
 - `conventions.json` — machine-readable twin of the size/complexity thresholds
   declared in `AGENTS.md`. Every enforcement point now reads it instead of
   carrying its own copy of the numbers.
@@ -84,6 +134,26 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **One authority for the lifecycle.** `install.py` is now a bootstrap for the
+  one situation `pip` cannot cover — a fresh machine — and delegates to
+  `ainative init`; `install.sh` and `install.ps1` find a Python and hand over.
+  Its pre-lifecycle flags (`--project-root`, `--skip-gstack`, `--with-gstack`,
+  `--gstack-ref`, `--dry-run`) still work.
+- **`install.py` no longer prunes a file it did not write.** `copy_tree` deleted
+  anything under a managed directory that the source no longer had, including a
+  skill the user had edited. Pruning is now decided per file by the digest
+  recorded at install time.
+- `scripts/stack-update-check.sh` and `scripts/stack-upgrade.sh` are documented
+  as what they are — *clone*-level operations. The project-level update is
+  `ainative update`. There is no second project updater.
+- The console entry point moved from `ainative_workplane.cli:main` to
+  `ainative.cli:main`, which dispatches. Every Verified command keeps its
+  grammar, output and exit codes.
+- The distribution is now `ainative-dev-stack` and ships both packages; the
+  lifecycle CLI requires Python 3.11+ (the AI-docs tooling it installs still
+  runs on 3.8+). `docs/DISTRIBUTION-LIFECYCLE.md` states the three surfaces.
+- `scripts/check_complexity_budget.py` measures the lifecycle package too, and
+  the CI LOC gate covers `ainative/`.
 - **One implementation of the LOC rule.** `scripts/loc_gate.ps1` is merged into
   `hooks/pretool-loc-gate/run_gate.js`, which now offers all three modes
   (single file, `--staged`, `--all`). The CI job calls that same script, so CI

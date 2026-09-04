@@ -197,6 +197,33 @@ class TransitionMatrix(LifecycleTestCase):
         self.assertEqual(self.read("README.md"), "my project\n")
         self.assertFalse(self.exists(".ai-native/lifecycle/state.json"))
 
+    def test_purge_works_on_a_project_that_already_has_transaction_backups(self):
+        """The case the first purge tests missed.
+
+        A freshly-installed project has no backups, so `--purge` never had to
+        deal with its own bookkeeping directory. After an uninstall and a
+        reinstall it does — and backing that directory up copied it into itself
+        until Python gave up (EMP-LC-010).
+        """
+
+        from ainative.lifecycle import transaction as txnlib
+
+        self.install("verified")
+        self.seed_verified_history()
+        self.uninstall()
+        self.install("verified")
+        self.write("mine/keep.txt", "not yours\n")
+        self.assertTrue(txnlib.backups_dir(self.project).is_dir(),
+                        "the fixture did not produce the backups this test is about")
+
+        result = self.uninstall(purge=True, assume_yes=True)
+
+        self.assertTrue(result.applied)
+        self.assertFalse(self.exists(".ai-native/lifecycle"))
+        self.assertFalse(self.exists(".ai-native/work/w1/manifest.json"))
+        self.assertEqual(self.read("mine/keep.txt"), "not yours\n")
+        self.assertEqual(self.read("README.md"), "my project\n")
+
     def test_purge_refuses_without_confirmation_when_there_is_no_terminal(self):
         from ainative.lifecycle.errors import LifecycleError
 

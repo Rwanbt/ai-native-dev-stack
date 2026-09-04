@@ -107,6 +107,38 @@ class TransactionSafety(LifecycleTestCase):
                          "the state changed even though the commit failed")
         self.assertEqual(statelib.load(self.project).active_profile, "standard")
 
+    def test_a_failure_partway_through_leaves_the_old_profile_recorded(self):
+        """The ordering test: state committed last, not first.
+
+        Interrupting at the commit only proves the commit can fail. This
+        interrupts *after* some changes have landed and asserts the state still
+        describes the old install — which is false the moment `commit()` is
+        moved ahead of the apply loop.
+        """
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+        self.assertEqual(statelib.load(self.project).active_profile, "standard")
+
+        # Drive the real install path, with the real commit, and interrupt it
+        # partway. A lambda that saves an unmodified state would not notice the
+        # ordering at all — the production commit is what mutates the profile.
+        class OneChangeThenDies(_Interrupting):
+            stop_after = 1
+
+        original = txnlib.Applier
+        txnlib.Applier = OneChangeThenDies
+        self.addCleanup(setattr, txnlib, "Applier", original)
+        with self.assertRaises(Interruption):
+            installer.install(self.project, "verified", distribution=self.distribution,
+                              source=self.source)
+
+        current = statelib.load(self.project)
+        self.assertEqual(current.active_profile, "standard",
+                         "the state recorded the new profile for a transaction that failed")
+        self.assertNotIn("verified-workplane", current.installed_components)
+
     def test_an_interrupted_journal_is_detected_and_blocks_further_mutation(self):
         plan, _, _ = self._plan()
         applier = txnlib.Applier(self.project, self.distribution, self.source, plan)
