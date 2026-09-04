@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import time
+from datetime import datetime, timezone
 from queue import Empty, Queue
 from threading import Thread
 from pathlib import Path
@@ -77,6 +78,7 @@ class VerificationRunner:
         if binding.get("command_registry_digest") != canonical_digest(self.registry):
             raise RunnerError("COMMAND_REGISTRY_BINDING_MISMATCH")
         started = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
         try:
             completed, stdout_bytes, stderr_bytes = self._run_bounded(definition, cwd)
             stdout = redact(stdout_bytes.decode("utf-8", errors="replace"))
@@ -86,9 +88,9 @@ class VerificationRunner:
             if require_substance and completed.returncode == 0 and suspicious:
                 status = "SUSPICIOUS_VERIFICATION"
             metadata = {**observed, "stdout_preview": stdout[:PREVIEW_CHARS], "stderr_preview": stderr[:PREVIEW_CHARS]}
-            result = build_verification_evidence(binding, command=command, result=status, exit_code=completed.returncode, stdout=stdout_bytes, stderr=stderr_bytes, duration_ms=int((time.monotonic() - started) * 1000), substance_metadata=metadata)
+            result = build_verification_evidence(binding, command=command, result=status, exit_code=completed.returncode, stdout=stdout_bytes, stderr=stderr_bytes, duration_ms=int((time.monotonic() - started) * 1000), substance_metadata=metadata, started_at=started_at)
         except subprocess.TimeoutExpired:
-            result = build_verification_evidence(binding, command=command, result="TIMEOUT", exit_code=None, stdout=b"", stderr=b"", duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={})
+            result = build_verification_evidence(binding, command=command, result="TIMEOUT", exit_code=None, stdout=b"", stderr=b"", duration_ms=int((time.monotonic() - started) * 1000), substance_metadata={}, started_at=started_at)
         if self.runs_dir:
             self.runs_dir.mkdir(parents=True, exist_ok=True)
             path = self.runs_dir / f"{result.uid}.json"

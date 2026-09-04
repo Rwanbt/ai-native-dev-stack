@@ -1,5 +1,6 @@
 import sys
 import tempfile
+from datetime import datetime
 import time
 import unittest
 
@@ -62,6 +63,20 @@ class RunnerConvergenceTests(unittest.TestCase):
             self.assertTrue(list(__import__("pathlib").Path(directory).glob("*.json")))
         with self.assertRaisesRegex(RunnerError, "SHELL_COMMAND_FORBIDDEN"):
             load_registry({"schema_name": "command_registry", "schema_version": 1, "commands": {"bad": {"argv": ["echo"], "shell": True}}})
+
+    def test_recorded_execution_window_spans_the_real_run(self):
+        """EMP-002. Both ends were stamped at record-build time, so every run in
+        every audit trail claimed to have started and finished at the same
+        instant. H01 froze a 5 524 ms run whose window was 35 microseconds."""
+
+        registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"slow": {"argv": [sys.executable, "-c", "import time; time.sleep(0.4); print('ok')"], "timeout_seconds": 10, "substance": {"type": "exit_only", "minimum_observations": 0}}}}
+        with tempfile.TemporaryDirectory() as directory:
+            record = VerificationRunner(registry).run("slow", cwd=directory, binding=self.binding(registry)).to_record()
+        started = datetime.fromisoformat(record["started_at"])
+        finished = datetime.fromisoformat(record["finished_at"])
+        window_ms = (finished - started).total_seconds() * 1000
+        self.assertGreaterEqual(window_ms, 300, "the recorded window is shorter than the sleep the command performed")
+        self.assertGreaterEqual(window_ms, record["duration_ms"] * 0.5, "the recorded window contradicts the measured duration")
 
     def test_runner_marks_timeout_and_rejects_registry_drift(self):
         registry = {"schema_name": "command_registry", "schema_version": 1, "commands": {"slow": {"argv": [sys.executable, "-c", "import time; time.sleep(2)"], "timeout_seconds": 1, "max_output_bytes": 100}}}

@@ -57,10 +57,19 @@ def build_verification_evidence(
     stderr: bytes,
     duration_ms: int,
     substance_metadata: Mapping[str, Any],
+    started_at: str | None = None,
 ) -> VerificationEvidence:
-    """Bind one process observation to caller-supplied normative identities."""
+    """Bind one process observation to caller-supplied normative identities.
+
+    @contract `started_at` is when the process began, observed by the caller
+    that started it. Stamping it here instead would put both ends of the
+    execution window at record-build time, describing a run of zero duration
+    however long it took. Absent, it degrades to the record time rather than
+    inventing a window.
+    """
 
     record = dict(binding)
+    finished = datetime.now(timezone.utc).isoformat()
     record.update(
         {
             "schema_name": "verification_run",
@@ -69,8 +78,8 @@ def build_verification_evidence(
             "command": command,
             "result": result,
             "exit_code": exit_code,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": started_at or finished,
+            "finished_at": finished,
             "duration_ms": duration_ms,
             "stdout_digest": sha256(stdout).hexdigest(),
             "stderr_digest": sha256(stderr).hexdigest(),
