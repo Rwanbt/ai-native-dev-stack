@@ -1,0 +1,151 @@
+{
+  "_comment": [
+    "The component model. Each entry names what the stack installs, where it",
+    "comes from in the distribution, where it lands in the project, and who owns",
+    "the result. Ownership decides what an update may replace and what an",
+    "uninstall may remove — see ADR-0009 section 3.",
+    "",
+    "kinds:",
+    "  tree            mirror a directory (optionally restricted by `include`)",
+    "  file            copy one file",
+    "  template        copy one file only when the destination is absent; the",
+    "                  copy then belongs to the user",
+    "  external_block  a delimited region inside a file the stack does not own",
+    "  data_root       declared user-data directories: never installed, never",
+    "                  removed except by an explicit purge"
+  ],
+  "schema_version": 1,
+  "components": {
+    "ai-docs-tooling": {
+      "version": 1,
+      "kind": "tree",
+      "source": "tools/ai_docs",
+      "destination": "tools/ai_docs",
+      "include": [
+        "source_config.py",
+        "module_discovery.py",
+        "generate_ai_summary.py",
+        "update_on_edit.py",
+        "generate_all.py",
+        "generate_metrics.py",
+        "assemble_context.py",
+        "run_hook.sh",
+        "find_python.sh",
+        "config.sh.example"
+      ],
+      "executable": ["run_hook.sh"],
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": true,
+      "title": "AI context tooling",
+      "description": "Generates AI_SUMMARY.md files and assembles module context."
+    },
+    "engineering-method": {
+      "version": 1,
+      "kind": "file",
+      "source": "AGENTS.md",
+      "destination": "AGENTS.md",
+      "ownership": "MANAGED_MUTABLE",
+      "required": true,
+      "title": "Engineering method",
+      "description": "The shared cross-tool engineering rules every agent reads."
+    },
+    "conventions": {
+      "version": 1,
+      "kind": "file",
+      "source": "conventions.json",
+      "destination": "conventions.json",
+      "ownership": "MANAGED_MUTABLE",
+      "required": true,
+      "title": "Machine-readable conventions",
+      "description": "Size and complexity thresholds the hooks and CI read."
+    },
+    "context-template": {
+      "version": 1,
+      "kind": "tree",
+      "source": "templates",
+      "destination": ".ai-native/templates",
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": false,
+      "title": "Templates",
+      "description": "AI_CONTEXT.md and hook-settings templates to copy from."
+    },
+    "skills-claude": {
+      "version": 1,
+      "kind": "tree",
+      "source": "skills",
+      "destination": ".claude/skills",
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": true,
+      "title": "Skills (Claude Code)",
+      "description": "First-party skills in the tree Claude Code reads."
+    },
+    "skills-agents": {
+      "version": 1,
+      "kind": "tree",
+      "source": "skills",
+      "destination": ".agents/skills",
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": true,
+      "title": "Skills (Codex / OpenCode / Cursor)",
+      "description": "The same skills in the cross-CLI .agents/skills convention."
+    },
+    "machine-config": {
+      "version": 1,
+      "kind": "template",
+      "source": "tools/ai_docs/config.sh.example",
+      "destination": "tools/ai_docs/config.sh",
+      "ownership": "USER_DATA",
+      "required": false,
+      "title": "Machine-local config",
+      "description": "Vault path and binaries for this machine. Never overwritten."
+    },
+    "gitignore-entry": {
+      "version": 1,
+      "kind": "external_block",
+      "destination": ".gitignore",
+      "marker": "ai-native-dev-stack",
+      "comment_prefix": "#",
+      "lines": [
+        "tools/ai_docs/config.sh",
+        ".ai-native/lifecycle/backups/",
+        ".ai-native/lifecycle/update-cache.json"
+      ],
+      "ownership": "EXTERNAL_CONFIG",
+      "required": false,
+      "title": "Git ignore entries",
+      "description": "Machine-local paths that must never be committed."
+    },
+    "verified-workplane": {
+      "version": 1,
+      "kind": "marker",
+      "destination": ".ai-native/lifecycle/verified.json",
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": true,
+      "title": "Verified Work Plane activation",
+      "description": "Records that Verified integration is active. Not an authority record."
+    },
+    "verified-guide": {
+      "version": 1,
+      "kind": "file",
+      "source": "docs/VERIFIED-WORK-PLANE.md",
+      "destination": ".ai-native/docs/VERIFIED-WORK-PLANE.md",
+      "ownership": "MANAGED_IMMUTABLE",
+      "required": false,
+      "title": "Verified Work Plane guide",
+      "description": "How to bootstrap trust, declare work and converge."
+    },
+    "verified-data": {
+      "version": 1,
+      "kind": "data_root",
+      "paths": [
+        ".ai-native/trust",
+        ".ai-native/work",
+        ".ai-native/runs"
+      ],
+      "ownership": "USER_DATA",
+      "required": false,
+      "title": "Verified history",
+      "description": "Trust anchor, work contracts, run evidence and approvals."
+    }
+  }
+}
