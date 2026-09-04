@@ -10,12 +10,13 @@ true that a reader should know before merging.
 | | |
 |---|---|
 | Branch | `feat/distribution-lifecycle-v1` |
-| Candidate SHA | `8c3a7e0169f1fe4b31acff7bb988501cc2491385` |
+| Qualified implementation SHA | `38ccd2f60e24fe895743966db092438b2a0723a2` |
+| Packet finalization | documentation and equivalent-path regression pending an exact-SHA CI run |
 | Base | `spec` @ `2381abb7ec46a0113056c2597d32b16bcdb86fa1` |
 | Merge base | `2381abb7ec46a0113056c2597d32b16bcdb86fa1` (linear; no merges) |
 | Pull request | [#17](https://github.com/Rwanbt/ai-native-dev-stack/pull/17) |
-| Commits | 10 |
-| Diff | 52 files, +9 553 / −434 |
+| Commits | 19 |
+| Diff | 55 files, +11 536 / −434 |
 
 **Base selection.** `2381abb` is not an ancestor of `origin/main`, and
 `origin/main` is 0 commits ahead of `origin/spec`. Per the mandate's rule the
@@ -130,7 +131,9 @@ created, put the state back.
 
 ## 7. Gate results
 
-Every row below was executed at `8c3a7e0` unless the row says otherwise.
+The implementation baseline was executed at `38ccd2f`. The two final P2 closure
+changes were then validated locally on the packet-finalization tree; its exact
+CI run is the remaining gate.
 
 | Gate | Result | Evidence |
 |---|---|---|
@@ -140,7 +143,7 @@ Every row below was executed at `8c3a7e0` unless the row says otherwise.
 | STANDARD → VERIFIED | **PASS** | `test_standard_switch_verified_adds_only_the_delta` |
 | VERIFIED → STANDARD | **PASS** | `test_verified_switch_standard_preserves_the_audit_trail` |
 | ROUND TRIP | **PASS** | `test_round_trip_none_standard_verified_standard_verified` (byte-for-byte history) |
-| OWNERSHIP | **PASS** | `test_lifecycle_ownership` — 19 tests |
+| OWNERSHIP | **PASS** | `test_lifecycle_ownership` — 23 tests |
 | USER DATA PRESERVATION | **PASS** | `test_an_edit_survives_install_update_downgrade_and_uninstall` |
 | UNINSTALL | **PASS** | `test_uninstall_removes_unchanged_managed_files_and_keeps_the_rest` |
 | PURGE | **PASS** | `test_uninstall_purge_removes_verified_data_and_keeps_unrelated_files`, `test_purge_still_keeps_a_managed_file_the_user_edited` |
@@ -150,27 +153,27 @@ Every row below was executed at `8c3a7e0` unless the row says otherwise.
 | UPDATE RECOVERY | **PASS** | `test_lifecycle_update.UpdateRecovery` — 6 tests |
 | DRY RUN | **PASS** | `test_every_mutation_supports_dry_run_and_writes_nothing` (whole-tree digest before/after) |
 | REPAIR | **PASS** | `test_lifecycle_transactions.TransactionSafety` — 11 tests |
-| PATH SAFETY | **PASS** | `test_lifecycle_security` — 29 tests |
-| CONCURRENCY | **PASS** | `test_lifecycle_transactions.Locking` — 7 tests |
+| PATH SAFETY | **PASS** | `test_lifecycle_security` — 35 tests |
+| CONCURRENCY | **PASS** | `test_lifecycle_transactions.Locking` — 15 tests, including fixed-time claim identity, serialized replacement and equivalent-path identity |
 | CROSS PLATFORM | **PASS** | CI: 3 OS × 2 Pythons, all lifecycle suites |
 | CLEAN INSTALL | **PASS** | `scripts/lifecycle_clean_install.py`, 3 OS in CI |
 | EXISTING VERIFIED SUITE | **PASS** | 187 Work Plane tests, no source file modified |
-| ANTI-DEBT | **PASS** | complexity 0 findings / 429 functions; LOC gate 34 files, 0 warnings; conventions and scope gates green |
+| ANTI-DEBT | **PASS** | complexity 0 findings / 447 observations; LOC 0 blocking (one pre-existing Work Plane warning); conventions and scope green |
 | DOCS | **PASS** | ADR-0009, `DISTRIBUTION-LIFECYCLE.md`, `UPDATING.md`, both READMEs |
-| NON-VACUITY | **PASS** | 17/17 guards proved necessary |
-| EXTERNAL REVIEW | **P0 = 0, P1 = 0** | §11 below |
+| NON-VACUITY | **PASS** | 34/34 guards proved necessary |
+| EXTERNAL REVIEW | **CLOSED — P0 = 0, P1 = 0** | bounded Round 8 plus focused Round 9, §11 |
 
 ### Test totals
 
 ```
-tests/test_lifecycle_matrix.py         25
-tests/test_lifecycle_ownership.py      19
-tests/test_lifecycle_security.py       29
-tests/test_lifecycle_transactions.py   26
-tests/test_lifecycle_update.py         28
+tests/test_lifecycle_matrix.py         27
+tests/test_lifecycle_ownership.py      23
+tests/test_lifecycle_security.py       35
+tests/test_lifecycle_transactions.py   39
+tests/test_lifecycle_update.py         31
 tests/test_lifecycle_cli.py            20
-                                      ---
-                                      147   all green
+                                       ---
+                                      175   all green
 ```
 
 ### Transition matrix
@@ -194,7 +197,7 @@ tests/test_lifecycle_cli.py            20
 | updated | rollback | previous state | PASS |
 | interrupted | repair | valid state | PASS |
 
-### Cross-platform matrix (CI, run `33889198353` onward)
+### Cross-platform matrix (CI run `33921500321`, exact SHA `38ccd2f`)
 
 | Job | ubuntu | windows | macos |
 |---|---|---|---|
@@ -217,17 +220,15 @@ tests/test_lifecycle_cli.py            20
 | `AINATIVE_NO_UPDATE_CHECK=1` | no network | `test_the_disable_variable_stops_every_network_check` |
 | verify / converge / trust / work | no network call at all | `test_a_verified_command_never_triggers_an_update_check` |
 
-### Non-vacuity — 17/17
+### Non-vacuity — 34/34
 
 Each guard is reverted in a scratch copy and its test must then fail
 (`python scripts/lifecycle_non_vacuity.py`).
 
 ```
-ownership_uninstall  ownership_replace       ownership_prune        legacy_adoption
-path_traversal       archive_traversal       archive_digest         commit_state_last
-rollback_completeness  purge_respects_user_edits  journal_id_containment
-purge_recovery_gate  interrupted_blocks      profile_preservation   purge_confirmation
-layer_boundary       external_block_scope
+The full named list is maintained by `scripts/lifecycle_non_vacuity.py`; all 34
+cases passed, including `lock_claim_identity` and
+`lock_release_is_serialized`.
 ```
 
 Five cases were reported **VACUOUS** on their first run and every one was
@@ -249,7 +250,7 @@ clone.
 
 ```
 verdict          CONVERGED
-source_commit    8c3a7e0169f1fe4b31acff7bb988501cc2491385
+source_commit    38ccd2f60e24fe895743966db092438b2a0723a2
 requirements     8       verifications  8 PASS      gaps  0
 ```
 
@@ -278,8 +279,10 @@ the Work Plane.
 
 ## 9. Empirical findings
 
-Fourteen defects, all with a reproducer, a fix and a regression. Severity is my
-own assessment, stated even where it differs from the reporter's.
+The numbering reaches EMP-LC-042; IDs 004 and 005 were never assigned, leaving
+40 accepted defects. Each has a reproducer, fix and regression unless explicitly
+listed as rejected below. Severity is my own assessment, stated even where it
+differs from the reporter's.
 
 | ID | Sev | Defect | Found by | Guard |
 |---|---|---|---|---|
@@ -301,13 +304,37 @@ own assessment, stated even where it differs from the reporter's.
 | EMP-LC-018 | **P0** | `--purge` deleted a managed file the user had edited — silently, and against the retention table, which promises it is kept | external | `purge_respects_user_edits` |
 | EMP-LC-019 | P1 | a tampered transaction journal's `id` became a filename, so `../../../../escaped` made `repair` write outside the project root | external | `journal_id_containment` |
 | EMP-LC-020 | P2 | the purge emptied `.ai-native/lifecycle/` with `rmtree`, taking anything a user had put there | external | — |
+| EMP-LC-021 | **P0** | the orphan-removal sibling of EMP-LC-018 could delete a user-edited managed file | sibling review | `orphan_respects_user_edits` |
+| EMP-LC-022 | P2 | purge still emptied nested journal directories with `rmtree` | sibling review | — |
+| EMP-LC-023 | P2 | an adopted external region was recorded as not written by the stack | review | — |
+| EMP-LC-024 | P1 | update dry-run wrote conflict files and update cache state | review | `dry_run_update_writes_nothing` |
+| EMP-LC-025 | P1 | text-mode newline translation rewrote CRLF external configuration | CI/review | `crlf_preservation` |
+| EMP-LC-026 | P2 | a marker quoted in prose opened a managed region | review | — |
+| EMP-LC-027 | P2 | an invalid stored check interval crashed update status | review | — |
+| EMP-LC-028 | P2 | a marker quoted inside a block closed it early | review | — |
+| EMP-LC-029 | P1 | a string `"false"` became true and authorized deletion | review | `ownership_flag_typing` |
+| EMP-LC-030 | P1 | `O_EXCL` exposed an empty lock before its payload was written | review | `lock_atomicity` |
+| EMP-LC-031 | P1 | a killed transaction persisted no completed changes to recover | review | `journal_durability` |
+| EMP-LC-032 | P1 | undo overwrote a file edited after interruption | review | `undo_respects_a_later_edit` |
+| EMP-LC-033 | P2 | managed markers were not anchored to the end of their line | review | `marker_is_a_whole_line` |
+| EMP-LC-034 | P1 | a write that raised after landing escaped rollback | review | `rollback_follows_the_journal` |
+| EMP-LC-035 | P2 | `.new` files survived a failed update | review | `conflict_file_after_apply` |
+| EMP-LC-036 | P1 | an old owner released a force-replacement owner's lock | review | `lock_release_is_owned` |
+| EMP-LC-037 | P1 | update staging overwrote an existing user-owned `.new` file | review | `new_file_never_overwritten` |
+| EMP-LC-038 | P1 | undo trusted a completed record outside the PREPARED plan | review | `undo_bounded_by_the_plan` |
+| EMP-LC-039 | P2 | refused force-unlock escaped as a raw `OSError` | review | `force_unlock_reports_refusals` |
+| EMP-LC-040 | P2 | repair rewrote state without retaining its previous record | review | `repair_archives_the_state` |
+| EMP-LC-041 | P1 | timestamp-based metadata was not unique per lock acquisition | Windows CI | `lock_claim_identity` |
+| EMP-LC-042 | P1 | claim comparison and unlink were separated by a force-replacement TOCTOU window | focused review | `lock_release_is_serialized` |
 
 ```
 P0 open: 0        P1 open: 0        P2 open: 0
 ```
 
-Every finding above is fixed. No finding was accepted as a documented
-limitation instead of being repaired.
+Every accepted finding above is fixed. EMP-LC-043 is FALSE: dot, parent,
+Windows case-variant and real directory-link aliases resolve to the same
+per-project mutation guard. Two proposed journal/marker arrangements were also
+rejected with executable or source evidence, as recorded in the handoff.
 
 ---
 
@@ -339,8 +366,12 @@ that every finding carry a reproducer or a `file:line` citation, and an explicit
 instruction not to redesign the product. OpenCode was tried first and stopped on
 a provider token limit before producing findings.
 
-**Rounds and dispositions.** Six findings across two rounds. Every one was
-reproduced here before anything was changed — none was taken on trust.
+**Rounds and dispositions.** The bounded review sequence closed EMP-LC-015
+through EMP-LC-042. Every accepted finding was reproduced before modification;
+two proposed findings were rejected with evidence rather than repaired by
+assumption. Round 8 on `38ccd2f` returned no new P0/P1. Round 9 then reviewed
+only claim identity, mutation guard, force replacement, dead-owner reclaim,
+release and equivalent project paths; it returned no reproducible P0/P1.
 
 | Reported | Verdict | Disposition |
 |---|---|---|
@@ -351,18 +382,20 @@ reproduced here before anything was changed — none was taken on trust.
 | tree components skip the collision check | **TRUE** (P2, reported P1) | fixed — EMP-LC-015 |
 | rollback metadata written after the commit | **TRUE** (P2, reported P1) | fixed — EMP-LC-017 |
 
-No finding was rejected. Three were downgraded from the reported severity, with
-the reason stated in each commit; all six were fixed regardless.
+The complete dispositions are in the EMP table and handoff. Severity was never
+raised on a theoretical escalation path; destructive classifications required
+an executable sequence.
 
-**Reviewer environment limitation, stated plainly.** The reviewer could not run
-the test suites in its sandbox (`PermissionError` creating temporary projects),
-so its findings are static reads. That is why each was reproduced here first —
-see `EMP-LC-015/016/017/018/019/020` reproducers in the commits — and it is a
-real limit on the review's coverage: it read the code, it did not exercise it.
+**Final independent evidence.** The final reviewer inspected exact SHA
+`38ccd2f60e24fe895743966db092438b2a0723a2` and independently verified GitHub
+run `33921500321` as successful. It reported P0 = 0, P1 = 0, and two P2 closure
+items: update the lock architecture prose and test equivalent project paths.
+Both are included in the packet-finalization commit. The alias test closed
+EMP-LC-043 as FALSE rather than promoting it theoretically.
 
-**Two findings were mine, not the reviewer's**, and they were the ones the
-suite could not see: EMP-LC-012 and EMP-LC-014, both found by reading the code
-against its own retention table while every test was green.
+**External review is closed.** The bounded zero-P0/P1 round and its focused
+confirmation both satisfy the convergence rule. This is a release gate result,
+not a claim of universal correctness.
 
 ---
 
@@ -416,8 +449,8 @@ qualification recorded on `spec` is not regressed.
 ## 14. Verdict
 
 ```
-PRODUCTION  = GO
-MERGE-READY = YES
+PRODUCTION  = PENDING EXACT CI
+MERGE-READY = PENDING EXACT CI
 ```
 
 ```
@@ -437,9 +470,10 @@ Windows / Linux / macOS tested         YES, 3 OS x 2 Pythons
 Work Plane qualification not regressed YES
 clean install works                    YES, from a wheel with no checkout
 external reviewer                      P0 = 0, P1 = 0
+external review                        CLOSED after bounded Round 8 + focused Round 9
 ```
 
-**Merge recommendation.** Merge `feat/distribution-lifecycle-v1` into `spec` at
-`8c3a7e0169f1fe4b31acff7bb988501cc2491385`, squashed. Not merged by this work:
-the mandate withheld that authority, and it should stay withheld until a human
-has read §11 and §12.
+**Merge recommendation.** Merge `feat/distribution-lifecycle-v1` into `spec`
+after the packet-finalization SHA receives an exact green CI run, squashed. Not
+merged by this work: the mandate withheld that authority, and it should stay
+withheld until a human has read §11 and §12.

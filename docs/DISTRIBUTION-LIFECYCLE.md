@@ -214,11 +214,24 @@ interrupted one is never pruned.
 
 ### Concurrency
 
-One lifecycle mutation at a time, per project, via an `O_EXCL` lock at
-`.ai-native/lifecycle/lifecycle.lock` recording pid, host, operation and time.
+One lifecycle mutation at a time, per canonical project path. The long-lived logical
+claim at `.ai-native/lifecycle/lifecycle.lock` records pid, host, operation,
+acquisition time, and a UUID `claim_id` unique to that acquisition. Time answers
+*when*; `claim_id` answers *which exact claim owns the lock*.
+
+Creating, reclaiming, force-replacing, and releasing that claim are serialized
+by a separate short-lived OS lock. Its stable per-project key is derived from
+the resolved project path, and its file lives under the system temporary
+directory rather than inside the project. The OS guard is held only while the
+claim changes, never while the lifecycle operation changes project files. This
+closes the compare-then-delete window in which an old owner could remove a
+replacement owner's claim.
+
 A lock whose owner is *provably* gone is reclaimed automatically. A lock whose
 owner is alive, or cannot be judged (another host, an unreadable process table),
-is left alone and reported — `--force-unlock` is the human decision, never ours.
+is left alone and reported. `--force-unlock` is an operator override: use it
+only after independently establishing that the previous lifecycle operation is
+no longer allowed to mutate the project.
 
 ---
 

@@ -519,6 +519,18 @@ class Locking(LifecycleTestCase):
             finally:
                 owner_b.__exit__(None, None, None)
 
+    def test_equivalent_project_paths_share_one_mutation_guard(self):
+        aliases = [self.project, self.project / ".", self.project / "child" / ".."]
+        aliases += [Path(str(self.project).swapcase())] if os.name == "nt" else []
+        expected = locklib._mutation_guard_path(self.project)
+        guards = [locklib._mutation_guard_path(path) for path in aliases]
+        self.assertTrue(all(guard == expected for guard in guards))
+        try:
+            (linked := self.root / "project-alias").symlink_to(self.project, target_is_directory=True)
+        except OSError:
+            return  # Platform policy may prohibit creating directory links.
+        self.assertEqual(locklib._mutation_guard_path(linked), expected)
+
     def test_release_cannot_delete_a_force_replacement_between_its_check_and_unlink(self):
         """Release and force replacement must share one mutation boundary.
 

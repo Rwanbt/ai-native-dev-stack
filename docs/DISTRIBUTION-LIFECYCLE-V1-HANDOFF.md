@@ -12,8 +12,9 @@ human needs to finish this, in the order they need it.
 | Branch | `feat/distribution-lifecycle-v1` |
 | Base | `spec` @ `2381abb` (not an ancestor of `main`; `main` is 0 commits ahead of `spec`) |
 | PR | [#17](https://github.com/Rwanbt/ai-native-dev-stack/pull/17) — **open, not merged** |
-| HEAD at handoff | `4db8342` |
-| Verdict | **not yet rendered** — see §4 |
+| Qualified implementation | `38ccd2f60e24fe895743966db092438b2a0723a2` |
+| Packet finalization | local changes complete; commit and exact-SHA CI still pending |
+| Verdict | **GO / MERGE-READY pending exact CI on packet finalization** — see §4 |
 
 Read in this order: `docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md`
 (the decisions), then `docs/DISTRIBUTION-LIFECYCLE.md` (the operating manual),
@@ -31,26 +32,25 @@ and a concurrency lock.
 
 | Gate | Result | How to re-run |
 |---|---|---|
-| Lifecycle suite | 174 tests green locally | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
+| Lifecycle suite | 175 tests green locally | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
 | Non-vacuity | 34/34 guards proved necessary | `python scripts/lifecycle_non_vacuity.py` |
 | Clean install E2E | green, from a wheel with no checkout | `python scripts/lifecycle_clean_install.py` |
-| Dogfood | not re-run after EMP-LC-041 | `python scripts/lifecycle_dogfood.py --output docs/qualification/lifecycle-v1-dogfood.json` |
-| Complexity budget | 0 findings / 447 functions | `python scripts/check_complexity_budget.py` |
+| Dogfood | CONVERGED, 8/8 requirements, no gaps | `python scripts/lifecycle_dogfood.py --output docs/qualification/lifecycle-v1-dogfood.json` |
+| Complexity budget | 0 findings / 447 observations | `python scripts/check_complexity_budget.py` |
 | LOC gate | 186 files, 0 blocking (one pre-existing 1464-LOC Work Plane warning) | `node hooks/pretool-loc-gate/run_gate.js --all` |
 | Scope + conventions | green | `python scripts/measure_scope.py && python scripts/validate_conventions.py` |
 | Work Plane | not re-run; no Work Plane source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
-| CI | `cf2a216` is green ([run 33919506749](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33919506749)); EMP-LC-042 is a new local candidate and still needs its own run | `gh pr checks 17` |
+| CI | `38ccd2f` is green ([run 33921500321](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33921500321)), including lifecycle Windows 3.11/3.13 | `gh pr checks 17` |
 
 ---
 
 ## 3. What is left — the only remaining work
 
-**The independent review has not converged.** That is the single thing between
-this branch and a verdict.
-
-The closed list now reaches EMP-LC-042. Round 9 is the next bounded pass; it must
-use the closed-findings list below and may only reopen a finding with a new
-reproducer.
+**The independent review converged.** Round 8 found no new P0/P1 after
+EMP-LC-042, and the focused Round 9 found no reproducible P0/P1 across claim
+identity, mutation serialization, force replacement, dead-owner reclaim,
+release, and equivalent project paths. EMP-LC-043 is FALSE: the bounded Windows
+probe mapped dot, parent, case-variant, and directory-link aliases to one guard.
 
 ### The loop to close it
 
@@ -88,11 +88,10 @@ original mandate plus the closed-findings list in §5 below.
 
 ### Then, to finish
 
-1. Update `docs/DISTRIBUTION-LIFECYCLE-V1-QUALIFICATION.md` — it is written but
-   predates the last 12 findings. Refresh: the SHA, the gate table, the
-   EMP-LC list, the review dispositions, and the verdict.
-2. Confirm CI green on the final SHA (`gh pr checks 17`).
-3. Render the verdict. `PRODUCTION = GO` only if P0 = 0, P1 = 0 **and** a review
+1. Re-run the full local gates after the two final P2 closure changes.
+2. Commit and push the packet-finalization state.
+3. Confirm CI green on that exact SHA (`gh pr checks 17`).
+4. Render the verdict. `PRODUCTION = GO` only if P0 = 0, P1 = 0 **and** a review
    round produced no new finding.
 
 **Do not merge.** The mandate withheld that authority and it should stay
