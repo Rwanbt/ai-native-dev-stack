@@ -140,7 +140,7 @@ jobs:
           set -e
           python scripts/workplane_structural_regression.py
           python scripts/workplane_harness_matrix.py
-          python scripts/workplane_pilot.py
+          python scripts/workplane_pilot.py --self-check
 
   installers:
     name: Installers (${{ matrix.os }})

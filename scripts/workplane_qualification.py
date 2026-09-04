@@ -57,7 +57,7 @@ def run(harness_id: str) -> dict[str, object]:
         _run([sys.executable, "-m", "unittest", *TESTS, "-q"]),
         _run([sys.executable, "scripts/workplane_structural_regression.py"]),
         _run([sys.executable, "scripts/workplane_harness_matrix.py"]),
-        _run([sys.executable, "scripts/workplane_pilot.py"]),
+        _run([sys.executable, "scripts/workplane_pilot.py", "--self-check"]),
     )
     return {
         "schema_version": 1,

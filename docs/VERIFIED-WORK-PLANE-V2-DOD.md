@@ -277,10 +277,15 @@ the contract. One agent cannot hold both roles.
 
 ### Pilot — one harness, synthetic items
 
-`scripts/workplane_pilot.py` and `scripts/workplane_harness_matrix.py` both
-report `external_harness: false`, and section 47 states plainly that a direct
-API against a CLI facade is not two AI harnesses. The five-item shape is a
-smoke pilot, not production evidence.
+`scripts/workplane_harness_matrix.py` reports `external_harness: false`, and
+section 47 states plainly that a direct API against a CLI facade is not two AI
+harnesses.
+
+`scripts/workplane_pilot.py` is now an instrument rather than a pilot: it
+measures work someone else did, through `evaluate_work()`, and it will not
+report `pilot_evidence: true` for a plan that is short of the five kinds, short
+of two harnesses, carries anything synthetic, failed to measure, or omits a
+declared expectation. Its refusals are part of the record.
 
 `docs/qualification/*.json` records that two independent harnesses reproduce
 the four qualification gates at a commit. That is gate reproducibility, not the
@@ -288,11 +293,17 @@ pilot protocol of section 48, which requires per-item contracts, revisions,
 reruns, interventions and friction across two real features, a bugfix, a
 refactor and a hotfix.
 
-The closure review adds a requirement the current harness does not meet: **the
+The closure review added a requirement the old harness did not meet: **the
 pilot must exercise the authoritative production surfaces**, not the pure
-`converge()` kernel. `scripts/workplane_pilot.py` calls the kernel directly and
-labels itself `authority: smoke_pilot_only`. Closing this gate therefore needs
-the harness rewritten around `evaluate_work` *and* five real work items.
+`converge()` kernel. That half is now done — `scripts/workplane_pilot.py` is an
+instrument that measures governed work through `evaluate_work()`, injects no
+authority of any kind, separates what it measured from what the operator
+declared, and **refuses to call itself pilot evidence** unless the plan meets
+the protocol. `--self-check` demonstrates it on one governed work and labels the
+result `pilot_evidence: false`.
+
+What remains is the half no code can supply: **five real work items through at
+least two real harnesses.** No plan has been run.
 
 ## Local verification at the time of writing
 
@@ -364,10 +375,9 @@ cases execute.
   project trust anchor rather than editing the existing one.
 - Resolving the signing identity costs one `git log` per observed path. A very
   large declared scope makes an observation proportionally slower.
-- `scripts/workplane_pilot.py` calls the pure `converge()` kernel directly, not
-  `evaluate_work`, so it does not exercise the trust anchor or the mutation
-  bar. It is labelled `authority: smoke_pilot_only` for exactly this reason and
-  is not evidence about authority.
+- The pilot instrument measures durations from the local execution log, which
+  is not authority and never an input to a verdict. It is the only place
+  per-run durations exist, and a duration cannot change what was decided.
 - Authority drift is compared before and after the verification runs, not
   continuously. A change made and reverted within a single run is undetected.
 - Convergence re-executes every declared verification. For a large suite that
