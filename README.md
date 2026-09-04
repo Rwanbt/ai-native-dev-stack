@@ -364,6 +364,29 @@ MiniMax), `sync_inlined_method.py` refreshes a managed block. See **[UPDATING.md
 
 ---
 
+## The Verified Work Plane
+
+A deterministic gate between an agent claiming work is done and the project
+believing it. It decides convergence from committed contracts and executed
+verifications — never from narrative, and never from anything the caller hands
+in.
+
+    pip install .
+    ainative trust bootstrap --repo . --approval-root root.json --policy policy.json --by "you"
+    ainative work admit .ai-native/work/w1 --repo . --by "you" --artifact ...
+    ainative work new   .ai-native/work/w1 --artifact ...
+    ainative converge   --work .ai-native/work/w1 --repo .
+
+Exit codes: 0 CONVERGED, 1 NOT_CONVERGED, 2 INVALID, 3 INTERNAL_ERROR.
+
+Its authority model was closed by external adversarial review (P0 = 0, P1 = 0)
+and is frozen. Genesis trust is a privileged ceremony the runtime cannot
+verify, so **bootstrap trust before a controlled agent has repository access**
+— that is a deployment requirement, not a detail. See ADR-0006.
+
+Full documentation, empirical results and known limitations:
+[docs/VERIFIED-WORK-PLANE.md](docs/VERIFIED-WORK-PLANE.md).
+
 ## Quick Start
 
 ### For an existing project
