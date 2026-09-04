@@ -5,6 +5,10 @@ writes made against another. The lock is created complete â€” payload and all â€
 in one atomic step, and it records the owning process so a lock left by a crash
 can be distinguished from a lock held by a live run.
 
+`acquired_at` says when a claim was made. `claim_id` says which acquisition
+owns it, so an old owner can never release a replacement that shares its
+process metadata and timestamp.
+
 A stale lock is reclaimed only when its recorded process is provably gone. A
 lock whose owner cannot be judged is left alone and reported: deleting a live
 owner's lock is exactly the failure the lock exists to prevent.
@@ -16,6 +20,7 @@ import errno
 import json
 import os
 import tempfile
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,10 +43,14 @@ class LockInfo:
     operation: str
     acquired_at: str
     host: str
+    claim_id: str | None = None
 
     def to_record(self) -> dict:
-        return {"pid": self.pid, "operation": self.operation,
-                "acquired_at": self.acquired_at, "host": self.host}
+        record = {"pid": self.pid, "operation": self.operation,
+                  "acquired_at": self.acquired_at, "host": self.host}
+        if self.claim_id:
+            record["claim_id"] = self.claim_id
+        return record
 
 
 def lock_path(project: Path) -> Path:
@@ -117,9 +126,11 @@ def read(project: Path) -> LockInfo | None:
     except (OSError, ValueError):
         return None
     try:
+        claim_id = payload.get("claim_id")
         return LockInfo(pid=int(payload["pid"]), operation=str(payload.get("operation", "")),
                         acquired_at=str(payload.get("acquired_at", "")),
-                        host=str(payload.get("host", "")))
+                        host=str(payload.get("host", "")),
+                        claim_id=claim_id if isinstance(claim_id, str) and claim_id else None)
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -160,11 +171,13 @@ def _release(project: Path, info: LockInfo) -> None:
 
     After a `--force-unlock` took the lock away and handed it to someone else,
     the original owner's `finally` deleted the *new* owner's lock and left two
-    operations believing they held it (EMP-LC-036).
+    operations believing they held it (EMP-LC-036). The claim token, rather
+    than timestamp metadata, is the ownership proof (EMP-LC-041).
     """
 
     current = read(project)
-    if current is None or current.to_record() == info.to_record():
+    if (info.claim_id is not None and current is not None
+            and current.claim_id == info.claim_id):
         lock_path(project).unlink(missing_ok=True)
 
 
@@ -211,7 +224,7 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
     path.parent.mkdir(parents=True, exist_ok=True)
     info = LockInfo(pid=os.getpid(), operation=operation,
                     acquired_at=datetime.now(timezone.utc).isoformat(),
-                    host=_hostname())
+                    host=_hostname(), claim_id=str(uuid.uuid4()))
     payload = json.dumps(info.to_record(), sort_keys=True) + "\n"
 
     for attempt in range(2):

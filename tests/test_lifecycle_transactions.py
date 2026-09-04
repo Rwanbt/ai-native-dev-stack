@@ -15,7 +15,9 @@ import subprocess
 import sys
 import threading
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 from tests.lifecycle_support import LifecycleTestCase, write_text
 from ainative.lifecycle import lock as locklib
@@ -489,8 +491,33 @@ class Locking(LifecycleTestCase):
                 held_by_b = locklib.read(self.project)
                 self.assertIsNotNone(held_by_b)
                 self.assertNotEqual(held_by_b.acquired_at, first.acquired_at)
+                self.assertNotEqual(held_by_b.claim_id, first.claim_id)
             # A's release runs next, and must not touch what B left behind.
         self.assertIsNone(locklib.read(self.project))
+
+    def test_same_lock_metadata_does_not_make_an_old_owner_release_the_replacement(self):
+        """A timestamp records when a lock was acquired, not who owns it."""
+
+        fixed = datetime(2026, 9, 4, 20, 41, 10, 436538, tzinfo=timezone.utc)
+
+        class FixedClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed if tz is None else fixed.astimezone(tz)
+
+        with mock.patch.object(locklib, "datetime", FixedClock):
+            owner_a = locklib.acquire(self.project, "update")
+            first = owner_a.__enter__()
+            owner_b = locklib.acquire(self.project, "update", force=True)
+            held_by_b = owner_b.__enter__()
+            try:
+                self.assertNotEqual(first.claim_id, held_by_b.claim_id)
+                payload = json.loads(locklib.lock_path(self.project).read_text(encoding="utf-8"))
+                self.assertEqual(payload["claim_id"], held_by_b.claim_id)
+                owner_a.__exit__(None, None, None)
+                self.assertEqual(locklib.read(self.project), held_by_b)
+            finally:
+                owner_b.__exit__(None, None, None)
 
     def test_a_lock_being_written_is_not_treated_as_invalid(self):
         """`O_EXCL` made existence atomic; the payload was written after.
@@ -539,7 +566,9 @@ class Locking(LifecycleTestCase):
 
     def test_the_lock_is_released_even_when_the_operation_raises(self):
         with self.assertRaises(ValueError):
-            with locklib.acquire(self.project, "init"):
+            with locklib.acquire(self.project, "init") as held:
+                self.assertTrue(held.claim_id)
+                self.assertEqual(locklib.read(self.project), held)
                 raise ValueError("boom")
         self.assertFalse(locklib.lock_path(self.project).exists())
 
@@ -550,6 +579,7 @@ class Locking(LifecycleTestCase):
         path.write_text(json.dumps({"pid": dead, "operation": "update",
                                     "acquired_at": statelib.now(),
                                     "host": locklib._hostname()}), encoding="utf-8")
+        self.assertIsNone(locklib.read(self.project).claim_id)
         with locklib.acquire(self.project, "init"):
             pass
         self.assertFalse(path.exists())

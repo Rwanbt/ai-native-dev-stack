@@ -12,7 +12,7 @@ human needs to finish this, in the order they need it.
 | Branch | `feat/distribution-lifecycle-v1` |
 | Base | `spec` @ `2381abb` (not an ancestor of `main`; `main` is 0 commits ahead of `spec`) |
 | PR | [#17](https://github.com/Rwanbt/ai-native-dev-stack/pull/17) — **open, not merged** |
-| HEAD at handoff | `03b69fe` |
+| HEAD at handoff | `4db8342` |
 | Verdict | **not yet rendered** — see §4 |
 
 Read in this order: `docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md`
@@ -31,15 +31,15 @@ and a concurrency lock.
 
 | Gate | Result | How to re-run |
 |---|---|---|
-| Lifecycle suite | 167 tests green | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
-| Non-vacuity | 28/28 guards proved necessary | `python scripts/lifecycle_non_vacuity.py` |
+| Lifecycle suite | 173 tests green locally | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
+| Non-vacuity | 33/33 guards proved necessary | `python scripts/lifecycle_non_vacuity.py` |
 | Clean install E2E | green, from a wheel with no checkout | `python scripts/lifecycle_clean_install.py` |
-| Dogfood | `CONVERGED`, 8 requirements, 0 gaps | `python scripts/lifecycle_dogfood.py --output docs/qualification/lifecycle-v1-dogfood.json` |
-| Complexity budget | 0 findings / 443 functions | `python scripts/check_complexity_budget.py` |
+| Dogfood | not re-run after EMP-LC-041 | `python scripts/lifecycle_dogfood.py --output docs/qualification/lifecycle-v1-dogfood.json` |
+| Complexity budget | 0 findings / 445 functions | `python scripts/check_complexity_budget.py` |
 | LOC gate | 34 files, 0 warnings | `cd ainative && node ../hooks/pretool-loc-gate/run_gate.js --all` |
 | Scope + conventions | green | `python scripts/measure_scope.py && python scripts/validate_conventions.py` |
-| Work Plane | 187 tests green, no source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
-| CI | 26/27 green on the last full run | `gh pr checks 17` |
+| Work Plane | not re-run; no Work Plane source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
+| CI | pending the exact SHA pushed after EMP-LC-041 | `gh pr checks 17` |
 
 ---
 
@@ -48,10 +48,9 @@ and a concurrency lock.
 **The independent review has not converged.** That is the single thing between
 this branch and a verdict.
 
-Six rounds have run. Rounds 5 and 6 each produced 5–6 *real* findings, every one
-reproduced here before being acted on. A seventh round was launched at handoff
-time; its output goes to
-`<scratchpad>/codex-review-7.txt`.
+The closed list now reaches EMP-LC-041. Round 8 is the next bounded pass; it must
+use the closed-findings list below and may only reopen a finding with a new
+reproducer.
 
 ### The loop to close it
 
@@ -69,8 +68,19 @@ python <a reproducer script>
 
 # 4. Re-run every gate in §2, then push.
 
-# 5. Repeat until a round returns P0 = 0 and P1 = 0 with no new finding.
+# 5. If the round returns new P0/P1, fix and run the focused regression round.
+# 6. If it returns no new P0/P1, run one confirmatory assertion pass only.
+# 7. Close external review when the bounded round and confirmatory/focused pass
+#    both return P0 = 0 and P1 = 0. Residual P2 are recorded, not an automatic
+#    reason to launch another full review.
 ```
+
+Convergence is bounded: P0 and P1 are blockers; P2 is non-blocking unless a
+concrete release-critical reason is recorded. For EMP-LC-038, bounding `undo()`
+by the PREPARED plan protects against corrupt, partial or inconsistent journals.
+It does not turn the journal into an adversarial trust boundary: an actor already
+able to arbitrarily modify lifecycle journals inside the project may also be able
+to modify the project files themselves.
 
 The review prompt lives at
 `<scratchpad>/review-prompt-4.md`; if it is gone, rebuild it from §92 of the
@@ -101,7 +111,7 @@ the strength of tests that had already failed to see six such defects.
 
 ---
 
-## 5. The 25 findings, closed
+## 5. Documented EMP-LC findings
 
 Every one reproduced before it was touched, fixed, and covered by a regression.
 Severity is my own assessment, stated even where it differed from the reporter's.
@@ -142,6 +152,11 @@ Severity is my own assessment, stated even where it differed from the reporter's
 | EMP-LC-034 | P1 | a write that raised after landing escaped the rollback |
 | EMP-LC-035 | P2 | `.new` files survived an update that failed |
 | EMP-LC-036 | P1 | after `--force-unlock`, the old owner's release deleted the new owner's lock |
+| EMP-LC-037 | P1 | update staging overwrote an existing user-owned `.new` file, destroying content the stack does not track |
+| EMP-LC-038 | P1 | undo trusted a completed journal record for a path the PREPARED plan never named |
+| EMP-LC-039 | P2 | a refused lock unlink escaped as a raw `OSError` instead of an actionable lifecycle error |
+| EMP-LC-040 | P2 | repair rewrote state after dropping orphaned records without first preserving a recoverable copy |
+| EMP-LC-041 | P1 | two acquisitions with the same serialized metadata were indistinguishable, so the old owner could release the replacement lock |
 
 ### Rejected, with evidence
 
@@ -169,8 +184,9 @@ Severity is my own assessment, stated even where it differed from the reporter's
    landed as CRLF, and only symmetric translation on read hid it.
 6. **A temp path is not its resolved form** — `/private/var` on macOS,
    `RUNNER~1` on Windows CI. The suite passed locally and failed on both.
-7. **The reviewer's sandbox cannot run the suites** (`PermissionError` creating
-   temp dirs). Its findings are static reads. Reproduce every one.
+7. **The restricted Windows sandbox cannot run temporary-file gates**
+   (`PermissionError` creating temp dirs); use an unsandboxed runner for those
+   gates. CI must still be bound to the exact pushed candidate SHA.
 
 ---
 
@@ -183,7 +199,7 @@ ainative/lifecycle/transaction.py   outcome -> journal -> perform; undo() checks
 ainative/lifecycle/state.py         every field that gates a deletion is typed here
 ainative/lifecycle/external.py      whole-line markers, no newline translation
 ainative/lifecycle/lock.py          atomic create-with-content; owned release
-scripts/lifecycle_non_vacuity.py    28 cases; STALE means a guard moved
+scripts/lifecycle_non_vacuity.py    33 cases; STALE means a guard moved
 scripts/lifecycle_clean_install.py  the only gate that runs outside the checkout
 scripts/lifecycle_dogfood.py        the feature judged by the stack it installs
 docs/DISTRIBUTION-LIFECYCLE-V1-QUALIFICATION.md   needs refreshing (§3)

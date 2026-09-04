@@ -339,6 +339,16 @@ CASES = (
               ".test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock"),
     ),
     Case(
+        name="lock_claim_identity",
+        guards="a release must match the unique acquisition claim, not timestamp metadata",
+        edits=(Edit("ainative/lifecycle/lock.py",
+                    "    if (info.claim_id is not None and current is not None\n"
+                    "            and current.claim_id == info.claim_id):\n",
+                    "    if current is not None:\n"),),
+        test=("tests.test_lifecycle_transactions.Locking"
+              ".test_same_lock_metadata_does_not_make_an_old_owner_release_the_replacement"),
+    ),
+    Case(
         name="new_file_never_overwritten",
         guards="an existing .new file must not be overwritten by an update",
         edits=(Edit("ainative/lifecycle/updater.py",

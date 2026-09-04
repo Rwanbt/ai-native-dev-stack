@@ -167,3 +167,14 @@
 - The authority freeze held | proof: `git diff --name-only` touches none of controller, trust, authorization, evaluator, contracts, bootstrap, provenance or convergence. No authority bug was found by the rewrite, so none was fixed | confirmed
 - 185 tests V2 verts (2 skips plateforme); 18 of them are the new instrument's | confirmed
 - NO PLAN HAS BEEN RUN. The five real items and the second harness are not mine to invent, and the brief said not to | active decision
+
+### DISTRIBUTION-LIFECYCLE HANDOFF 2026-09-04
+- The handoff now points at the actual checkout HEAD and includes EMP-LC-037 through EMP-LC-040 | location: docs/DISTRIBUTION-LIFECYCLE-V1-HANDOFF.md | proof: `git diff --check` passes; the document contains HEAD `4db8342`, the four finding rows, and the bounded P0/P1/P2 convergence loop | confirmed
+- Current local lifecycle gate execution is not green evidence on this host | location: tests/lifecycle_support.py:109 and scripts/lifecycle_non_vacuity.py:476 | proof: lifecycle suite discovers 172 tests but errors creating `C:\Users\barat\AppData\Local\Temp\ainative-test-*`; non-vacuity and clean-install fail on the same Windows temp-directory permission boundary | confirmed
+- Current CI status is unresolved, not green | location: docs/DISTRIBUTION-LIFECYCLE-V1-HANDOFF.md | proof: `gh pr checks 17` fails before returning checks because the configured proxy cannot connect to the GitHub API | confirmed
+
+### EMP-LC-041 LOCK CLAIM IDENTITY 2026-09-04
+- EMP-LC-041 is TRUE and P1 | location: ainative/lifecycle/lock.py:_release | proof: the deterministic same-PID/host/operation/timestamp reproducer failed before the fix because A's release made `read(project)` return None while B was active | confirmed
+- Lock ownership is a UUID claim identity, not timestamp metadata | location: ainative/lifecycle/lock.py:LockInfo, acquire, _release | proof: the reproducer now passes; both acquisitions retain identical timestamp metadata but different persisted `claim_id` values, and A's release leaves B's lock intact | confirmed
+- Legacy records remain readable but cannot authorize a release | location: ainative/lifecycle/lock.py:read, _release | proof: the dead-owner regression loads a record without `claim_id` as `None`, then safely reclaims it; `_release` only unlinks an exact non-empty claim match | confirmed
+- EMP-LC-041 guard is non-vacuous | location: scripts/lifecycle_non_vacuity.py:lock_claim_identity | proof: removing the claim equality makes the deterministic regression fail; the full non-vacuity script passed 33/33 | confirmed
