@@ -109,7 +109,12 @@ def _commit_state(project: Path, state: InstallState, plan: Plan,
         entries = plannerlib.managed_entries(component, plan.changes)
         # A CONFLICT leaves the file alone; keep whatever we already knew about
         # it rather than dropping the record and losing its install digest.
-        known = {item.path: item for item in state.files_for_component(identifier)}
+        # A pruned path is the opposite case: the distribution no longer ships
+        # it, so carrying its record forward left `doctor` reporting MISSING
+        # for a file nothing would ever restore (EMP-LC-012).
+        dropped = plannerlib.pruned_paths(component, plan.changes)
+        known = {item.path: item for item in state.files_for_component(identifier)
+                 if item.path not in dropped}
         merged = {item.path: item for item in entries}
         for path, item in known.items():
             merged.setdefault(path, item)
@@ -158,20 +163,23 @@ def install(project: Path, target_profile: str, *, dry_run: bool = False,
                                          operation=operation)
     notices = _notices(project, distribution, plan, target_profile, adoption)
 
+    from . import lock as locklib
+
     if dry_run or plan.is_noop:
         if plan.is_noop and not dry_run:
-            # Still record the profile if this is the first time we are asked
-            # for it and nothing had to change on disk.
+            # Nothing had to change on disk, but the profile may still need
+            # recording. That is a write to the install state, so it takes the
+            # lock like every other write — an unlocked commit here could
+            # interleave with another operation's own commit.
             if statelib.load(project) is None or state.active_profile != target_profile:
-                state.active_profile = target_profile
-                for identifier in distribution.effective_component_ids(target_profile):
-                    if identifier not in state.installed_components:
-                        state.installed_components.append(identifier)
-                statelib.save(project, state)
+                with locklib.acquire(project, operation, force=force_unlock):
+                    state.active_profile = target_profile
+                    for identifier in distribution.effective_component_ids(target_profile):
+                        if identifier not in state.installed_components:
+                            state.installed_components.append(identifier)
+                    statelib.save(project, state)
         return OperationResult(operation, plan, applied=False, dry_run=dry_run,
                                state=state, notices=notices, legacy=adoption)
-
-    from . import lock as locklib
 
     with locklib.acquire(project, operation, force=force_unlock):
         _blocking_transaction(project)

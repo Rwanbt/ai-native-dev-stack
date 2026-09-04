@@ -45,13 +45,18 @@ class Change:
     source: str | None = None    # distribution-relative source path
     digest: str | None = None    # digest the file will hold after the change
     kind: str = "file"
+    # True when the distribution no longer ships this path. The state must then
+    # stop recording it whatever happened to the file, or `doctor` reports it
+    # MISSING forever and `repair` cannot clear it (EMP-LC-012).
+    pruned: bool = False
 
     def mutates(self) -> bool:
         return self.action in MUTATING_ACTIONS
 
     def to_record(self) -> dict:
         return {"action": self.action, "path": self.path, "component": self.component,
-                "ownership": self.ownership, "reason": self.reason, "kind": self.kind}
+                "ownership": self.ownership, "reason": self.reason, "kind": self.kind,
+                "pruned": self.pruned}
 
 
 @dataclass
@@ -225,13 +230,14 @@ def _prune_changes(project: Path, component: Component, wanted: Iterable[str],
         status = digestlib.classify(target, entry.digest_at_install)
         if status == digestlib.MISSING:
             changes.append(Change(SKIP, entry.path, component.identifier, entry.ownership,
-                                  "removed upstream and already absent"))
+                                  "removed upstream and already absent", pruned=True))
         elif digestlib.is_safe_to_remove(status):
             changes.append(Change(REMOVE, entry.path, component.identifier, entry.ownership,
-                                  "removed upstream"))
+                                  "removed upstream", pruned=True))
         else:
             changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  f"removed upstream but {status} — kept"))
+                                  f"removed upstream but {status} - kept on disk, "
+                                  "no longer tracked", pruned=True))
     return changes
 
 
@@ -378,6 +384,13 @@ def build_uninstall_plan(project: Path, distribution: Distribution, state: Insta
     return plan
 
 
+def pruned_paths(component: Component, changes: Sequence[Change]) -> set[str]:
+    """Paths the distribution no longer ships, whatever became of the file."""
+
+    return {change.path for change in changes
+            if change.component == component.identifier and change.pruned}
+
+
 def managed_entries(component: Component, changes: Sequence[Change]) -> list[ManagedFile]:
     """The state records a successful component install should produce."""
 
@@ -385,7 +398,7 @@ def managed_entries(component: Component, changes: Sequence[Change]) -> list[Man
     for change in changes:
         if change.component != component.identifier:
             continue
-        if change.action in (REMOVE,):
+        if change.action in (REMOVE,) or change.pruned:
             continue
         if change.kind == "data_root":
             entries.append(ManagedFile(change.path, component.identifier, component.ownership,

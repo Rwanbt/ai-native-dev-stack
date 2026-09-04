@@ -306,6 +306,19 @@ class Locking(LifecycleTestCase):
         with locklib.acquire(self.project, "init", force=True):
             pass
 
+    def test_even_a_no_op_install_takes_the_lock_before_writing_state(self):
+        """A no-op still commits the profile, and a commit is a write."""
+
+        from ainative.lifecycle import installer
+        from ainative.lifecycle.errors import LifecycleError
+
+        self.install("standard")
+        with locklib.acquire(self.project, "update"):
+            with self.assertRaises(LifecycleError) as raised:
+                installer.install(self.project, "verified", distribution=self.distribution,
+                                  source=self.source, dry_run=False)
+            self.assertIn(raised.exception.code, ("LOCK_HELD",))
+
     def test_concurrent_installs_do_not_interleave(self):
         outcomes: list[object] = []
 

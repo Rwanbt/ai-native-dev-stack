@@ -81,6 +81,55 @@ class ManagedFileOwnership(LifecycleTestCase):
         self.assertEqual(self.read(".agents/skills/going-away/SKILL.md"), "# I edited this\n",
                          "an edited file removed upstream was deleted")
 
+    def test_pruning_stops_tracking_the_file_it_pruned(self):
+        """An install must not stay unhealthy after a routine update.
+
+        Pruning removed the file and kept its state record, so `doctor`
+        reported MISSING for something nothing would ever restore, `status`
+        exited non-zero for good, and `repair` could not clear it
+        (EMP-LC-012).
+        """
+
+        extended = build_distribution_tree(self.root / "dist-extra", "1.0.0",
+                                           extra_skill="going-away")
+        source_extra = sourcelib.DistributionSource(root=extended.resolve(), origin="test",
+                                                    version="1.0.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "standard", distribution=self.distribution,
+                          source=source_extra)
+        self.assertTrue(any("going-away" in entry.path
+                            for entry in self.state().managed_files))
+
+        installer.install(self.project, "standard", operation="update",
+                          distribution=self.distribution, source=self.source)
+
+        remaining = [entry.path for entry in self.state().managed_files
+                     if "going-away" in entry.path]
+        self.assertEqual(remaining, [], "a pruned file is still recorded as managed")
+        diagnosis = recovery.diagnose(self.project, distribution=self.distribution)
+        self.assertTrue(diagnosis.healthy,
+                        [item for item in diagnosis.findings if item["status"] != "OK"])
+
+    def test_a_pruned_file_the_user_edited_stays_on_disk_and_stops_being_tracked(self):
+        extended = build_distribution_tree(self.root / "dist-extra2", "1.0.0",
+                                           extra_skill="going-away")
+        source_extra = sourcelib.DistributionSource(root=extended.resolve(), origin="test",
+                                                    version="1.0.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "standard", distribution=self.distribution,
+                          source=source_extra)
+        self.write(".claude/skills/going-away/SKILL.md", "# mine now\n")
+        installer.install(self.project, "standard", operation="update",
+                          distribution=self.distribution, source=self.source)
+
+        self.assertEqual(self.read(".claude/skills/going-away/SKILL.md"), "# mine now\n")
+        self.assertEqual([entry.path for entry in self.state().managed_files
+                          if "going-away" in entry.path], [])
+        self.assertTrue(recovery.diagnose(self.project,
+                                          distribution=self.distribution).healthy)
+
     def test_a_pre_existing_unmanaged_file_is_reported_not_overwritten(self):
         self.write("AGENTS.md", "# my own AGENTS.md\n")
         result = self.install("standard")
