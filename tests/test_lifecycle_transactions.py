@@ -490,7 +490,6 @@ class Locking(LifecycleTestCase):
             with locklib.acquire(self.project, "B", force=True):
                 held_by_b = locklib.read(self.project)
                 self.assertIsNotNone(held_by_b)
-                self.assertNotEqual(held_by_b.acquired_at, first.acquired_at)
                 self.assertNotEqual(held_by_b.claim_id, first.claim_id)
             # A's release runs next, and must not touch what B left behind.
         self.assertIsNone(locklib.read(self.project))

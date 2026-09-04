@@ -39,7 +39,7 @@ and a concurrency lock.
 | LOC gate | 34 files, 0 warnings | `cd ainative && node ../hooks/pretool-loc-gate/run_gate.js --all` |
 | Scope + conventions | green | `python scripts/measure_scope.py && python scripts/validate_conventions.py` |
 | Work Plane | not re-run; no Work Plane source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
-| CI | pending the exact SHA pushed after EMP-LC-041 | `gh pr checks 17` |
+| CI | `d3b1276` failed Windows py3.11 only because EMP-LC-036 still assumed timestamp uniqueness; replacement candidate pending | `gh pr checks 17` |
 
 ---
 
@@ -187,6 +187,9 @@ Severity is my own assessment, stated even where it differed from the reporter's
 7. **The restricted Windows sandbox cannot run temporary-file gates**
    (`PermissionError` creating temp dirs); use an unsandboxed runner for those
    gates. CI must still be bound to the exact pushed candidate SHA.
+8. **`acquired_at` is observability, not lock identity.** CI run `33917366196`
+   proved two claims can share it. EMP-LC-041 adds a UUID `claim_id`; tests
+   must assert that identity rather than clock precision.
 
 ---
 
