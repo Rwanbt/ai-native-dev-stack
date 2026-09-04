@@ -179,3 +179,8 @@
 - Legacy records remain readable but cannot authorize a release | location: ainative/lifecycle/lock.py:read, _release | proof: the dead-owner regression loads a record without `claim_id` as `None`, then safely reclaims it; `_release` only unlinks an exact non-empty claim match | confirmed
 - EMP-LC-041 guard is non-vacuous | location: scripts/lifecycle_non_vacuity.py:lock_claim_identity | proof: removing the claim equality makes the deterministic regression fail; the full non-vacuity script passed 33/33 | confirmed
 - The first EMP-LC-041 candidate was CI-red only because EMP-LC-036 still asserted unique timestamps | location: tests/test_lifecycle_transactions.py:Locking.test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock | proof: run 33918969344 fails Windows py3.11 in the locking block after the code fix; the old assertion requires distinct `acquired_at`, which the user-supplied CI observation disproves | confirmed
+
+### EMP-LC-042 SERIALIZED LOCK RELEASE 2026-09-04
+- EMP-LC-042 is TRUE and P1 | location: ainative/lifecycle/lock.py:_release | proof: controlled old read-then-unlink sequence printed `{'observed_a': True, 'b_claim_present_after_old_release': False}` after force-replacing A with B | confirmed
+- Lock claim lifecycle mutations are serialized by a short OS advisory lock outside the project | location: ainative/lifecycle/lock.py:_mutation_guard, acquire | proof: deterministic release/replacement regression and the 174-test lifecycle suite pass; project purge no longer retains a guard file | confirmed
+- EMP-LC-042 guard is non-vacuous | location: scripts/lifecycle_non_vacuity.py:lock_release_is_serialized | proof: `python scripts/lifecycle_non_vacuity.py` -> 34/34 guards proved non-vacuous | confirmed

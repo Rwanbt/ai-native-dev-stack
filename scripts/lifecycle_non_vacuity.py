@@ -251,20 +251,20 @@ CASES = (
         name="lock_atomicity",
         guards="a lock being written must not be mistaken for an invalid one",
         edits=(Edit("ainative/lifecycle/lock.py",
-                    "        if existing is None:\n"
-                    "            # Unreadable. That is either corruption or a claim being made "
+                    "            if existing is None:\n"
+                    "                # Unreadable. That is either corruption or a claim being made "
                     "right\n"
-                    "            # now, and this code cannot tell them apart — so it refuses "
+                    "                # now, and this code cannot tell them apart — so it refuses "
                     "rather\n"
-                    "            # than deleting what may be a live owner's lock.\n"
-                    "            raise LifecycleError(\n"
-                    '                "LOCK_HELD",\n'
-                    '                f"{path} exists but cannot be read as a lock. If no '
+                    "                # than deleting what may be a live owner's lock.\n"
+                    "                raise LifecycleError(\n"
+                    '                    "LOCK_HELD",\n'
+                    '                    f"{path} exists but cannot be read as a lock. If no '
                     'lifecycle "\n'
-                    '                "operation is running, re-run with --force-unlock.")\n',
-                    "        if existing is None:\n"
-                    "            path.unlink(missing_ok=True)\n"
-                    "            continue\n"),),
+                    '                    "operation is running, re-run with --force-unlock.")\n',
+                    "            if existing is None:\n"
+                    "                path.unlink(missing_ok=True)\n"
+                    "                continue\n"),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_a_lock_being_written_is_not_treated_as_invalid"),
     ),
@@ -333,8 +333,8 @@ CASES = (
         name="lock_release_is_owned",
         guards="releasing a lock must not remove one that now belongs to someone else",
         edits=(Edit("ainative/lifecycle/lock.py",
-                    "                _release(project, info)""\n",
-                    "                path.unlink(missing_ok=True)" + '\\n'),),
+                    "            _release(project, info)""\n",
+                    "            path.unlink(missing_ok=True)" + '\\n'),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock"),
     ),
@@ -347,6 +347,16 @@ CASES = (
                     "    if current is not None:\n"),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_same_lock_metadata_does_not_make_an_old_owner_release_the_replacement"),
+    ),
+    Case(
+        name="lock_release_is_serialized",
+        guards="a force replacement cannot slip between release's ownership check and unlink",
+        edits=(Edit("ainative/lifecycle/lock.py",
+                    "        with _mutation_guard(project):\n"
+                    "            _release(project, info)\n",
+                    "        _release(project, info)\n"),),
+        test=("tests.test_lifecycle_transactions.Locking"
+              ".test_release_cannot_delete_a_force_replacement_between_its_check_and_unlink"),
     ),
     Case(
         name="new_file_never_overwritten",
@@ -389,12 +399,12 @@ CASES = (
         name="force_unlock_reports_refusals",
         guards="a refused unlink under --force-unlock must be a lifecycle error",
         edits=(Edit("ainative/lifecycle/lock.py",
-                    "            try:\n"
-                    "                path.unlink(missing_ok=True)\n"
-                    "            except OSError as error:\n",
-                    "            if True:\n"
-                    "                path.unlink(missing_ok=True)\n"
-                    "            elif False:\n"),),
+                    "                try:\n"
+                    "                    path.unlink(missing_ok=True)\n"
+                    "                except OSError as error:\n",
+                    "                if True:\n"
+                    "                    path.unlink(missing_ok=True)\n"
+                    "                elif False:\n"),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_force_unlock_reports_a_refused_unlink_instead_of_a_traceback"),
     ),

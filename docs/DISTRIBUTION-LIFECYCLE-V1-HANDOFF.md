@@ -31,15 +31,15 @@ and a concurrency lock.
 
 | Gate | Result | How to re-run |
 |---|---|---|
-| Lifecycle suite | 173 tests green locally | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
-| Non-vacuity | 33/33 guards proved necessary | `python scripts/lifecycle_non_vacuity.py` |
+| Lifecycle suite | 174 tests green locally | `python -m unittest tests.test_lifecycle_matrix tests.test_lifecycle_ownership tests.test_lifecycle_security tests.test_lifecycle_transactions tests.test_lifecycle_update tests.test_lifecycle_cli` |
+| Non-vacuity | 34/34 guards proved necessary | `python scripts/lifecycle_non_vacuity.py` |
 | Clean install E2E | green, from a wheel with no checkout | `python scripts/lifecycle_clean_install.py` |
 | Dogfood | not re-run after EMP-LC-041 | `python scripts/lifecycle_dogfood.py --output docs/qualification/lifecycle-v1-dogfood.json` |
-| Complexity budget | 0 findings / 445 functions | `python scripts/check_complexity_budget.py` |
-| LOC gate | 34 files, 0 warnings | `cd ainative && node ../hooks/pretool-loc-gate/run_gate.js --all` |
+| Complexity budget | 0 findings / 447 functions | `python scripts/check_complexity_budget.py` |
+| LOC gate | 186 files, 0 blocking (one pre-existing 1464-LOC Work Plane warning) | `node hooks/pretool-loc-gate/run_gate.js --all` |
 | Scope + conventions | green | `python scripts/measure_scope.py && python scripts/validate_conventions.py` |
 | Work Plane | not re-run; no Work Plane source file modified | see `.github/workflows/ci.yml`, job `workplane-v2` |
-| CI | `d3b1276` failed Windows py3.11 only because EMP-LC-036 still assumed timestamp uniqueness; replacement candidate pending | `gh pr checks 17` |
+| CI | `cf2a216` is green ([run 33919506749](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33919506749)); EMP-LC-042 is a new local candidate and still needs its own run | `gh pr checks 17` |
 
 ---
 
@@ -48,7 +48,7 @@ and a concurrency lock.
 **The independent review has not converged.** That is the single thing between
 this branch and a verdict.
 
-The closed list now reaches EMP-LC-041. Round 8 is the next bounded pass; it must
+The closed list now reaches EMP-LC-042. Round 9 is the next bounded pass; it must
 use the closed-findings list below and may only reopen a finding with a new
 reproducer.
 
@@ -157,6 +157,7 @@ Severity is my own assessment, stated even where it differed from the reporter's
 | EMP-LC-039 | P2 | a refused lock unlink escaped as a raw `OSError` instead of an actionable lifecycle error |
 | EMP-LC-040 | P2 | repair rewrote state after dropping orphaned records without first preserving a recoverable copy |
 | EMP-LC-041 | P1 | two acquisitions with the same serialized metadata were indistinguishable, so the old owner could release the replacement lock |
+| EMP-LC-042 | P1 | a claim comparison followed by a separate unlink left a force-replacement window in which an old owner could still remove the new claim |
 
 ### Rejected, with evidence
 
@@ -188,8 +189,11 @@ Severity is my own assessment, stated even where it differed from the reporter's
    (`PermissionError` creating temp dirs); use an unsandboxed runner for those
    gates. CI must still be bound to the exact pushed candidate SHA.
 8. **`acquired_at` is observability, not lock identity.** CI run `33917366196`
-   proved two claims can share it. EMP-LC-041 adds a UUID `claim_id`; tests
-   must assert that identity rather than clock precision.
+    proved two claims can share it. EMP-LC-041 adds a UUID `claim_id`; tests
+    must assert that identity rather than clock precision.
+9. **A claim token does not make a compare-and-delete atomic.** EMP-LC-042
+   serializes short ownership-file mutations with an OS lock outside the
+   project, so purge never retains lifecycle coordination artefacts.
 
 ---
 
@@ -201,8 +205,8 @@ ainative/lifecycle/planner.py       removal_change() — the single deletion dec
 ainative/lifecycle/transaction.py   outcome -> journal -> perform; undo() checks digests
 ainative/lifecycle/state.py         every field that gates a deletion is typed here
 ainative/lifecycle/external.py      whole-line markers, no newline translation
-ainative/lifecycle/lock.py          atomic create-with-content; owned release
-scripts/lifecycle_non_vacuity.py    33 cases; STALE means a guard moved
+ainative/lifecycle/lock.py          atomic create-with-content; owned, serialized release
+scripts/lifecycle_non_vacuity.py    34 cases; STALE means a guard moved
 scripts/lifecycle_clean_install.py  the only gate that runs outside the checkout
 scripts/lifecycle_dogfood.py        the feature judged by the stack it installs
 docs/DISTRIBUTION-LIFECYCLE-V1-QUALIFICATION.md   needs refreshing (§3)

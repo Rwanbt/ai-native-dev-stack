@@ -17,6 +17,7 @@ owner's lock is exactly the failure the lock exists to prevent.
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import tempfile
@@ -55,6 +56,65 @@ class LockInfo:
 
 def lock_path(project: Path) -> Path:
     return project / LOCK_RELATIVE
+
+
+def _mutation_guard_path(project: Path) -> Path:
+    """A per-project OS-lock file that is not lifecycle data.
+
+    Keeping this coordination primitive below `.ai-native/lifecycle` made a
+    completed purge retain the lifecycle directory.  The lock belongs to the
+    running processes, not to the installed project, so it lives in the system
+    temporary directory and has a stable opaque name derived from the resolved
+    project path.
+    """
+
+    identity = str(project.resolve(strict=False)).encode("utf-8")
+    name = hashlib.sha256(identity).hexdigest() + ".lock"
+    return Path(tempfile.gettempdir()) / "ainative-lock-guards" / name
+
+
+@contextmanager
+def _mutation_guard(project: Path) -> Iterator[None]:
+    """Serialize ownership-file mutations without extending the lifecycle lock.
+
+    A claim comparison and an unlink are separate filesystem operations.  A
+    second lifecycle process could force-replace a claim in that interval, so
+    the old owner would still unlink the replacement despite distinct claim
+    IDs.  This short-lived OS lock covers every create, reclaim, force-remove,
+    and release decision; it is never held while an operation mutates project
+    files.  The operating system releases it if a process crashes.
+    """
+
+    path = _mutation_guard_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+    locked = False
+    try:
+        if os.fstat(descriptor).st_size == 0:
+            os.write(descriptor, b"\\0")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        locked = True
+        yield
+    finally:
+        if locked:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
 ERROR_INVALID_PARAMETER = 87
@@ -227,54 +287,57 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
                     host=_hostname(), claim_id=str(uuid.uuid4()))
     payload = json.dumps(info.to_record(), sort_keys=True) + "\n"
 
-    for attempt in range(2):
-        try:
-            won = _claim(path, payload)
-        except FileExistsError:
-            won = False
-        except OSError as error:
-            if error.errno == errno.EACCES:
-                raise LifecycleError("LOCK_HELD", f"cannot create {path}: {error}") from error
-            raise
-
-        if won:
+    with _mutation_guard(project):
+        for attempt in range(2):
             try:
-                yield info
-            finally:
-                _release(project, info)
-            return
-
-        existing = read(project)
-        if attempt == 0 and force:
-            # A human said this lock is stale. Retrying without removing it
-            # just failed again on the next attempt (EMP-LC-008).
-            try:
-                path.unlink(missing_ok=True)
+                won = _claim(path, payload)
+            except FileExistsError:
+                won = False
             except OSError as error:
-                # A refused unlink is a refusal to report, not a traceback
-                # to print at the user (EMP-LC-039).
+                if error.errno == errno.EACCES:
+                    raise LifecycleError("LOCK_HELD", f"cannot create {path}: {error}") from error
+                raise
+
+            if won:
+                break
+
+            existing = read(project)
+            if attempt == 0 and force:
+                # A human said this lock is stale. Retrying without removing it
+                # just failed again on the next attempt (EMP-LC-008).
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as error:
+                    # A refused unlink is a refusal to report, not a traceback
+                    # to print at the user (EMP-LC-039).
+                    raise LifecycleError(
+                        "LOCK_HELD",
+                        f"cannot remove {path}: {error}") from error
+                continue
+            if existing is None:
+                # Unreadable. That is either corruption or a claim being made right
+                # now, and this code cannot tell them apart — so it refuses rather
+                # than deleting what may be a live owner's lock.
                 raise LifecycleError(
                     "LOCK_HELD",
-                    f"cannot remove {path}: {error}") from error
-            continue
-        if existing is None:
-            # Unreadable. That is either corruption or a claim being made right
-            # now, and this code cannot tell them apart — so it refuses rather
-            # than deleting what may be a live owner's lock.
+                    f"{path} exists but cannot be read as a lock. If no lifecycle "
+                    "operation is running, re-run with --force-unlock.")
+            if attempt == 0 and _reclaim_if_dead(project, existing):
+                continue
             raise LifecycleError(
                 "LOCK_HELD",
-                f"{path} exists but cannot be read as a lock. If no lifecycle "
-                "operation is running, re-run with --force-unlock.")
-        if attempt == 0 and _reclaim_if_dead(project, existing):
-            continue
-        raise LifecycleError(
-            "LOCK_HELD",
-            f"another lifecycle operation holds the lock (pid {existing.pid}, "
-            f"{existing.operation or 'unknown'}). If that process is gone, "
-            f"re-run with --force-unlock.",
-            holder=existing.to_record()) from None
+                f"another lifecycle operation holds the lock (pid {existing.pid}, "
+                f"{existing.operation or 'unknown'}). If that process is gone, "
+                f"re-run with --force-unlock.",
+                holder=existing.to_record()) from None
+        else:
+            raise LifecycleError("LOCK_HELD", f"could not acquire {path} after reclaiming a stale lock")
 
-    raise LifecycleError("LOCK_HELD", f"could not acquire {path} after reclaiming a stale lock")
+    try:
+        yield info
+    finally:
+        with _mutation_guard(project):
+            _release(project, info)
 
 
 __all__ = ["LockInfo", "lock_path", "read", "describe", "acquire", "LOCK_RELATIVE",

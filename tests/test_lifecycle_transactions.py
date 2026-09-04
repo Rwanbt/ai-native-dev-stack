@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -517,6 +518,70 @@ class Locking(LifecycleTestCase):
                 self.assertEqual(locklib.read(self.project), held_by_b)
             finally:
                 owner_b.__exit__(None, None, None)
+
+    def test_release_cannot_delete_a_force_replacement_between_its_check_and_unlink(self):
+        """Release and force replacement must share one mutation boundary.
+
+        Comparing claim IDs is insufficient if B can replace A after A reads its
+        own claim but before A unlinks it.  The events force that exact
+        interleaving without depending on filesystem scheduling.
+        """
+
+        owner_a = locklib.acquire(self.project, "update")
+        first = owner_a.__enter__()
+        read_started = threading.Event()
+        contender_attempted = threading.Event()
+        replacement_entered = threading.Event()
+        release_replacement = threading.Event()
+        failures: list[BaseException] = []
+        holder: list[object] = []
+        real_read = locklib.read
+        real_guard = locklib._mutation_guard
+        release_guard_entered = threading.Event()
+
+        @contextmanager
+        def observed_guard(project):
+            if threading.current_thread() is threading.main_thread():
+                release_guard_entered.set()
+            with real_guard(project):
+                yield
+
+        def read_after_replacement(project):
+            current = real_read(project)
+            if threading.current_thread() is threading.main_thread() and not read_started.is_set():
+                read_started.set()
+                self.assertTrue(contender_attempted.wait(timeout=2))
+            return current
+
+        def replace_owner():
+            try:
+                self.assertTrue(read_started.wait(timeout=2))
+                contender_attempted.set()
+                owner_b = locklib.acquire(self.project, "update", force=True)
+                held_by_b = owner_b.__enter__()
+                holder.extend((owner_b, held_by_b))
+                replacement_entered.set()
+                self.assertTrue(release_replacement.wait(timeout=2))
+                owner_b.__exit__(None, None, None)
+            except BaseException as error:  # assert after the thread joins
+                failures.append(error)
+
+        worker = threading.Thread(target=replace_owner)
+        worker.start()
+        try:
+            with mock.patch.object(locklib, "read", side_effect=read_after_replacement), \
+                 mock.patch.object(locklib, "_mutation_guard", side_effect=observed_guard):
+                owner_a.__exit__(None, None, None)
+            self.assertTrue(replacement_entered.wait(timeout=2))
+            self.assertTrue(release_guard_entered.is_set())
+            self.assertFalse(failures)
+            self.assertEqual(locklib.read(self.project), holder[1])
+            self.assertNotEqual(first.claim_id, holder[1].claim_id)
+        finally:
+            release_replacement.set()
+            worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(failures)
 
     def test_a_lock_being_written_is_not_treated_as_invalid(self):
         """`O_EXCL` made existence atomic; the payload was written after.
