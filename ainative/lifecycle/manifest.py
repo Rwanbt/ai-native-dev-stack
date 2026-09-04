@@ -216,13 +216,16 @@ def _build_profile(name: str, raw: Any) -> Profile:
 
 
 def _reject_collisions(components: Mapping[str, Component]) -> None:
-    """Two destinations that differ only in case are one file on Windows."""
+    """Two destinations that differ only in case are one path on Windows.
+
+    Trees are checked too. Excluding them left the guard blind to exactly the
+    case it exists for — two directory components landing on the same path
+    would have interleaved, each pruning the other's files (EMP-LC-015).
+    """
 
     seen: dict[str, str] = {}
     for identifier, component in components.items():
-        if component.kind in (KIND_DATA_ROOT, KIND_TREE):
-            continue
-        if not component.destination:
+        if component.kind == KIND_DATA_ROOT or not component.destination:
             continue
         key = collision_key(component.destination)
         if key in seen and seen[key] != identifier:

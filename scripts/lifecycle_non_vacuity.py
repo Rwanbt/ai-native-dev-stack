@@ -147,7 +147,31 @@ CASES = (
                     "                self._apply(change)\n"
                     "            self._verify()\n"),),
         test=("tests.test_lifecycle_transactions.TransactionSafety"
-              ".test_a_failure_partway_through_leaves_the_old_profile_recorded"),
+              ".test_a_kill_partway_through_leaves_the_old_profile_recorded"),
+    ),
+    Case(
+        name="rollback_completeness",
+        guards="reversing an update must remove what it created, not only restore "
+               "what it replaced",
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        elif record.get(\"action\") == plannerlib.CREATE and target.is_file():\n"
+                    "            # Created by this transaction, so there is nothing to restore: the\n"
+                    "            # previous state did not have it. Leaving it behind is what made\n"
+                    "            # `update rollback` produce a v1 project holding v2's new files.\n"
+                    "            target.unlink(missing_ok=True)\n"
+                    "            removed.append(path)\n",
+                    "        elif False:\n            pass\n"),),
+        test=("tests.test_lifecycle_update.UpdateRecovery"
+              ".test_rollback_also_removes_the_files_the_update_created"),
+    ),
+    Case(
+        name="purge_recovery_gate",
+        guards="purging user data must refuse while a transaction is unrecovered",
+        edits=(Edit("ainative/lifecycle/uninstaller.py",
+                    "    pending = txnlib.interrupted(project)\n    if pending and not dry_run:\n",
+                    "    pending = txnlib.interrupted(project)\n    if False:\n"),),
+        test=("tests.test_lifecycle_transactions.TransactionSafety"
+              ".test_no_mutation_runs_while_a_transaction_is_interrupted"),
     ),
     Case(
         name="interrupted_blocks",

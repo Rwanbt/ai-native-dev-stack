@@ -212,6 +212,16 @@ def purge_profile(project: Path, profile_name: str, *, dry_run: bool = False,
         raise LifecycleError("NOT_INSTALLED",
                              f"no AI Native installation recorded in {project}")
 
+    # The same gate every other mutation passes. Purge is the most destructive
+    # operation there is, and it was the one running on a project whose last
+    # transaction never finished (EMP-LC-016).
+    pending = txnlib.interrupted(project)
+    if pending and not dry_run:
+        raise LifecycleError("TRANSACTION_IN_PROGRESS",
+                             "an interrupted transaction must be repaired before data "
+                             "can be purged: run `ainative repair`.",
+                             transactions=txnlib.summarise(pending))
+
     own = set(distribution.profile(profile_name).components)
     plan = Plan(operation=f"profile-purge-{profile_name}", project=project,
                 from_profile=state.active_profile, to_profile=state.active_profile)

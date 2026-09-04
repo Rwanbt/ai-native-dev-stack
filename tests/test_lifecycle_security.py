@@ -172,6 +172,25 @@ class TamperedManifests(unittest.TestCase):
             manifestlib.load(directory)
         self.assertEqual(raised.exception.code, "MANIFEST_INVALID")
 
+    def test_two_tree_components_colliding_under_case_folding_are_refused(self):
+        """Trees are the case the guard exists for, and were the case it skipped.
+
+        Two directory components landing on the same path on a
+        case-insensitive filesystem would interleave, each pruning the other's
+        files (EMP-LC-015).
+        """
+
+        directory = self._write(
+            self.root / "trees",
+            {"one": {"kind": "tree", "ownership": "MANAGED_IMMUTABLE",
+                     "source": "skills", "destination": "Skills"},
+             "two": {"kind": "tree", "ownership": "MANAGED_IMMUTABLE",
+                     "source": "skills", "destination": "skills"}},
+            {"standard": {"extends": None, "components": ["one", "two"]}})
+        with self.assertRaises(LifecycleError) as raised:
+            manifestlib.load(directory)
+        self.assertEqual(raised.exception.code, "MANIFEST_INVALID")
+
     def test_two_components_colliding_under_case_folding_are_refused(self):
         directory = self._write(
             self.root / "e",

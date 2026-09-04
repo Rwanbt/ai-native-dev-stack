@@ -190,8 +190,13 @@ The journal at `.ai-native/lifecycle/transactions/<id>.json` records:
 
 ```
 operation · from_profile · to_profile · planned_changes · completed_changes
-backup_location · state · started_at · finished_at · stack_version
+backup_location · state_backed_up · state · started_at · finished_at · stack_version
 ```
+
+The install state is backed up alongside the files, so reversing a transaction
+puts the record back as well as the bytes. It is also the only record of a
+reversible update: `ainative update rollback` reads the journal rather than a
+second file written after the commit.
 
 States: `PREPARED → APPLYING → COMMITTED | ROLLED_BACK`. Anything found in
 `APPLYING` at the next run is `INTERRUPTED`, which blocks further mutation
@@ -368,10 +373,16 @@ matches keeps its content; the new version is written beside it as
 a deterministic merge of arbitrary content is not available here, and an LLM
 merge has no place in a core that must produce the same result twice.
 
-**Rollback scope.** `ainative update rollback` restores the *project's installed
-assets* from the update transaction's backup, while that transaction is still
-retained (the last 5). It cannot restore a Python package installed elsewhere on
-the machine and does not claim to; reinstall that with your package manager.
+**Rollback scope.** `ainative update rollback` reverses the update transaction:
+files it replaced come back from the backup, files it *created* are removed, and
+the install state saved before the commit is put back. It works while that
+transaction is still retained (the last 5), and it is derived from the journal
+itself rather than from a second record beside it — so there is no window in
+which an update has been applied and cannot be reversed.
+
+It cannot restore a Python package installed elsewhere on the machine and does
+not claim to; reinstall that with your package manager. It also leaves any
+`<name>.new` file a conflict produced: those are yours to compare and delete.
 
 ### Two update surfaces, deliberately
 
@@ -465,6 +476,7 @@ would let the lifecycle layer assert authority over Verified state.
 | `profile switch verified` | kept | kept | kept | kept | region refreshed |
 | `profile switch standard` | Verified integration removed | kept | kept | **kept (dormant)** | region refreshed |
 | `update` | replaced | **kept**, `.new` written beside | kept | kept | region refreshed |
+| `update rollback` | restored; files the update added are removed | **kept** — `.new` files stay | kept | kept | region restored |
 | `repair` | restored if missing | **kept** | kept | kept | region restored |
 | `uninstall` | removed | **kept** | kept | **kept** | region removed |
 | `uninstall --purge` | removed | **kept** | removed if a declared data root | **removed** | region removed |
@@ -549,6 +561,5 @@ reinterpreted by the dispatcher.
         ├── transactions/<id>.json     the journal
         ├── backups/<id>/              transaction-scoped, last 5 retained
         ├── update-cache.json          the cached check
-        ├── rollback.json              how to undo the last update
         └── lifecycle.lock             held only during a mutation
 ```

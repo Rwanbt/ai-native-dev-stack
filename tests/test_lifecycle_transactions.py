@@ -107,13 +107,14 @@ class TransactionSafety(LifecycleTestCase):
                          "the state changed even though the commit failed")
         self.assertEqual(statelib.load(self.project).active_profile, "standard")
 
-    def test_a_failure_partway_through_leaves_the_old_profile_recorded(self):
+    def test_a_kill_partway_through_leaves_the_old_profile_recorded(self):
         """The ordering test: state committed last, not first.
 
-        Interrupting at the commit only proves the commit can fail. This
-        interrupts *after* some changes have landed and asserts the state still
-        describes the old install — which is false the moment `commit()` is
-        moved ahead of the apply loop.
+        A process that is killed performs no rollback, and that is the case
+        commit-last exists for — the state on disk must still describe the
+        install that is actually there. Interrupting with an exception cannot
+        show this any more, because the rollback path now restores the state
+        too; so this models a kill by disabling the rollback.
         """
 
         from ainative.lifecycle import installer
@@ -121,9 +122,33 @@ class TransactionSafety(LifecycleTestCase):
         self.install("standard")
         self.assertEqual(statelib.load(self.project).active_profile, "standard")
 
-        # Drive the real install path, with the real commit, and interrupt it
-        # partway. A lambda that saves an unmodified state would not notice the
-        # ordering at all — the production commit is what mutates the profile.
+        class KilledPartway(_Interrupting):
+            stop_after = 1
+
+            def rollback(self):
+                return  # a killed process never gets here
+
+        original = txnlib.Applier
+        txnlib.Applier = KilledPartway
+        self.addCleanup(setattr, txnlib, "Applier", original)
+        with self.assertRaises(Interruption):
+            installer.install(self.project, "verified", distribution=self.distribution,
+                              source=self.source)
+
+        current = statelib.load(self.project)
+        self.assertEqual(current.active_profile, "standard",
+                         "the state recorded the new profile for a transaction that "
+                         "never finished")
+        self.assertNotIn("verified-workplane", current.installed_components)
+
+    def test_a_failure_partway_through_rolls_back_and_keeps_the_old_state(self):
+        """The graceful path: an exception rolls files *and* state back."""
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+        before = self.read(".ai-native/lifecycle/state.json")
+
         class OneChangeThenDies(_Interrupting):
             stop_after = 1
 
@@ -134,10 +159,8 @@ class TransactionSafety(LifecycleTestCase):
             installer.install(self.project, "verified", distribution=self.distribution,
                               source=self.source)
 
-        current = statelib.load(self.project)
-        self.assertEqual(current.active_profile, "standard",
-                         "the state recorded the new profile for a transaction that failed")
-        self.assertNotIn("verified-workplane", current.installed_components)
+        self.assertEqual(self.read(".ai-native/lifecycle/state.json"), before)
+        self.assertFalse(self.exists(".ai-native/lifecycle/verified.json"))
 
     def test_an_interrupted_journal_is_detected_and_blocks_further_mutation(self):
         plan, _, _ = self._plan()
@@ -151,6 +174,39 @@ class TransactionSafety(LifecycleTestCase):
             self.install("standard")
         self.assertEqual(raised.exception.code, "TRANSACTION_IN_PROGRESS")
         self.assertEqual(raised.exception.exit_code, 3)
+
+    def test_no_mutation_runs_while_a_transaction_is_interrupted(self):
+        """Every mutating entry point passes the same gate, purge included.
+
+        `profile purge verified` was the one that did not, so the most
+        destructive operation in the CLI ran on a project whose last
+        transaction never finished (EMP-LC-016).
+        """
+
+        from ainative.lifecycle import uninstaller
+
+        self.install("verified")
+        self.seed_verified_history()
+        journal = txnlib.Journal(identifier="txn_stuck", operation="update",
+                                 from_profile="verified", to_profile="verified",
+                                 state=txnlib.APPLYING)
+        txnlib.write_journal(self.project, journal)
+
+        for name, call in (
+            ("init", lambda: self.install("verified")),
+            ("switch", lambda: self.switch("standard")),
+            ("uninstall", lambda: self.uninstall()),
+            ("purge", lambda: uninstaller.purge_profile(
+                self.project, "verified", assume_yes=True,
+                distribution=self.distribution)),
+        ):
+            with self.subTest(operation=name):
+                with self.assertRaises(LifecycleError) as raised:
+                    call()
+                self.assertEqual(raised.exception.code, "TRANSACTION_IN_PROGRESS")
+                self.assertEqual(raised.exception.exit_code, 3)
+        self.assertTrue(self.exists(".ai-native/work/w1/manifest.json"),
+                        "a refused mutation destroyed data anyway")
 
     def test_repair_recovers_an_interrupted_transaction(self):
         self.install("standard")

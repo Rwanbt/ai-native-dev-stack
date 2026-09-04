@@ -256,6 +256,28 @@ class UpdateRecovery(LocalReleaseFixture):
             updaterlib.rollback(self.project)
         self.assertEqual(raised.exception.code, "ROLLBACK_UNAVAILABLE")
 
+    def test_rollback_needs_no_record_beside_the_journal(self):
+        """The journal is the only record, so there is no window without one.
+
+        A separate rollback file had to be written after the transaction
+        committed; a crash in between left an update applied and unreversible
+        (EMP-LC-017).
+        """
+
+        self.install("standard")
+        self.assertIsNone(updaterlib.rollback_candidate(self.project))
+        updaterlib.apply(self.project, distribution=self.distribution)
+
+        candidate = updaterlib.rollback_candidate(self.project)
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.operation, "update")
+        self.assertFalse((self.project / ".ai-native/lifecycle/rollback.json").exists(),
+                         "a second rollback record is still being written")
+
+        updaterlib.rollback(self.project)
+        self.assertIsNone(updaterlib.rollback_candidate(self.project),
+                          "the same update can be rolled back twice")
+
     def test_rollback_is_refused_when_the_backup_was_pruned(self):
         self.install("standard")
         updaterlib.apply(self.project, distribution=self.distribution)

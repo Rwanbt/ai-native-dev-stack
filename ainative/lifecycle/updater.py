@@ -44,7 +44,6 @@ DISABLED = "DISABLED"
 
 DISABLE_ENV = "AINATIVE_NO_UPDATE_CHECK"
 STAGED_RELATIVE = statelib.LIFECYCLE_DIRNAME / "staged"
-ROLLBACK_RELATIVE = statelib.LIFECYCLE_DIRNAME / "rollback.json"
 
 # A zip that expands to more than this, or holds more entries, is refused before
 # a single byte is written. Both are classic archive bombs.
@@ -243,18 +242,27 @@ def _distribution_root(extracted: Path) -> Path:
                          "release archive does not contain a stack distribution")
 
 
-def _record_rollback(project: Path, state: statelib.InstallState, journal: str,
-                     from_version: str, to_version: str) -> None:
-    statelib.write_atomic(project / ROLLBACK_RELATIVE, json.dumps({
-        "schema_version": 1,
-        "transaction": journal,
-        "from_version": from_version,
-        "to_version": to_version,
-        "profile": state.active_profile,
-        "recorded_at": statelib.now(),
-        "scope": ("project assets only — this record cannot restore a globally "
-                  "installed Python package"),
-    }, indent=2, sort_keys=True) + "\n")
+ROLLBACK_SCOPE = ("project assets only - this cannot restore a Python package "
+                  "installed elsewhere on the machine")
+
+
+def rollback_candidate(project: Path):
+    """The most recent committed update that can still be reversed.
+
+    Derived from the transaction journal rather than from a second file beside
+    it. A separate record had to be written after the transaction committed,
+    which left a window where an update had been applied and could no longer be
+    rolled back (EMP-LC-017). The journal already knows everything that record
+    held, and `undo` marks it ROLLED_BACK, so a reversal cannot run twice.
+    """
+
+    from . import transaction as txnlib
+
+    candidates = [item for item in txnlib.read_journals(project)
+                  if item.operation == "update" and item.state == txnlib.COMMITTED
+                  and item.state_backed_up and item.backup_location
+                  and (project / item.backup_location).is_dir()]
+    return max(candidates, key=lambda item: item.started_at, default=None)
 
 
 def apply(project: Path, *, dry_run: bool = False, force: bool = False,
@@ -299,12 +307,9 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
 
         result = installerlib.install(project, state.active_profile, operation="update",
                                       distribution=distribution, source=staged_source)
-        if result.transaction:
-            _record_rollback(project, state, result.transaction, state.stack_version,
-                             staged_source.version)
         return UpdateResult(True, False, state.stack_version, staged_source.version, outcome,
                             result.plan.to_record(), conflicts, result.transaction,
-                            rollback_available=bool(result.transaction))
+                            rollback_available=rollback_candidate(project) is not None)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -345,24 +350,15 @@ def rollback(project: Path, *, dry_run: bool = False) -> dict:
     from . import transaction as txnlib
 
     project = installerlib.require_project(project)
-    record_path = project / ROLLBACK_RELATIVE
-    try:
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        raise LifecycleError("ROLLBACK_UNAVAILABLE",
-                             "no update rollback metadata recorded for this project") from None
-
-    identifier = str(record.get("transaction", ""))
-    journals = {item.identifier: item for item in txnlib.read_journals(project)}
-    journal = journals.get(identifier)
+    journal = rollback_candidate(project)
     if journal is None:
-        raise LifecycleError("ROLLBACK_UNAVAILABLE",
-                             f"transaction {identifier} is no longer retained; "
-                             "its backup has been pruned")
-    backup = project / (journal.backup_location or "")
-    if not journal.backup_location or not backup.is_dir():
-        raise LifecycleError("ROLLBACK_UNAVAILABLE",
-                             f"transaction {identifier} kept no backup to restore from")
+        raise LifecycleError(
+            "ROLLBACK_UNAVAILABLE",
+            "no reversible update found for this project: either none has been "
+            "applied, the last one was already rolled back, or its backup has "
+            "been pruned")
+    identifier = journal.identifier
+    previous = _backed_up_version(project, journal)
 
     # Reversing the update means both halves: files it replaced come back from
     # the backup, and files it *created* go away. Restoring only the first left
@@ -376,32 +372,37 @@ def rollback(project: Path, *, dry_run: bool = False) -> dict:
                           and item.get("action") == "CREATE")
     if dry_run:
         return {"operation": "update rollback", "dry_run": True,
-                "transaction": identifier, "to_version": record.get("from_version"),
+                "transaction": identifier, "to_version": previous,
                 "would_restore": would_restore, "would_remove": would_remove,
-                "scope": record.get("scope", "")}
+                "scope": ROLLBACK_SCOPE}
 
     from . import lock as locklib
 
     with locklib.acquire(project, "update-rollback"):
         outcome = txnlib.undo(project, journal)
-        state = statelib.load(project)
-        if state is not None and not outcome["install_state_restored"]:
-            # No saved state to put back (a transaction from before this was
-            # recorded). Say what we can rather than leaving a stale version.
-            state.stack_version = str(record.get("from_version", state.stack_version))
-            state.source_version = state.stack_version
-            statelib.save(project, state)
-        record_path.unlink(missing_ok=True)
     return {"operation": "update rollback", "dry_run": False, "transaction": identifier,
-            "to_version": record.get("from_version"), "restored": outcome["restored"],
+            "to_version": previous, "restored": outcome["restored"],
             "removed": outcome["removed"],
             "install_state_restored": outcome["install_state_restored"],
-            "scope": record.get("scope", "")}
+            "scope": ROLLBACK_SCOPE}
+
+
+def _backed_up_version(project: Path, journal) -> str | None:
+    """The stack version the saved install state carried, if it can be read."""
+
+    if not journal.backup_location:
+        return None
+    saved = project / journal.backup_location / statelib.STATE_RELATIVE
+    try:
+        return str(json.loads(saved.read_text(encoding="utf-8")).get("stack_version"))
+    except (OSError, ValueError):
+        return None
 
 
 __all__ = [
     "UP_TO_DATE", "UPDATE_AVAILABLE", "OFFLINE", "CHECK_FAILED", "DISABLED", "DISABLE_ENV",
     "CheckResult", "check", "cached_notice", "checks_disabled",
-    "UpdateResult", "apply", "rollback", "cache_path", "ROLLBACK_RELATIVE",
+    "UpdateResult", "apply", "rollback", "rollback_candidate", "cache_path",
+    "ROLLBACK_SCOPE",
     "MAX_EXPANDED_BYTES", "MAX_ARCHIVE_ENTRIES",
 ]
