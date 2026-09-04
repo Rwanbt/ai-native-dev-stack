@@ -261,21 +261,60 @@ class Applier:
 
     # --- individual actions ---------------------------------------------
 
-    def _write_file(self, change: Change, target: Path) -> None:
+    # An outcome is what a change will leave on disk: the bytes to write, or
+    # DELETED when the path is to disappear. Deciding it *before* the journal
+    # entry is what lets the entry carry the resulting digest, and that digest
+    # is what stops an undo from clobbering an edit made in between.
+    DELETED = object()
+
+    def _file_payload(self, change: Change) -> bytes:
         component = self.distribution.component(change.component)
         if component.kind == manifestlib.KIND_MARKER:
             if self.source is None:
                 raise LifecycleError("APPLY_FAILED",
                                      f"no distribution source to write {change.path}")
-            payload = plannerlib.marker_payload(
+            return plannerlib.marker_payload(
                 component, self.source, self.plan.to_profile or "standard").encode("utf-8")
-        else:
-            if self.source is None or change.source is None:
-                raise LifecycleError("APPLY_FAILED",
-                                     f"no distribution source to install {change.path}")
-            payload = self.source.path(change.source).read_bytes()
-        statelib.write_bytes_atomic(target, payload)
-        self._make_executable_if_declared(component, change, target)
+        if self.source is None or change.source is None:
+            raise LifecycleError("APPLY_FAILED",
+                                 f"no distribution source to install {change.path}")
+        return self.source.path(change.source).read_bytes()
+
+    def _block_outcome(self, change: Change, target: Path, *, remove: bool):
+        component = self.distribution.component(change.component)
+        spec = plannerlib.block_spec(component)
+        content, changed = (external.remove(target, spec) if remove
+                            else external.apply(target, spec))
+        if not changed:
+            return None
+        if content is None:
+            return self.DELETED
+        return content.encode("utf-8")
+
+    def _outcome(self, change: Change, target: Path):
+        """What this change will leave on disk, or None when it does nothing."""
+
+        if change.action in (plannerlib.CREATE, plannerlib.REPLACE):
+            return self._file_payload(change)
+        if change.action == plannerlib.REMOVE:
+            return self.DELETED
+        if change.action == plannerlib.BLOCK_WRITE:
+            return self._block_outcome(change, target, remove=False)
+        if change.action == plannerlib.BLOCK_REMOVE:
+            return self._block_outcome(change, target, remove=True)
+        return None
+
+    def _perform(self, change: Change, target: Path, outcome) -> None:
+        if change.action == plannerlib.REMOVE:
+            self._remove_path(change, target)
+            return
+        if outcome is self.DELETED:
+            target.unlink(missing_ok=True)
+            return
+        statelib.write_bytes_atomic(target, outcome)
+        if change.action in (plannerlib.CREATE, plannerlib.REPLACE):
+            self._make_executable_if_declared(
+                self.distribution.component(change.component), change, target)
 
     @staticmethod
     def _make_executable_if_declared(component: Component, change: Change, target: Path) -> None:
@@ -311,44 +350,29 @@ class Applier:
             except OSError:
                 return
 
-    def _apply_block(self, change: Change, target: Path, *, remove: bool) -> None:
-        component = self.distribution.component(change.component)
-        spec = plannerlib.block_spec(component)
-        if remove:
-            content, changed = external.remove(target, spec)
-            if not changed:
-                return
-            if content is None:
-                target.unlink(missing_ok=True)
-                return
-            statelib.write_atomic(target, content)
-            return
-        content, changed = external.apply(target, spec)
-        if changed:
-            statelib.write_atomic(target, content)
-
     def _apply(self, change: Change) -> None:
         target = resolve_within(self.project, change.path)
+        outcome = self._outcome(change, target)
+        if outcome is None:
+            return                        # nothing to do; nothing to record
+
         self._backup(change, target)
         # Recorded before the write, and persisted immediately. Appending to an
         # in-memory list and only writing the journal at commit meant a killed
         # process left `completed_changes: []`, so `repair` had nothing to undo
-        # and the half-applied files stayed (EMP-LC-031). Recording a change
-        # that then did not happen is harmless: the backup is already taken, so
-        # restoring it is a no-op, and removing a CREATE that never landed is
-        # `missing_ok`.
-        self.journal.completed_changes.append(change.to_record())
+        # and the half-applied files stayed (EMP-LC-031).
+        #
+        # `result_digest` is what the change is about to produce. An undo
+        # compares it with what is on disk, so a file somebody edited between
+        # the interruption and the repair is left alone instead of being
+        # silently overwritten or deleted (EMP-LC-032).
+        record = change.to_record()
+        record["result_digest"] = (None if outcome is self.DELETED
+                                   else digestlib.digest_bytes(outcome))
+        self.journal.completed_changes.append(record)
         write_journal(self.project, self.journal)
-        if change.action in (plannerlib.CREATE, plannerlib.REPLACE):
-            self._write_file(change, target)
-        elif change.action == plannerlib.REMOVE:
-            self._remove_path(change, target)
-        elif change.action == plannerlib.BLOCK_WRITE:
-            self._apply_block(change, target, remove=False)
-        elif change.action == plannerlib.BLOCK_REMOVE:
-            self._apply_block(change, target, remove=True)
-        else:
-            return
+
+        self._perform(change, target, outcome)
         self.applied.append((change, target))
 
     # --- verification ----------------------------------------------------
@@ -382,15 +406,15 @@ class Applier:
         self.journal.state_backed_up = True
 
     def rollback(self) -> None:
-        for change, target in reversed(self.applied):
-            try:
-                self._restore(change, target)
-            except OSError:
-                continue
-        restore_install_state(self.project, self.journal)
-        self.journal.state = ROLLED_BACK
-        self.journal.finished_at = statelib.now()
-        write_journal(self.project, self.journal)
+        """Undo from the journal, which is the record of what was attempted.
+
+        Walking `self.applied` missed any change that was written and then
+        raised before being appended to it — a `chmod` failure left the bytes
+        on disk and out of the rollback (EMP-LC-034). The journal is written
+        before each change, so it is the authoritative list.
+        """
+
+        undo(self.project, self.journal)
 
     # --- entry point -----------------------------------------------------
 
@@ -436,19 +460,23 @@ def restore_install_state(project: Path, journal: Journal) -> bool:
 def undo(project: Path, journal: Journal) -> dict:
     """Reverse one transaction's completed changes, files and state alike.
 
-    Deterministic and conservative: it restores every path the journal recorded
-    as completed, removes a file that was created and therefore has no backup,
-    and puts the install state back. It never guesses at a change that was
-    planned but not recorded as completed — that change never ran.
+    Deterministic and conservative on both axes. It restores every path the
+    journal recorded, removes a file that was created and therefore has no
+    backup, and puts the install state back — but only where the path still
+    holds what the transaction left there. A file somebody changed between the
+    interruption and the repair is reported as a conflict and left alone: a
+    recovery that overwrites the user's fix is not a recovery (EMP-LC-032).
+
+    It never guesses at a change that was planned but not recorded — that
+    change never ran — and it ignores any record whose action this code does
+    not write or whose path does not resolve inside the project.
     """
 
     restored: list[str] = []
     removed: list[str] = []
+    conflicts: list[str] = []
     backup_root = project / journal.backup_location if journal.backup_location else None
     for record in reversed(journal.completed_changes):
-        # The journal is a file inside the project, so its records are data.
-        # A record naming an action this code never writes, or a path that does
-        # not resolve inside the project, governs nothing.
         path = record.get("path")
         if not isinstance(path, str) or record.get("action") not in plannerlib.ACTIONS:
             continue
@@ -456,6 +484,11 @@ def undo(project: Path, journal: Journal) -> dict:
             target = resolve_within(project, path)
         except LifecycleError:
             continue
+
+        if not _still_ours(target, record):
+            conflicts.append(path)
+            continue
+
         saved = backup_root / path if backup_root else None
         if saved is not None and saved.is_dir():
             shutil.copytree(saved, target, dirs_exist_ok=True, symlinks=True)
@@ -477,7 +510,26 @@ def undo(project: Path, journal: Journal) -> dict:
     write_journal(project, journal)
     return {"transaction": journal.identifier, "action": "rolled_back",
             "restored": sorted(restored), "removed": sorted(removed),
+            "conflicts": sorted(conflicts),
             "install_state_restored": state_restored}
+
+
+def _still_ours(target: Path, record: dict) -> bool:
+    """True when the path still holds what the transaction left there.
+
+    A record written before `result_digest` existed carries no expectation, so
+    it is honoured as before — an older journal is not a reason to refuse a
+    recovery, only a reason not to claim more than it says.
+    """
+
+    if "result_digest" not in record:
+        return True
+    expected = record["result_digest"]
+    current = digestlib.digest_file(target)
+    if expected is None:
+        # The change deleted the path. Anything there now is somebody else's.
+        return not target.exists()
+    return current == expected
 
 
 def recover(project: Path, journal: Journal) -> dict:

@@ -220,6 +220,90 @@ class TransactionSafety(LifecycleTestCase):
         # against records this code never writes, not against its own.
         self.assertFalse(victim.exists())
 
+    def test_repair_leaves_a_file_the_user_fixed_after_the_interruption(self):
+        """A recovery that overwrites the user's fix is not a recovery.
+
+        `undo` copied the backup over the target unconditionally, so a file
+        edited between the crash and the repair lost that edit (EMP-LC-032).
+        """
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+
+        class KilledPartway(_Interrupting):
+            stop_after = 1
+
+            def rollback(self):
+                return
+
+        original = txnlib.Applier
+        txnlib.Applier = KilledPartway
+        self.addCleanup(setattr, txnlib, "Applier", original)
+        with self.assertRaises(Interruption):
+            installer.install(self.project, "verified", distribution=self.distribution,
+                              source=self.source)
+        txnlib.Applier = original
+
+        pending = txnlib.interrupted(self.project)
+        self.assertEqual(len(pending), 1)
+        touched = pending[0].completed_changes[0]["path"]
+        self.write(touched, "# the user fixed this by hand after the crash\n")
+
+        outcome = txnlib.undo(self.project, pending[0])
+        self.assertEqual(self.read(touched),
+                         "# the user fixed this by hand after the crash\n")
+        self.assertIn(touched, outcome["conflicts"])
+
+    def test_undo_restores_a_file_that_still_holds_what_it_wrote(self):
+        """The other half: an untouched file is restored, not reported."""
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+
+        class KilledPartway(_Interrupting):
+            stop_after = 1
+
+            def rollback(self):
+                return
+
+        original = txnlib.Applier
+        txnlib.Applier = KilledPartway
+        self.addCleanup(setattr, txnlib, "Applier", original)
+        with self.assertRaises(Interruption):
+            installer.install(self.project, "verified", distribution=self.distribution,
+                              source=self.source)
+        txnlib.Applier = original
+
+        pending = txnlib.interrupted(self.project)
+        created = pending[0].completed_changes[0]["path"]
+        self.assertTrue(self.exists(created))
+
+        outcome = txnlib.undo(self.project, pending[0])
+        self.assertEqual(outcome["conflicts"], [])
+        self.assertFalse(self.exists(created), "an untouched creation was not undone")
+
+    def test_a_write_that_raises_after_landing_is_still_rolled_back(self):
+        """Rollback walks the journal, not the in-memory list.
+
+        A `chmod` failure after the bytes landed skipped `applied.append`, so
+        the file was written and never rolled back (EMP-LC-034).
+        """
+
+        class FailAfterWrite(txnlib.Applier):
+            def _make_executable_if_declared(self, component, change, target):
+                raise RuntimeError("boom after the bytes landed")
+
+        plan, state, _ = self._plan()
+        applier = FailAfterWrite(self.project, self.distribution, self.source, plan)
+        with self.assertRaises(RuntimeError):
+            applier.run(lambda: statelib.save(self.project, state))
+
+        leftovers = [record["path"] for record in applier.journal.completed_changes
+                     if self.exists(record["path"])]
+        self.assertEqual(leftovers, [], "the rollback missed a file it had written")
+
     def test_an_interrupted_journal_is_detected_and_blocks_further_mutation(self):
         plan, _, _ = self._plan()
         applier = txnlib.Applier(self.project, self.distribution, self.source, plan)
@@ -365,6 +449,24 @@ class Locking(LifecycleTestCase):
                 with locklib.acquire(self.project, "uninstall"):
                     pass
         self.assertEqual(raised.exception.code, "LOCK_HELD")
+
+    def test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock(self):
+        """A released lock must be the releaser's own.
+
+        After `--force-unlock` handed the lock to someone else, the original
+        owner's `finally` deleted the new owner's lock (EMP-LC-036).
+        """
+
+        path = locklib.lock_path(self.project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with locklib.acquire(self.project, "A") as first:
+            with locklib.acquire(self.project, "B", force=True):
+                held_by_b = locklib.read(self.project)
+                self.assertIsNotNone(held_by_b)
+                self.assertNotEqual(held_by_b.acquired_at, first.acquired_at)
+            # A's release runs next, and must not touch what B left behind.
+        self.assertIsNone(locklib.read(self.project))
 
     def test_a_lock_being_written_is_not_treated_as_invalid(self):
         """`O_EXCL` made existence atomic; the payload was written after.

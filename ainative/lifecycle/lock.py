@@ -155,6 +155,19 @@ def _reclaim_if_dead(project: Path, info: LockInfo) -> bool:
     return False
 
 
+def _release(project: Path, info: LockInfo) -> None:
+    """Remove the lock only while it is still this operation's own.
+
+    After a `--force-unlock` took the lock away and handed it to someone else,
+    the original owner's `finally` deleted the *new* owner's lock and left two
+    operations believing they held it (EMP-LC-036).
+    """
+
+    current = read(project)
+    if current is None or current.to_record() == info.to_record():
+        lock_path(project).unlink(missing_ok=True)
+
+
 def _claim(path: Path, payload: str) -> bool:
     """Create the lock complete, or not at all. True when this process won it.
 
@@ -215,7 +228,7 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
             try:
                 yield info
             finally:
-                path.unlink(missing_ok=True)
+                _release(project, info)
             return
 
         existing = read(project)

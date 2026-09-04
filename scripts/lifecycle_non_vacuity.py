@@ -197,21 +197,23 @@ CASES = (
     Case(
         name="dry_run_update_writes_nothing",
         guards="a dry-run update must not write a conflict file or a cache entry",
+        # Two halves, because the test asserts both: the conflict file is
+        # written before the dry-run check again, and the check records its
+        # answer to the cache again.
         edits=(Edit("ainative/lifecycle/updater.py",
                     "        if dry_run:\n"
                     "            return UpdateResult(False, True, state.stack_version, "
                     "staged_source.version,\n"
-                    "                                outcome, plan.to_record(), conflicts)\n"
-                    "\n"
-                    "        for path in conflicts:\n"
-                    "            _write_side_by_side(project, plan, staged_source, path)\n",
+                    "                                outcome, plan.to_record(), conflicts)\n",
                     "        for path in conflicts:\n"
                     "            _write_side_by_side(project, plan, staged_source, path)\n"
-                    "\n"
                     "        if dry_run:\n"
                     "            return UpdateResult(False, True, state.stack_version, "
                     "staged_source.version,\n"
-                    "                                outcome, plan.to_record(), conflicts)\n"),),
+                    "                                outcome, plan.to_record(), conflicts)\n"),
+               Edit("ainative/lifecycle/updater.py",
+                    "    outcome = check(project, force=True, record=not dry_run, state=state)\n",
+                    "    outcome = check(project, force=True, state=state)\n")),
         test=("tests.test_lifecycle_update.UpdateApply"
               ".test_a_dry_run_update_writes_nothing"),
     ),
@@ -229,9 +231,9 @@ CASES = (
         name="journal_durability",
         guards="a killed transaction must leave a journal that can be recovered from",
         edits=(Edit("ainative/lifecycle/transaction.py",
-                    "        self.journal.completed_changes.append(change.to_record())\n"
+                    "        self.journal.completed_changes.append(record)\n"
                     "        write_journal(self.project, self.journal)\n",
-                    "        self.journal.completed_changes.append(change.to_record())\n"),),
+                    "        self.journal.completed_changes.append(record)\n"),),
         test=("tests.test_lifecycle_transactions.TransactionSafety"
               ".test_a_killed_transaction_persists_what_it_had_already_applied"),
     ),
@@ -265,6 +267,74 @@ CASES = (
                     "            continue\n"),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_a_lock_being_written_is_not_treated_as_invalid"),
+    ),
+    Case(
+        name="undo_respects_a_later_edit",
+        guards="an undo must not overwrite a file edited after the interruption",
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        if not _still_ours(target, record):""\n"
+                    "            conflicts.append(path)""\n"
+                    "            continue""\n",
+                    "        if False:""\n"
+                    "            conflicts.append(path)""\n"
+                    "            continue" + '\\n'),),
+        test=("tests.test_lifecycle_transactions.TransactionSafety"
+              ".test_repair_leaves_a_file_the_user_fixed_after_the_interruption"),
+    ),
+    Case(
+        name="rollback_follows_the_journal",
+        guards="a rollback must cover a change that was written and then raised",
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        undo(self.project, self.journal)""\n",
+                    "        for change, target in reversed(self.applied):""\n"
+                    "            try:""\n"
+                    "                self._restore(change, target)""\n"
+                    "            except OSError:""\n"
+                    "                continue""\n"
+                    "        restore_install_state(self.project, self.journal)""\n"
+                    "        self.journal.state = ROLLED_BACK""\n"
+                    "        write_journal(self.project, self.journal)" + '\\n'),),
+        test=("tests.test_lifecycle_transactions.TransactionSafety"
+              ".test_a_write_that_raises_after_landing_is_still_rolled_back"),
+    ),
+    Case(
+        name="marker_is_a_whole_line",
+        guards="a line that only starts like a marker must not open a region",
+        edits=(Edit("ainative/lifecycle/external.py",
+                    '    return "(?m)^" + re.escape(marker) + _LINE_END'"\n",
+                    '    return "(?m)^" + re.escape(marker)' + '\\n'),),
+        test=("tests.test_lifecycle_ownership.ExternalConfiguration"
+              ".test_a_line_that_only_starts_like_a_marker_is_not_one"),
+    ),
+    Case(
+        name="conflict_file_after_apply",
+        guards="a .new file must not survive an update that failed",
+        # Move the write back before the install, in two steps: take it out of
+        # its current place first, then put it back ahead of the transaction.
+        # Removing it outright would be vacuous — no `.new` at all also leaves
+        # none behind.
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    '        for path in conflicts:\n'
+                    '            _write_side_by_side(project, plan, staged_source, path)\n',
+                    '        pass\n'),
+               Edit("ainative/lifecycle/updater.py",
+                    '        result = installerlib.install(project, state.active_profile, '
+                    'operation="update",\n',
+                    '        for path in conflicts:\n'
+                    '            _write_side_by_side(project, plan, staged_source, path)\n'
+                    '        result = installerlib.install(project, state.active_profile, '
+                    'operation="update",\n')),
+        test=("tests.test_lifecycle_update.UpdateApply"
+              ".test_a_conflict_file_is_written_only_after_the_update_applies"),
+    ),
+    Case(
+        name="lock_release_is_owned",
+        guards="releasing a lock must not remove one that now belongs to someone else",
+        edits=(Edit("ainative/lifecycle/lock.py",
+                    "                _release(project, info)""\n",
+                    "                path.unlink(missing_ok=True)" + '\\n'),),
+        test=("tests.test_lifecycle_transactions.Locking"
+              ".test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock"),
     ),
     Case(
         name="journal_id_containment",

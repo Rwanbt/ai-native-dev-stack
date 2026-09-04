@@ -254,6 +254,20 @@ class ExternalConfiguration(LifecycleTestCase):
         self.assertEqual(self.read(".gitignore"), prose,
                          "a quoted marker made the uninstall eat user content")
 
+    def test_a_line_that_only_starts_like_a_marker_is_not_one(self):
+        """A marker is a whole line. A prefix match opened a region on a user
+        line and took everything down to the next one (EMP-LC-033)."""
+
+        component = self.distribution.component("gitignore-entry")
+        spec = plannerlib.block_spec(component)
+        text = (f"*.log\n{spec.begin} and some more text\n"
+                f"MY IMPORTANT LINE\n{spec.end} and more\nbuild/\n")
+        path = self.write(".gitignore", text)
+
+        removed, changed = external.remove(path, spec)
+        self.assertFalse(changed, "a suffixed marker line was treated as a block")
+        self.assertIn("MY IMPORTANT LINE", removed)
+
     def test_block_apply_and_remove_are_exact_inverses(self):
         spec = external.BlockSpec("marker", "#", ("a", "b"))
         path = self.write("config", self.UNRELATED)

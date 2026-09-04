@@ -183,6 +183,28 @@ class UpdateApply(LocalReleaseFixture):
         self.assertIn("AGENTS.md", result.conflicts)
         self.assertEqual(self.read("AGENTS.md.new"), "# Engineering method 2.0.0\n")
 
+    def test_a_conflict_file_is_written_only_after_the_update_applies(self):
+        """A `.new` written first survived a failed install, untracked by any
+        journal and removed by no rollback (EMP-LC-035)."""
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+        self.write("AGENTS.md", "# mine\n")
+
+        def refuse(*args, **kwargs):
+            raise RuntimeError("the install failed after the download")
+
+        original = installer.install
+        installer.install = refuse
+        self.addCleanup(setattr, installer, "install", original)
+        with self.assertRaises(RuntimeError):
+            updaterlib.apply(self.project, distribution=self.distribution)
+
+        self.assertFalse(self.exists("AGENTS.md.new"),
+                         "a .new file survived an update that failed")
+        self.assertEqual(self.read("AGENTS.md"), "# mine\n")
+
     def test_a_tampered_archive_digest_stops_the_update_before_any_write(self):
         self.install("standard")
         self.publish("2.0.0", self.archive, digest="0" * 64)

@@ -6,11 +6,19 @@ put there. So the stack writes a delimited region, remembers only that region,
 and on removal takes back exactly those bytes — everything outside the markers
 is preserved byte for byte.
 
-"Byte for byte" is meant literally, and two things are needed for it. The file
-is read with newline translation off, because Python's text mode turns `\r\n`
-into `\n` and writing that back silently converts a CRLF file to LF
-(EMP-LC-025). And the block is written with whatever line ending the file
-already uses, so appending to a CRLF file does not leave it mixed.
+"Byte for byte" is meant literally, and three things are needed for it:
+
+*No newline translation.* Python's text mode turns CRLF into LF on read, so
+writing the result back silently converted a CRLF file to LF (EMP-LC-025). The
+file is read and written verbatim, and the block is rendered with whatever line
+ending the file already uses.
+
+*Whole-line markers.* A marker is a line, not a prefix. Matching it anywhere let
+a mention in prose open a region and a quoted copy close one early, taking the
+user's lines with it (EMP-LC-026, EMP-LC-028, EMP-LC-033).
+
+*A BEGIN that actually opens something.* A BEGIN whose matching END has another
+BEGIN in between is text that looks like a marker, not a marker.
 """
 
 from __future__ import annotations
@@ -21,6 +29,10 @@ from pathlib import Path
 
 BEGIN_TEMPLATE = "{prefix} >>> BEGIN {marker} (managed — do not edit inside)"
 END_TEMPLATE = "{prefix} <<< END {marker}"
+
+# A carriage return may sit between the marker and the end of the line, so the
+# end anchor has to allow one or the whole scheme fails on a CRLF file.
+_LINE_END = "\r?$"
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,12 @@ class BlockSpec:
         return newline.join([self.begin, *self.lines, self.end]) + newline
 
 
+def _anchored(marker: str) -> str:
+    """A pattern matching `marker` as a whole line, on LF and on CRLF."""
+
+    return "(?m)^" + re.escape(marker) + _LINE_END
+
+
 def _newline_of(text: str) -> str:
     """The line ending the file already uses. CRLF wins when it appears at all."""
 
@@ -48,23 +66,13 @@ def _newline_of(text: str) -> str:
 
 
 def _openers(text: str, spec: BlockSpec) -> list[int]:
-    """Offsets where the BEGIN marker starts its own line.
+    """Offsets where the BEGIN marker occupies its own line."""
 
-    Line-anchored, because a marker quoted inside a longer line is prose about
-    the block, not the block.
-    """
-
-    return [match.start() for match in
-            re.finditer(f"(?m)^{re.escape(spec.begin)}", text)]
+    return [match.start() for match in re.finditer(_anchored(spec.begin), text)]
 
 
 def _split(text: str, spec: BlockSpec) -> tuple[str, str | None, str]:
     """Return (before, block, after). `block` is None when absent.
-
-    A BEGIN whose matching END has another BEGIN in between is not an opener —
-    it is text that merely looks like one. Accepting it made a `.gitignore`
-    mentioning the marker in prose lose everything between that mention and the
-    real block's END (EMP-LC-026).
 
     Only the first genuine block is recognised. A duplicate is left in `after`
     and reported by `doctor` rather than silently merged: two blocks mean
@@ -72,17 +80,13 @@ def _split(text: str, spec: BlockSpec) -> tuple[str, str | None, str]:
     """
 
     openers = _openers(text, spec)
-    closer = re.compile(f"(?m)^{re.escape(spec.end)}")
+    closer = re.compile(_anchored(spec.end))
     for index, start in enumerate(openers):
-        # Line-anchored, like the opener. `find` matched an END quoted inside a
-        # longer line, which truncated the region and left a marker fragment in
-        # the user's file (EMP-LC-028).
         match = closer.search(text, start)
         if match is None:
             break
         stop = match.start()
-        nested = [other for other in openers[index + 1:] if other < stop]
-        if nested:
+        if any(other < stop for other in openers[index + 1:]):
             continue                      # this BEGIN opens nothing
         stop_end = stop + len(spec.end)
         if text[stop_end:stop_end + 2] == "\r\n":

@@ -313,11 +313,13 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
             return UpdateResult(False, True, state.stack_version, staged_source.version,
                                 outcome, plan.to_record(), conflicts)
 
-        for path in conflicts:
-            _write_side_by_side(project, plan, staged_source, path)
-
         result = installerlib.install(project, state.active_profile, operation="update",
                                       distribution=distribution, source=staged_source)
+        # After the transaction, not before: a `.new` written first survived an
+        # install that then failed, leaving a file no journal knew about and no
+        # rollback would remove (EMP-LC-035).
+        for path in conflicts:
+            _write_side_by_side(project, plan, staged_source, path)
         return UpdateResult(True, False, state.stack_version, staged_source.version, outcome,
                             result.plan.to_record(), conflicts, result.transaction,
                             rollback_available=rollback_candidate(project) is not None)
