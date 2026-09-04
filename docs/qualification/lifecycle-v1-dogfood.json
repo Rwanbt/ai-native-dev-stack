@@ -1,93 +1,82 @@
 {
   "authority": "production_boundary",
   "authority_claim": "none - dogfood evidence only",
-  "contract_digest": "ea8a5aabadcd920e65ff28de46929c85d5e24fff2b6b9690eec8a58026e64d9c",
-  "fingerprint": "0ca833706b9c3eb98e2e97aad83faf6d6bd0bf73670837e2ce53fdb2ab9ab0d7",
-  "gaps": [
-    {
-      "code": "INELIGIBLE_VERIFICATION_EVIDENCE",
-      "detail": "SUSPICIOUS_VERIFICATION; VERIFICATION_FAILED",
-      "uid": "run_01M1PFQCAD05ENCRFVFFW7YR56"
-    },
-    {
-      "code": "UNVERIFIED_SPECIFICATION",
-      "detail": "declared verification specification has no passing evidence",
-      "uid": "verify_01M1PFJAYCK6SFP4C31KM91W79"
-    }
-  ],
-  "reason": "structural, freshness, or verification gaps remain",
-  "recorded_at": "2026-09-04T15:14:07Z",
+  "contract_digest": "4f4584efa433a36a07cfec5fa0b6c0de31bf27aa50405a5c86cd9ebcaf6894fe",
+  "fingerprint": "",
+  "gaps": [],
+  "reason": "all deterministic conditions satisfied",
+  "recorded_at": "2026-09-04T15:17:55Z",
   "requirements": 8,
   "schema_version": 1,
-  "source_commit": "c747da6eeeb67f5ba5206471d2e33be8fed9a639",
+  "source_commit": "73060cae27f5b82bd135c3c8b7a825510fb27b84",
   "subject": "Distribution & Lifecycle Manager v1",
   "surface": "evaluate_work",
   "trust_provenance": "agent_bootstrapped_in_a_throwaway_clone",
-  "verdict": "NOT_CONVERGED",
+  "verdict": "CONVERGED",
   "verifications": [
     {
       "command": "profiles",
-      "duration_seconds": 4.3,
-      "evidence_uid": "run_01M1PFJG9B9448GZXD2V50PDWG",
+      "duration_seconds": 4.0,
+      "evidence_uid": "run_01M1PFSFKYYNW7PZ0BD62HEJ32",
       "requirement": "profiles",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYCH9PWTH6JP41Y6QQ6"
+      "specification": "verify_01M1PFSAFC7T5SPA919SSNFEKX"
     },
     {
       "command": "transitions",
-      "duration_seconds": 15.1,
-      "evidence_uid": "run_01M1PFJZ1MC7202JWF8GSQJ6XW",
+      "duration_seconds": 14.5,
+      "evidence_uid": "run_01M1PFSXR7VSYD8V67BM2C46E6",
       "requirement": "transitions",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYCAAY7J9B2B0JZWAK6"
+      "specification": "verify_01M1PFSAFCW0XQJQH6378WK6JB"
     },
     {
       "command": "ownership",
-      "duration_seconds": 9.6,
-      "evidence_uid": "run_01M1PFK8CKSYTY0J2E1M0ZG80W",
+      "duration_seconds": 9.3,
+      "evidence_uid": "run_01M1PFT6V12GGJN2Y5Q0XAF5Q6",
       "requirement": "ownership",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYC5GCCET0GHVXT15AJ"
+      "specification": "verify_01M1PFSAFCRG47R3PDFJ1W9QKR"
     },
     {
       "command": "transactions",
-      "duration_seconds": 8.9,
-      "evidence_uid": "run_01M1PFKH4CWGF4YSK4B8QG816A",
+      "duration_seconds": 8.4,
+      "evidence_uid": "run_01M1PFTF19MNTNVW7741WE1N2H",
       "requirement": "transactions",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYCS5KPQP3KVDYYECMN"
+      "specification": "verify_01M1PFSAFC73G6VJ2FMG954Z40"
     },
     {
       "command": "updates",
-      "duration_seconds": 12.9,
-      "evidence_uid": "run_01M1PFKXPD837ZRPJEM4TA3T8X",
+      "duration_seconds": 11.9,
+      "evidence_uid": "run_01M1PFTTNDPVV9QAPBMG2W983D",
       "requirement": "updates",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYCQSPJQJWRNC45AY19"
+      "specification": "verify_01M1PFSAFC3S9A1EGVAXW9R5AK"
     },
     {
       "command": "safety",
       "duration_seconds": 5.8,
-      "evidence_uid": "run_01M1PFM3BS829YY4809RK4SDCY",
+      "evidence_uid": "run_01M1PFV0B4WJB6GX6NP1RCBWYD",
       "requirement": "safety",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYC8P0NFKNKDSJKAFKZ"
+      "specification": "verify_01M1PFSAFC9CKMPVT6SEZFVRX6"
     },
     {
       "command": "cli",
-      "duration_seconds": 15.4,
-      "evidence_uid": "run_01M1PFMJBK651J7P3EF1XM46DP",
+      "duration_seconds": 15.0,
+      "evidence_uid": "run_01M1PFVEX6AZ3NTMKV8DCHPSH5",
       "requirement": "cli",
       "result": "PASS",
-      "specification": "verify_01M1PFJAYC0GRBDZ0DZZA6ZDEQ"
+      "specification": "verify_01M1PFSAFCX1XHW1F7ZMC3AJ04"
     },
     {
       "command": "non_vacuity",
-      "duration_seconds": 28.0,
-      "evidence_uid": "run_01M1PFNDPZ30AVTGBZYW4AST87",
+      "duration_seconds": 30.4,
+      "evidence_uid": "run_01M1PFWCKEMMH0M7SNCSY9Q2CB",
       "requirement": "non_vacuity",
-      "result": "SUSPICIOUS_VERIFICATION",
-      "specification": "verify_01M1PFJAYCK6SFP4C31KM91W79"
+      "result": "PASS",
+      "specification": "verify_01M1PFSAFC1DB0GKK47H31KB9W"
     }
   ]
 }
