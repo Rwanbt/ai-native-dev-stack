@@ -61,7 +61,7 @@ jobs:
         # disagree about what the limit is.
         run: |
           set -e
-          for dir in tools skills hooks scripts; do
+          for dir in tools skills hooks scripts ainative; do
             echo "--- $dir"
             (cd "$dir" && node ../hooks/pretool-loc-gate/run_gate.js --all)
           done
@@ -90,6 +90,127 @@ jobs:
       - name: v4 hooks — no-op, real error, v4 layout, concurrent ends
         shell: bash
         run: python -m unittest discover -s hooks/tests -p "test_*.py" -v
+
+  workplane-v2:
+    name: Verified Work Plane V2 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      # The V2 kernel shipped its whole hardening sequence with no CI job at
+      # all: every gate was a local run on one machine, on one OS, on one
+      # Python. A verdict engine that only ever ran where it was written has
+      # no evidence it is deterministic anywhere else.
+      - name: Contracts, controller and snapshot
+        run: python -m unittest tests.test_workplane_contracts tests.test_workplane_controller tests.test_workplane_snapshot -v
+
+      - name: Runner, trust, freshness, traceability and convergence
+        run: python -m unittest tests.test_workplane_runner_convergence tests.test_workplane_substance tests.test_workplane_authorization tests.test_workplane_traceability tests.test_workplane_convergence_history -v
+
+      - name: Adversarial matrix A01-A53
+        run: python -m unittest tests.test_workplane_adversarial -v
+
+      - name: Authority matrix A54-A70, through the production boundary
+        run: python -m unittest tests.test_workplane_authority tests.test_workplane_authority_origin -v
+
+      - name: CLI, integrations and local pilot harnesses
+        run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix tests.test_workplane_historical_case -v
+
+      - name: The package installs and exposes its console entry point
+        shell: bash
+        run: |
+          set -e
+          python -m pip install --disable-pip-version-check --no-deps -e .
+          ainative work --help > /dev/null
+          ainative converge --help > /dev/null
+
+      - name: Deterministic gates must also reproduce outside the test runner
+        # bash, not the Windows default shell: PowerShell only propagates the
+        # exit code of the last line, which would hide a failure in the first
+        # two commands.
+        shell: bash
+        run: |
+          set -e
+          python scripts/workplane_structural_regression.py
+          python scripts/workplane_harness_matrix.py
+          python scripts/workplane_pilot.py --self-check
+
+      - name: The complexity budget AGENTS.md declares blocking
+        # It was published and never measured: traceability.analyze shipped at
+        # ~32 branches, in the module every convergence verdict passes through.
+        run: python scripts/check_complexity_budget.py
+
+  lifecycle:
+    name: Distribution lifecycle (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The lifecycle layer deletes files in a user's project. Every gate below
+      # runs on all three platforms because path handling, links, case folding
+      # and process liveness are exactly where they differ.
+      - name: Transition matrix, round trips and idempotence
+        run: python -m unittest tests.test_lifecycle_matrix -v
+
+      - name: Ownership, user modifications and external config
+        run: python -m unittest tests.test_lifecycle_ownership -v
+
+      - name: Path traversal, link escape, tampered state, archive safety
+        run: python -m unittest tests.test_lifecycle_security -v
+
+      - name: Interruption, rollback, recovery, locking and legacy adoption
+        run: python -m unittest tests.test_lifecycle_transactions -v
+
+      - name: Update check, apply, conflict, recovery and rollback
+        run: python -m unittest tests.test_lifecycle_update -v
+
+      - name: CLI contract, exit codes, JSON and the layer boundary
+        run: python -m unittest tests.test_lifecycle_cli -v
+
+      - name: Non-vacuity — each guard must actually block
+        # A protection nobody has seen refuse is a comment. This reverts each
+        # guard in a scratch copy and asserts the matching test then fails.
+        run: python scripts/lifecycle_non_vacuity.py
+
+  clean-install:
+    name: Clean install E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      # As a user, not as a developer: build the wheel, install it into a
+      # throwaway venv, and drive the console script from a directory that has
+      # never heard of this checkout. No PYTHONPATH, no repo on sys.path. The
+      # failure mode this catches is a lifecycle layer that only works from
+      # inside its own source tree — and a wheel whose staged payload installs
+      # something different from what a checkout installs.
+      #
+      # One cross-platform script rather than three dialects of shell: the
+      # same gate runs here and on a developer's machine.
+      - name: Build a wheel, install it, and use it as a user would
+        run: python scripts/lifecycle_clean_install.py
 
   installers:
     name: Installers (${{ matrix.os }})
@@ -124,7 +245,7 @@ jobs:
         shell: bash
         run: python scripts/install_agents.py --home "$HOME/stack-ci/fakehome" --check
 
-      - name: Per-project installer — into a throwaway git repo
+      - name: Per-project bootstrap — the pre-lifecycle flags still work
         shell: bash
         run: |
           set -e
@@ -136,24 +257,62 @@ jobs:
           echo "print('hi')" > src/main.py
           git add -A && git commit -qm init
           cd "$GITHUB_WORKSPACE"
-          python install.py --project-root "$HOME/stack-ci/proj" --skip-gstack
+          # --project-root and --skip-gstack are the names the old installer
+          # used; a script written against it must keep running.
+          python install.py --profile standard \
+            --project-root "$HOME/stack-ci/proj" --skip-gstack
           test -f "$HOME/stack-ci/proj/AGENTS.md"
           test -f "$HOME/stack-ci/proj/conventions.json"
           test -d "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs"
           test -d "$HOME/stack-ci/proj/.agents/skills/verify-ai-docs"
+          test -f "$HOME/stack-ci/proj/.ai-native/lifecycle/state.json"
 
-      - name: A re-install prunes files removed upstream
+      - name: A re-install prunes a managed file removed upstream — and only that
         shell: bash
         run: |
           set -e
-          # A plain copy leaves a file deleted upstream sitting in every
-          # project that installed it earlier — the drift this stack exists
-          # to prevent.
-          touch "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs/OBSOLETE.md"
-          python install.py --project-root "$HOME/stack-ci/proj" --skip-gstack
-          if [ -f "$HOME/stack-ci/proj/.claude/skills/verify-ai-docs/OBSOLETE.md" ]; then
-            echo "a file removed upstream survived a re-install"; exit 1
+          PROJ="$HOME/stack-ci/proj"
+          SKILL="$PROJ/.claude/skills/verify-ai-docs"
+
+          # A file the stack recorded, that the distribution no longer ships,
+          # must not survive: that is the drift this stack exists to prevent.
+          # A file it never wrote must survive: deleting it is the drift the
+          # ownership model exists to prevent (ADR-0009 §3).
+          echo "# added by me" > "$SKILL/MY-NOTES.md"
+          MANAGED="$(python - "$PROJ" <<'PY'
+          import json, sys
+          from pathlib import Path
+          state = json.loads((Path(sys.argv[1]) / ".ai-native/lifecycle/state.json")
+                             .read_text(encoding="utf-8"))
+          print(next(entry["path"] for entry in state["managed_files"]
+                     if entry["path"].startswith(".claude/skills/verify-ai-docs/")))
+          PY
+          )"
+          echo "managed file under test: $MANAGED"
+
+          python install.py --profile standard --project-root "$PROJ" --skip-gstack
+          test -f "$PROJ/$MANAGED"        # still shipped, still present
+          test -f "$SKILL/MY-NOTES.md"    # never ours, never removed
+
+          # Now make it disappear from the source and re-install: it must go.
+          rm -rf "$GITHUB_WORKSPACE/skills/verify-ai-docs"
+          python install.py --profile standard --project-root "$PROJ" --skip-gstack
+          if [ -f "$PROJ/$MANAGED" ]; then
+            echo "a managed file removed upstream survived a re-install"; exit 1
           fi
+          test -f "$SKILL/MY-NOTES.md"
+          git -C "$GITHUB_WORKSPACE" checkout -- skills/verify-ai-docs
+
+      - name: Uninstall leaves the user's work, then reinstall works
+        shell: bash
+        run: |
+          set -e
+          PROJ="$HOME/stack-ci/proj"
+          python -m ainative.cli uninstall --project "$PROJ"
+          test -f "$PROJ/src/main.py"
+          test -f "$PROJ/.claude/skills/verify-ai-docs/MY-NOTES.md"
+          python install.py --profile standard --project-root "$PROJ" --skip-gstack
+          test -f "$PROJ/AGENTS.md"
 
       - name: v4 governance block — six harness get vault block; user content survives
         # Build a throwaway v4 vault, point the installer at it via

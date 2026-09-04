@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
-# stack-update-check.sh — Detect whether the stack repo has upstream updates.
+# stack-update-check.sh — is the stack *clone* behind its upstream?
 #
-# READ-ONLY by design: it fetches and compares, but never modifies your working
+# SCOPE. This is the clone-level check: it asks whether this git checkout of the
+# stack has commits waiting upstream. It says nothing about the files installed
+# into any project.
+#
+#   this script          the shared git clone      `git fetch` + compare
+#   ainative update      one project's install     recorded ownership, digests,
+#                                                  transactional apply
+#
+# For a project, use `ainative update check` — it is the single authority for
+# project-level updates (ADR-0009 §7). Running this one is still correct when
+# you consume the stack by referencing the clone (@AGENTS.md, symlinked skills)
+# rather than by installing into the project.
+#
+# READ-ONLY by design: it fetches and compares, never modifies your working
 # tree, never merges, never touches any personalized config. Safe to run from a
 # SessionStart hook on every session.
 #

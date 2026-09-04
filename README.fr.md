@@ -301,32 +301,80 @@ Répond à « comment sait-on que ça marche ? » avec des mesures objectives d�
 
 ---
 
+## Quel profil choisir ?
+
+```
+AI Native Dev Stack
+        │
+        ├── Standard    contexte · mémoire · skills · hooks · adaptateurs · docs IA
+        │
+        └── Verified    Standard + Work Contracts · vérification · convergence
+```
+
+### Standard
+
+Contexte, mémoire, skills et outillage AI-native. **Recommandé pour
+l'apprentissage, le développement personnel et le travail assisté par IA
+ordinaire** — étudiants, développeurs seuls, installation rapide.
+
+### Verified
+
+Standard **plus** des Work Contracts gouvernés et une vérification
+déterministe. **Recommandé pour la production, les équipes et les agents
+autonomes** — code critique et auditabilité.
+
+> **Standard optimise la façon dont l'IA travaille avec le projet.**
+> **Verified gouverne en plus, et vérifie de façon déterministe, le travail
+> déclaré.**
+
+Verified étend Standard ; Standard ne dépend jamais de Verified. Vous pouvez
+passer de l'un à l'autre à tout moment, dans les deux sens, et redescendre vers
+Standard **préserve** votre historique Verified sous forme d'état dormant au
+lieu de le supprimer.
+
+---
+
 ## Démarrage rapide
 
 ### Installer sur un projet existant
 
-Un seul point d'entrée, identique sur les trois OS. L'installeur copie
-l'outillage, installe les skills dans **toutes** les racines d'agent
-(`.claude/skills` pour Claude Code, `.agents/skills` pour Codex, OpenCode et
-Cursor), pose `AGENTS.md` et `conventions.json`, puis génère les résumés.
+Une seule CLI possède l'installation, le choix de profil, la mise à jour et la
+désinstallation — et elle **enregistre ce qu'elle écrit**, pour pouvoir le
+défaire. Elle copie l'outillage, installe les skills dans **toutes** les racines
+d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
+OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
+pip install git+https://github.com/Rwanbt/ai-native-dev-stack.git
 cd /chemin/vers/votre-projet
 
+ainative init                          # demande Standard ou Verified
+ainative init --profile standard       # non interactif
+ainative init --profile verified
+```
+
+Pas encore de `pip` ? Le bootstrap fait la même chose depuis un clone :
+
+```bash
 # Linux / macOS / Git Bash
-bash /chemin/vers/ai-native-dev-stack/install.sh
+bash /chemin/vers/ai-native-dev-stack/install.sh --profile standard
 
 # Windows, sans Git Bash ni WSL
-pwsh -NoProfile -File C:\chemin\vers\ai-native-dev-stack\install.ps1
+pwsh -NoProfile -File C:\chemin\vers\ai-native-dev-stack\install.ps1 -Profile standard
 
 # N'importe quel OS, directement
-python /chemin/vers/ai-native-dev-stack/install.py
+python /chemin/vers/ai-native-dev-stack/install.py --profile standard
 ```
 
 Options utiles :
 
 ```bash
-python install.py --dry-run          # montre ce qui serait fait, n'écrit rien
+ainative init --profile standard --dry-run   # montre le plan, n'écrit rien
+ainative status                              # ce qui est installé, et sa santé
+ainative profile switch verified             # réversible dans les deux sens
+ainative update check                        # détection auto, application jamais
+ainative uninstall                           # retire le stack, garde votre travail
+
 python install.py --with-gstack      # installe gstack (code tiers, opt-in)
 python install.py --gstack-ref SHA   # épingle gstack à un commit précis
 ```
@@ -335,14 +383,28 @@ gstack n'est **pas** installé par défaut : c'est du code tiers exécuté par
 votre agent. Quand vous l'installez, le commit réellement obtenu est
 enregistré dans `.stack-lock.json` pour que l'installation soit reproductible.
 
+Chaque fichier géré porte le SHA-256 qu'il avait au moment où le stack l'a
+écrit. Une mise à jour n'écrase donc jamais votre modification, et une
+désinstallation ne la supprime jamais. Toute mutation est transactionnelle
+(sauvegarde → application → vérification → écriture de l'état **en dernier**) :
+une interruption laisse l'ancien état valide ou le nouveau, jamais un projet à
+moitié installé. Voir
+**[docs/DISTRIBUTION-LIFECYCLE.md](docs/DISTRIBUTION-LIFECYCLE.md)** et
+[ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
+
+Déjà installé à l'ancienne, avant l'existence du lifecycle ? Rien à migrer à la
+main : `ainative init` détecte les fichiers présents et les adopte sans écraser
+ce que vous avez modifié.
+
 Ensuite :
 
 1. Référencer `AGENTS.md` depuis la config globale de votre agent — une ligne,
    jamais une copie (`@/chemin/absolu/AGENTS.md`).
-2. Éditer `tools/ai_docs/config.sh` (coffre Obsidian, binaire graphify).
-3. Enregistrer le hook PostToolUse — voir `templates/settings_hook_example.json`.
-4. Écrire un `AI_CONTEXT.md` par module — voir `templates/AI_CONTEXT_template.md`.
-5. Vérifier : `/verify-ai-docs`.
+2. Éditer `tools/ai_docs/config.sh` (coffre Obsidian, binaire graphify) — ce
+   fichier vous appartient, l'installeur ne l'écrase jamais.
+3. Enregistrer le hook PostToolUse — voir `.ai-native/templates/settings_hook_example.json`.
+4. Écrire un `AI_CONTEXT.md` par module — voir `.ai-native/templates/AI_CONTEXT_template.md`.
+5. Vérifier : `ainative status`, puis `/verify-ai-docs`.
 
 ### Installer la méthode sur la machine (une fois)
 

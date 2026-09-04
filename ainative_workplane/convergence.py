@@ -1,0 +1,133 @@
+"""PR-05 deterministic convergence decision."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from .authorization import apply_authorizations
+from .evidence import VerificationEvidence
+from .freshness import FreshnessResult
+from .traceability import Gap, TraceabilityResult
+from .trust import TrustVerdict
+
+
+BLOCKING_FRESHNESS = frozenset({
+    "FRESHNESS_UNAVAILABLE",
+    "STALE_CONTRACT",
+    "STALE_SCOPE",
+    "STALE_DEPENDENCY",
+    "COMMAND_REGISTRY_CHANGED",
+    "POLICY_CHANGED",
+    "ROOT_OF_TRUST_CHANGED",
+    "VERIFICATION_SPEC_CHANGED",
+})
+
+# Gaps that mean the engine could not evaluate the question, as opposed to
+# gaps that mean the work is not finished. Both block; only these are INVALID.
+UNEVALUABLE = frozenset({
+    "FRESHNESS_UNAVAILABLE",
+    "ROOT_OF_TRUST_INVALID",
+    "POLICY_COMMITMENT_INVALID",
+    "INVALID_VERIFICATION_EVIDENCE",
+    "INVALID_WAIVER",
+    "INVALID_HUMAN_APPROVAL",
+    "UNAUTHORIZED_WAIVER",
+    "UNAUTHORIZED_HUMAN_APPROVAL",
+    "AUTHORITY_CHANGED_DURING_EVALUATION",
+    "PROJECT_TRUST_UNINITIALIZED",
+    "PROJECT_TRUST_INVALID",
+    "PROJECT_TRUST_UNVERIFIED",
+    "PROJECT_TRUST_MISMATCH",
+    "WORK_NOT_ADMITTED",
+})
+
+VERDICT_EXIT_CODES = {"CONVERGED": 0, "NOT_CONVERGED": 1, "INVALID": 2, "INTERNAL_ERROR": 3}
+
+
+@dataclass(frozen=True)
+class ConvergenceVerdict:
+    verdict: str
+    gaps: tuple[Gap, ...]
+    reason: str
+    fingerprint: str = ""
+
+
+def stall_fingerprint(gaps: Iterable[Gap]) -> str:
+    payload = [{"code": gap.code, "uid": gap.uid, "detail": gap.detail} for gap in gaps]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def converge(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], *, freshness: FreshnessResult | None = None, trust: TrustVerdict | None = None, policy: Mapping[str, Any] | None = None, waivers: Iterable[Mapping[str, Any]] = (), human_approvals: Iterable[Mapping[str, Any]] = (), authorization_facts: Any = None, machine_specs: frozenset[str] | None = None) -> ConvergenceVerdict:
+    """Decide convergence from bound evidence only.
+
+    @contract Evidence supports convergence only when its verification
+    specification is declared by the contract graph, and every declared
+    specification carries passing evidence.
+    @contract A waiver or human approval suppresses a gap only when the
+    policy in force authorizes it; otherwise it adds its own rejection gap.
+    @returns CONVERGED, NOT_CONVERGED, INVALID (inputs could not be
+    evaluated) or INTERNAL_ERROR (the engine itself failed). Only CONVERGED
+    is a success.
+    """
+
+    try:
+        gaps = _collect_gaps(traceability, runs, freshness, trust, machine_specs)
+        gaps = apply_authorizations(gaps, policy=policy, waivers=waivers, human_approvals=human_approvals, facts=authorization_facts)
+    except Exception as error:  # WHY: an engine failure must surface as a verdict, never as a success or a traceback in the caller.
+        return ConvergenceVerdict("INTERNAL_ERROR", (), f"convergence engine failed: {type(error).__name__}", "")
+    if not gaps:
+        return ConvergenceVerdict("CONVERGED", (), "all deterministic conditions satisfied", "")
+    if any(gap.code in UNEVALUABLE for gap in gaps):
+        return ConvergenceVerdict("INVALID", tuple(gaps), "required authority or evidence could not be evaluated", stall_fingerprint(gaps))
+    return ConvergenceVerdict("NOT_CONVERGED", tuple(gaps), "structural, freshness, or verification gaps remain", stall_fingerprint(gaps))
+
+
+def _collect_gaps(traceability: TraceabilityResult, runs: Iterable[VerificationEvidence], freshness: FreshnessResult | None, trust: TrustVerdict | None, machine_specs: frozenset[str] | None = None) -> list[Gap]:
+    gaps = list(traceability.gaps)
+    if traceability.requirement_count == 0:
+        gaps.append(Gap("NO_MEANINGFUL_REQUIREMENTS", None, "a work contract requires at least one requirement"))
+    states = set(freshness.states) if freshness is not None else {"FRESHNESS_UNAVAILABLE"}
+    for state in sorted(states & BLOCKING_FRESHNESS):
+        gaps.append(Gap(state, None, "blocking freshness state"))
+    if trust is None:
+        gaps.append(Gap("ROOT_OF_TRUST_INVALID", None, "no trust evaluation is available"))
+    elif not trust.trusted:
+        gaps.append(Gap(trust.code, None, "evidence authority is insufficient"))
+    run_list = list(runs)
+    declared_specs = {spec_uid for _, spec_uid in traceability.acceptance_to_verification}
+    # A specification satisfied by human approval has no command to run, so
+    # absent machine evidence is not a gap for it. It still needs a verified
+    # approval: UNVERIFIED_SPECIFICATION below is emitted for every declared
+    # specification, and only an authorized approval removes it.
+    expects_machine_evidence = declared_specs if machine_specs is None else declared_specs & machine_specs
+    if not run_list and expects_machine_evidence:
+        gaps.append(Gap("NO_VERIFICATION_EVIDENCE", None, "no selected verification evidence is available"))
+    passed_specs: set[str] = set()
+    for run in run_list:
+        if not isinstance(run, VerificationEvidence):
+            gaps.append(Gap("INVALID_VERIFICATION_EVIDENCE", None, "selected run is not validated evidence"))
+            continue
+        spec_uid = run.verification_specification_uid
+        if spec_uid not in declared_specs:
+            gaps.append(Gap("UNRELATED_VERIFICATION_EVIDENCE", run.uid, "evidence is bound to a specification the contract does not declare"))
+        elif run.result != "PASS":
+            gaps.append(Gap("VERIFICATION_FAILED", run.uid, "selected verification did not pass"))
+        else:
+            passed_specs.add(spec_uid)
+    for spec_uid in sorted(declared_specs - passed_specs):
+        gaps.append(Gap("UNVERIFIED_SPECIFICATION", spec_uid, "declared verification specification has no passing evidence"))
+    return gaps
+
+
+def append_convergence(path: str | Path, verdict: ConvergenceVerdict, *, work_uid: str, engine_version: str) -> None:
+    """Append a historical convergence fact; never overwrite an earlier run."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = {"work_uid": work_uid, "verdict": verdict.verdict, "reason": verdict.reason, "fingerprint": verdict.fingerprint, "engine_version": engine_version}
+    with target.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")

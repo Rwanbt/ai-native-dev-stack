@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "Declarative profiles. `verified` extends `standard` and lists only what it",
+    "adds: the resolver computes the effective set, so a Standard component is",
+    "declared exactly once. See ADR-0009 section 1."
+  ],
+  "schema_version": 1,
+  "default": "standard",
+  "profiles": {
+    "standard": {
+      "extends": null,
+      "title": "Standard",
+      "summary": "Context, memory, skills and AI-native tooling.",
+      "recommended_for": "Learning, personal development and normal AI-assisted work.",
+      "components": [
+        "ai-docs-tooling",
+        "engineering-method",
+        "conventions",
+        "context-template",
+        "skills-claude",
+        "skills-agents",
+        "machine-config",
+        "gitignore-entry"
+      ]
+    },
+    "verified": {
+      "extends": "standard",
+      "title": "Verified",
+      "summary": "Standard + governed Work Contracts and deterministic verification.",
+      "recommended_for": "Production, teams and autonomous agents.",
+      "components": [
+        "verified-workplane",
+        "verified-guide",
+        "verified-data"
+      ]
+    }
+  }
+}

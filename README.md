@@ -357,39 +357,136 @@ triage from LLM remediation plans. Linked into each agent via `scripts/setup-age
 
 The whole stack transfers to a new machine or LLM via one clone + `setup-agents.sh`,
 and stays current without destroying anyone's personalization. `stack-update-check.sh`
-detects upstream changes (read-only); `/stack-upgrade` fast-forwards the shared clone.
-Because personal configs *reference* the shared files, a `git pull` updates the method
+detects upstream changes in the shared *clone* (read-only); `/stack-upgrade` fast-forwards
+it. Because personal configs *reference* the shared files, a `git pull` updates the method
 for everyone while each user keeps their customizations. For inlined targets (e.g.
-MiniMax), `sync_inlined_method.py` refreshes a managed block. See **[UPDATING.md](UPDATING.md)**.
+MiniMax), `sync_inlined_method.py` refreshes a managed block.
+
+A project you **installed** into is a different surface, updated by `ainative update`
+with recorded per-file ownership. See **[UPDATING.md](UPDATING.md)** for both.
+
+### 17. Distribution & Lifecycle (`ainative`)
+
+One CLI owns installation, profile choice, update and removal, and it records what
+it wrote so it can undo it:
+
+```bash
+ainative init                     # choose Standard or Verified
+ainative status                   # what is installed, and its health
+ainative profile switch verified  # reversible, non-destructive, both ways
+ainative update check             # detection is automatic; application never is
+ainative uninstall                # removes the stack, keeps your work
+```
+
+Every managed file carries the SHA-256 it had when the stack wrote it, so an update
+never overwrites your edit and an uninstall never deletes it. Mutations are
+transactional (backup → apply → verify → commit state *last*), so an interruption
+leaves the old valid state or the new one, never a half-installed project.
+See **[docs/DISTRIBUTION-LIFECYCLE.md](docs/DISTRIBUTION-LIFECYCLE.md)** and
+[ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
 
 ---
+
+## Which profile should I choose?
+
+```
+AI Native Dev Stack
+        │
+        ├── Standard    context · memory · skills · hooks · adapters · AI docs
+        │
+        └── Verified    Standard + Work Contracts · verification · convergence
+```
+
+### Standard
+
+Context, memory, skills and AI-native tooling. **Recommended for learning,
+personal development and normal AI-assisted work** — students, individual
+developers, fast setup.
+
+### Verified
+
+Standard **plus** governed Work Contracts and deterministic verification.
+**Recommended for production, teams and autonomous agents** — critical code and
+auditability.
+
+> **Standard optimizes how AI works with the project.**
+> **Verified additionally governs and deterministically verifies declared work.**
+
+Verified extends Standard; Standard never depends on Verified. You can move
+between them at any time in either direction, and moving down to Standard
+preserves your Verified history as dormant state rather than deleting it.
+
+```bash
+ainative init --profile standard      # non-interactive
+ainative init --profile verified
+ainative profile switch standard      # keeps trust, contracts and evidence
+ainative profile switch verified      # reactivates them
+```
+
+---
+
+## The Verified Work Plane
+
+A deterministic gate between an agent claiming work is done and the project
+believing it. It decides convergence from committed contracts and executed
+verifications — never from narrative, and never from anything the caller hands
+in.
+
+    pip install .
+    ainative trust bootstrap --repo . --approval-root root.json --policy policy.json --by "you"
+    ainative work admit .ai-native/work/w1 --repo . --by "you" --artifact ...
+    ainative work new   .ai-native/work/w1 --artifact ...
+    ainative converge   --work .ai-native/work/w1 --repo .
+
+Exit codes: 0 CONVERGED, 1 NOT_CONVERGED, 2 INVALID, 3 INTERNAL_ERROR.
+
+Its authority model was closed by external adversarial review (P0 = 0, P1 = 0)
+and is frozen. Genesis trust is a privileged ceremony the runtime cannot
+verify, so **bootstrap trust before a controlled agent has repository access**
+— that is a deployment requirement, not a detail. See ADR-0006.
+
+Full documentation, empirical results and known limitations:
+[docs/VERIFIED-WORK-PLANE.md](docs/VERIFIED-WORK-PLANE.md).
 
 ## Quick Start
 
 ### For an existing project
 
 ```bash
-# 1. Copy scripts into your project
-cp -r tools/ai_docs/ your-project/tools/
-cp -r skills/ your-project/.claude/
+# 1. Install the CLI (once), then choose a profile in your project
+pip install git+https://github.com/Rwanbt/ai-native-dev-stack.git
+cd your-project
+ainative init                          # asks Standard or Verified
+#   or, non-interactively:
+ainative init --profile standard
+ainative init --profile standard --dry-run   # see the plan first, change nothing
 
-# 2. Configure machine-specific paths
-cp tools/ai_docs/config.sh.example your-project/tools/ai_docs/config.sh
-# Edit config.sh: fill in OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
+# No pip yet? The bootstrap does the same thing from a clone:
+#   bash install.sh --profile standard        (Linux / macOS / Git Bash)
+#   pwsh -File install.ps1 -Profile standard  (Windows)
+
+# 2. Configure machine-specific paths (the installer seeds this file and
+#    never overwrites it afterwards)
+# Edit tools/ai_docs/config.sh: OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
 
 # 3. Register the PostToolUse hook in .claude/settings.json
-# (see templates/settings_hook_example.json)
+# (see .ai-native/templates/settings_hook_example.json)
 
 # 4. Write AI_CONTEXT.md for each major module
-# (see templates/AI_CONTEXT_template.md)
+# (see .ai-native/templates/AI_CONTEXT_template.md)
 
 # 5. Generate all AI_SUMMARY.md files
 python tools/ai_docs/generate_all.py
 
-# 6. Verify the full stack — in any agent that loaded the skills
-#    (Claude Code, Codex, OpenCode, Cursor):
-#    /verify-ai-docs
+# 6. Check the install, then verify the full stack
+ainative status
+#    /verify-ai-docs   — in any agent that loaded the skills
+#                        (Claude Code, Codex, OpenCode, Cursor)
 ```
+
+Already installed the old way, before the lifecycle existed? Nothing to migrate
+by hand: `ainative init` detects the existing files and adopts them without
+overwriting anything you edited.
 
 ### For a new machine / new contributor
 

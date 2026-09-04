@@ -170,18 +170,28 @@ Central unread modules (>5 incoming imports): none
 
 ### This project — ai-native-dev-stack
 
-Measured 2026-08-30 via `git ls-files` (image excluded). Re-measure with
-`python3 scripts/measure_scope.py`; CI fails when these figures drift.
+Measured 2026-09-04 (distribution & lifecycle v1) via `git ls-files` (image excluded). Re-measure
+with `python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~127 000 | 75 | **Layered read** — cartography first, then targeted reads |
-| Anti-debt agent | ~130 000 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
-| Whole repo | ~246 000 | 191 | **Multi-phase workflow** — never a single direct read |
+| Core stack (excl. anti-debt) | ~396 860 | 194 | **Layered read** — cartography first  then targeted reads |
+| Anti-debt agent | ~129 648 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
+| Whole repo | ~526 509 | 312 | **Multi-phase workflow** — never a single direct read |
 
-Do **not** read the whole repo in one pass: at ~246k tokens it does not fit,
+Do **not** read the whole repo in one pass: at ~527k tokens it does not fit,
 and the strategy table above applies in full. Pick the scope the task needs —
-most work touches only one of the two halves.
+most work touches only one of the three halves below.
+
+The core stack is itself two independent halves, and almost no task needs both:
+
+| Half | Entry points | What it decides |
+|---|---|---|
+| **Distribution & lifecycle** (`ainative/`) | `docs/DISTRIBUTION-LIFECYCLE.md`, ADR-0009 | what is installed, and what may be replaced or deleted |
+| **Verified Work Plane** (`ainative_workplane/`) | `docs/VERIFIED-WORK-PLANE.md`, ADR-0001…0008 | whether declared work has converged |
+
+The dependency runs one way: lifecycle may invoke the Work Plane, never the
+reverse. Reading either half without the other is correct.
 
 > This block said "~22 000 tokens, 11 files, direct read always" until
 > 2026-08-27, measured ten weeks and 178 files earlier. Every agent read that

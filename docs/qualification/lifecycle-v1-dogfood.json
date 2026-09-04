@@ -1,0 +1,82 @@
+{
+  "authority": "production_boundary",
+  "authority_claim": "none - dogfood evidence only",
+  "contract_digest": "c789c21653800a6a223cc5f908c0b311777a9368b0023d3df43f935a005e5e86",
+  "fingerprint": "",
+  "gaps": [],
+  "reason": "all deterministic conditions satisfied",
+  "recorded_at": "2026-09-04T22:08:27Z",
+  "requirements": 8,
+  "schema_version": 1,
+  "source_commit": "38ccd2f60e24fe895743966db092438b2a0723a2",
+  "subject": "Distribution & Lifecycle Manager v1",
+  "surface": "evaluate_work",
+  "trust_provenance": "agent_bootstrapped_in_a_throwaway_clone",
+  "verdict": "CONVERGED",
+  "verifications": [
+    {
+      "command": "profiles",
+      "duration_seconds": 6.7,
+      "evidence_uid": "run_01M1Q73C3C81J484MBH0N8DXSB",
+      "requirement": "profiles",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S79PGDZWBGVNAVC9B2"
+    },
+    {
+      "command": "transitions",
+      "duration_seconds": 25.1,
+      "evidence_uid": "run_01M1Q744JKMG0JG6VJJFHSCBMZ",
+      "requirement": "transitions",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S7PTB2R5RDRXBMB2G7"
+    },
+    {
+      "command": "ownership",
+      "duration_seconds": 18.3,
+      "evidence_uid": "run_01M1Q74PEVDDCKC6G217BZT3T5",
+      "requirement": "ownership",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S738AKR3N06TAXNETQ"
+    },
+    {
+      "command": "transactions",
+      "duration_seconds": 20.9,
+      "evidence_uid": "run_01M1Q75AVWPK0DGSD9BZTGT435",
+      "requirement": "transactions",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S719B4MQ3ZBG264HE3"
+    },
+    {
+      "command": "updates",
+      "duration_seconds": 22.7,
+      "evidence_uid": "run_01M1Q760ZET0E06H0FTAQ5C1EQ",
+      "requirement": "updates",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S7M35PYGMYYF360C1R"
+    },
+    {
+      "command": "safety",
+      "duration_seconds": 11.6,
+      "evidence_uid": "run_01M1Q76CDH85QF5FPPD8M84GHK",
+      "requirement": "safety",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S7QR73PQSG9KXE9QMJ"
+    },
+    {
+      "command": "cli",
+      "duration_seconds": 17.2,
+      "evidence_uid": "run_01M1Q76X408XBJPE0QDM7K9HV1",
+      "requirement": "cli",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S7NNGQY6D7MHZTCTR8"
+    },
+    {
+      "command": "non_vacuity",
+      "duration_seconds": 70.6,
+      "evidence_uid": "run_01M1Q7922ZVGQS4H531DHSVGVF",
+      "requirement": "non_vacuity",
+      "result": "PASS",
+      "specification": "verify_01M1Q733S7J792R7RYYP51G6GS"
+    }
+  ]
+}
