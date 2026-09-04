@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -38,6 +39,25 @@ DEFAULT_UPDATE_PREFERENCES = {
     "check_interval": 86400,
     "channel": "stable",
 }
+
+
+# Mirrored from manifest.OWNERSHIPS. Importing the manifest here would make the
+# state module depend on the catalogue it is meant to outlive; the two are kept
+# equal by `test_lifecycle_security.py`.
+OWNERSHIPS = ("MANAGED_IMMUTABLE", "MANAGED_MUTABLE", "USER_DATA", "EXTERNAL_CONFIG")
+MANAGED_KINDS = ("file", "external_block", "data_root")
+
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _is_digest(value: Any) -> bool:
+    return isinstance(value, str) and bool(_DIGEST.match(value))
+
+
+def _known(value: Any, allowed: tuple, fallback: str) -> str:
+    """Keep a declared value, or fall back — never carry an unknown one."""
+
+    return value if isinstance(value, str) and value in allowed else fallback
 
 
 def now() -> str:
@@ -64,17 +84,60 @@ class ManagedFile:
 
     @classmethod
     def from_record(cls, raw: Any) -> "ManagedFile":
+        """Read one record, typing every field that gates a deletion.
+
+        `bool(raw.get(...))` is not a type check: the string `"false"` is
+        truthy, so a record saying the stack did not write a file was read as
+        saying it did — and `uninstall` deleted the user's file (EMP-LC-029).
+        Anything that is not the expected type falls to the value that
+        preserves.
+        """
+
         if not isinstance(raw, dict) or not isinstance(raw.get("path"), str):
             raise LifecycleError("INSTALL_STATE_CORRUPTED",
                                  "managed_files contains an entry without a path")
+        created = raw.get("created_by_ainative", True)
+        digest = raw.get("digest_at_install")
         return cls(
             path=raw["path"],
             component=str(raw.get("component", "")),
-            ownership=str(raw.get("ownership", "MANAGED_IMMUTABLE")),
-            digest_at_install=raw.get("digest_at_install"),
-            created_by_ainative=bool(raw.get("created_by_ainative", True)),
-            kind=str(raw.get("kind", "file")),
+            ownership=_known(raw.get("ownership"), OWNERSHIPS, "MANAGED_MUTABLE"),
+            # A digest that is not a digest cannot certify anything; `None`
+            # classifies the file CONFLICT, which is never removed.
+            digest_at_install=digest if _is_digest(digest) else None,
+            # Not a bool: assume it is not ours, which is the safe direction.
+            created_by_ainative=created if isinstance(created, bool) else False,
+            kind=_known(raw.get("kind"), MANAGED_KINDS, "file"),
         )
+
+
+def _update_preferences(raw: Any) -> dict:
+    """Coerce the stored preferences, keeping the default for anything unusable.
+
+    The state file is editable by hand, so its *values* are as untrusted as its
+    keys. Copying a key through because its name was known let a
+    `check_interval` of `"soon"` reach `int()` and take down `ainative status`
+    with a traceback (EMP-LC-027). A preference that cannot be read is not an
+    error — it is a preference we do not have.
+    """
+
+    preferences = dict(DEFAULT_UPDATE_PREFERENCES)
+    if not isinstance(raw, dict):
+        return preferences
+    for key, default in DEFAULT_UPDATE_PREFERENCES.items():
+        if key not in raw:
+            continue
+        value = raw[key]
+        if isinstance(default, bool):
+            if isinstance(value, bool):
+                preferences[key] = value
+        elif isinstance(default, int):
+            # `bool` is an `int` in Python; a boolean interval is not one.
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                preferences[key] = value
+        elif isinstance(value, str) and value:
+            preferences[key] = value
+    return preferences
 
 
 @dataclass
@@ -151,10 +214,7 @@ class InstallState:
         if not isinstance(files, list):
             raise LifecycleError("INSTALL_STATE_CORRUPTED", "managed_files must be a list")
 
-        preferences = dict(DEFAULT_UPDATE_PREFERENCES)
-        supplied = raw.get("update_preferences")
-        if isinstance(supplied, dict):
-            preferences.update({k: v for k, v in supplied.items() if k in preferences})
+        preferences = _update_preferences(raw.get("update_preferences"))
 
         return cls(
             schema_version=version,
@@ -251,4 +311,5 @@ __all__ = [
     "BACKUPS_RELATIVE", "UPDATE_CACHE_RELATIVE", "DEFAULT_UPDATE_PREFERENCES",
     "ManagedFile", "InstallState", "state_path", "exists", "load", "save", "remove",
     "write_atomic", "write_bytes_atomic", "now", "new_identifier",
+    "OWNERSHIPS", "MANAGED_KINDS",
 ]

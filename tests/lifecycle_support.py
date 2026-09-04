@@ -26,39 +26,61 @@ from ainative.lifecycle import manifest as manifestlib   # noqa: E402
 from ainative.lifecycle import source as sourcelib       # noqa: E402
 
 
+def write_text(path: Path, content: str) -> Path:
+    """Write exactly these bytes, on every platform.
+
+    `Path.write_text` translates `\n` to `\r\n` on Windows, so a fixture
+    written as LF landed as CRLF. That was invisible while reads translated it
+    back, and became visible the moment the external-config code stopped
+    translating (EMP-LC-025). A fixture must be the same bytes everywhere.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(content)
+    return path
+
+
+def read_text(path: Path) -> str:
+    """Read without newline translation, so a test sees the bytes on disk."""
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
 def build_distribution_tree(root: Path, version: str = "1.0.0", *,
                             extra_skill: str | None = None) -> Path:
     """A minimal but complete stack source: the markers plus real content."""
 
     root.mkdir(parents=True, exist_ok=True)
-    (root / "VERSION").write_text(f"{version}\n", encoding="utf-8")
-    (root / "AGENTS.md").write_text(f"# Engineering method {version}\n", encoding="utf-8")
-    (root / "conventions.json").write_text(
-        json.dumps({"schema": 1, "version": version}) + "\n", encoding="utf-8")
+    write_text(root / "VERSION", f"{version}\n")
+    write_text(root / "AGENTS.md", f"# Engineering method {version}\n")
+    write_text(root / "conventions.json", 
+        json.dumps({"schema": 1, "version": version}) + "\n")
 
     tools = root / "tools" / "ai_docs"
     tools.mkdir(parents=True, exist_ok=True)
     for name in ("source_config.py", "module_discovery.py", "generate_ai_summary.py",
                  "update_on_edit.py", "generate_all.py", "generate_metrics.py",
                  "assemble_context.py"):
-        (tools / name).write_text(f"# {name} {version}\n", encoding="utf-8")
-    (tools / "run_hook.sh").write_text(f"#!/bin/sh\n# {version}\n", encoding="utf-8")
-    (tools / "find_python.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    (tools / "config.sh.example").write_text(f"VAULT=\n# {version}\n", encoding="utf-8")
+        write_text(tools / name, f"# {name} {version}\n")
+    write_text(tools / "run_hook.sh", f"#!/bin/sh\n# {version}\n")
+    write_text(tools / "find_python.sh", "#!/bin/sh\nexit 0\n")
+    write_text(tools / "config.sh.example", f"VAULT=\n# {version}\n")
 
     templates = root / "templates"
     templates.mkdir(parents=True, exist_ok=True)
-    (templates / "AI_CONTEXT_template.md").write_text(f"# context {version}\n", encoding="utf-8")
+    write_text(templates / "AI_CONTEXT_template.md", f"# context {version}\n")
 
     skills = root / "skills"
     for name in ["demo-skill"] + ([extra_skill] if extra_skill else []):
         target = skills / name
         target.mkdir(parents=True, exist_ok=True)
-        (target / "SKILL.md").write_text(f"# {name} {version}\n", encoding="utf-8")
+        write_text(target / "SKILL.md", f"# {name} {version}\n")
 
     docs = root / "docs"
     docs.mkdir(parents=True, exist_ok=True)
-    (docs / "VERIFIED-WORK-PLANE.md").write_text(f"# work plane {version}\n", encoding="utf-8")
+    write_text(docs / "VERIFIED-WORK-PLANE.md", f"# work plane {version}\n")
     return root
 
 
@@ -85,8 +107,8 @@ class LifecycleTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.project = self.root / "project"
         (self.project / "src").mkdir(parents=True)
-        (self.project / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
-        (self.project / "README.md").write_text("my project\n", encoding="utf-8")
+        write_text(self.project / "src" / "app.py", "print('hi')\n")
+        write_text(self.project / "README.md", "my project\n")
         self.distribution_root = build_distribution_tree(self.root / "dist-v1", "1.0.0")
         self.distribution = manifestlib.load()
         self.source = sourcelib.DistributionSource(
@@ -135,13 +157,10 @@ class LifecycleTestCase(unittest.TestCase):
         return statelib.load(self.project)
 
     def read(self, relative: str) -> str:
-        return (self.project / relative).read_text(encoding="utf-8")
+        return read_text(self.project / relative)
 
     def write(self, relative: str, content: str) -> Path:
-        path = self.project / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        return path
+        return write_text(self.project / relative, content)
 
     def exists(self, relative: str) -> bool:
         return (self.project / relative).exists()
@@ -182,4 +201,5 @@ class LifecycleTestCase(unittest.TestCase):
                               stdin=subprocess.DEVNULL, cwd=str(REPO))
 
 
-__all__ = ["LifecycleTestCase", "build_distribution_tree", "make_release_archive", "REPO"]
+__all__ = ["LifecycleTestCase", "build_distribution_tree", "make_release_archive",
+           "write_text", "read_text", "REPO"]

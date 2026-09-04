@@ -19,6 +19,7 @@ from ainative.lifecycle import manifest as manifestlib
 from ainative.lifecycle import paths as pathslib
 from ainative.lifecycle import provider as providerlib
 from ainative.lifecycle import recovery, state as statelib, updater as updaterlib
+from ainative.lifecycle.digest import digest_file
 from ainative.lifecycle.errors import LifecycleError
 
 TRAVERSAL_PATHS = (
@@ -296,6 +297,72 @@ class CorruptState(LifecycleTestCase):
         with self.assertRaises(LifecycleError) as raised:
             statelib.load(self.project)
         self.assertEqual(raised.exception.code, "INSTALL_STATE_CORRUPTED")
+
+    def test_a_hostile_preference_value_falls_back_instead_of_crashing(self):
+        """The state's values are as untrusted as its keys.
+
+        A `check_interval` of `"soon"` reached `int()` and took down
+        `ainative status` with a traceback (EMP-LC-027).
+        """
+
+        from ainative.lifecycle import updater
+
+        self.install("standard")
+        path = self.project / statelib.STATE_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["update_preferences"] = {"enabled": "yes", "auto_check": 3,
+                                         "check_interval": "soon", "channel": 42}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        preferences = statelib.load(self.project).update_preferences
+        self.assertEqual(preferences, statelib.DEFAULT_UPDATE_PREFERENCES)
+        self.set_env(updater.DISABLE_ENV, "1")
+        self.assertEqual(updater.check(self.project).status, updater.DISABLED)
+
+    def test_a_valid_preference_is_still_honoured(self):
+        self.install("standard")
+        state = statelib.load(self.project)
+        state.update_preferences.update({"check_interval": 60, "auto_check": False,
+                                         "channel": "beta"})
+        statelib.save(self.project, state)
+
+        reloaded = statelib.load(self.project).update_preferences
+        self.assertEqual(reloaded["check_interval"], 60)
+        self.assertIs(reloaded["auto_check"], False)
+        self.assertEqual(reloaded["channel"], "beta")
+
+    def test_a_non_boolean_ownership_flag_preserves_rather_than_deletes(self):
+        """`bool("false")` is True, and that flag gates a deletion.
+
+        A record saying the stack did not write a file read as saying it did,
+        and `uninstall` deleted the user's file (EMP-LC-029).
+        """
+
+        self.install("standard")
+        mine = self.write("mine.txt", "my content\n")
+        path = self.project / statelib.STATE_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["managed_files"].append({
+            "path": "mine.txt", "component": "conventions",
+            "ownership": "MANAGED_IMMUTABLE",
+            "digest_at_install": digest_file(mine),
+            "created_by_ainative": "false", "kind": "file"})
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        self.uninstall()
+        self.assertEqual(self.read("mine.txt"), "my content\n")
+
+    def test_unusable_record_fields_fall_back_to_the_preserving_value(self):
+        record = statelib.ManagedFile.from_record({
+            "path": "x", "ownership": "NOT_A_CLASS", "kind": "not-a-kind",
+            "digest_at_install": "zz", "created_by_ainative": "yes"})
+        self.assertEqual(record.ownership, "MANAGED_MUTABLE")
+        self.assertEqual(record.kind, "file")
+        self.assertIsNone(record.digest_at_install)
+        self.assertIs(record.created_by_ainative, False)
+
+    def test_the_mirrored_ownership_classes_match_the_manifest(self):
+        self.assertEqual(tuple(statelib.OWNERSHIPS), tuple(manifestlib.OWNERSHIPS))
 
     def test_a_tampered_digest_makes_the_file_user_modified_not_replaceable(self):
         self.install("standard")

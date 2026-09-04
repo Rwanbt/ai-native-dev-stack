@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import unittest
 
-from tests.lifecycle_support import LifecycleTestCase, build_distribution_tree
+from tests.lifecycle_support import (LifecycleTestCase, build_distribution_tree,
+                                     write_text)
 from ainative.lifecycle import digest as digestlib
 from ainative.lifecycle import external, manifest as manifestlib
 from ainative.lifecycle import planner as plannerlib
@@ -211,12 +212,54 @@ class ExternalConfiguration(LifecycleTestCase):
         statuses = {item["path"]: item["status"] for item in diagnosis.findings}
         self.assertEqual(statuses[".gitignore"], recovery.DUPLICATE)
 
+    def test_a_crlf_file_keeps_its_line_endings(self):
+        """Text mode translates CRLF to LF on read, so writing it back rewrote
+        every line of a file the stack does not own (EMP-LC-025)."""
+
+        path = self.project / ".gitignore"
+        path.write_bytes(b"*.log\r\nbuild/\r\n")
+        self.install("standard")
+
+        raw = path.read_bytes()
+        self.assertTrue(raw.startswith(b"*.log\r\nbuild/\r\n"),
+                        f"user lines were rewritten: {raw!r}")
+        self.assertIn(b"\r\n# >>> BEGIN", raw, "the block used the wrong line ending")
+
+        self.uninstall()
+        self.assertEqual(path.read_bytes(), b"*.log\r\nbuild/\r\n")
+
+    def test_a_file_without_a_trailing_newline_is_not_corrupted(self):
+        path = self.project / ".gitignore"
+        write_text(path, "*.log")
+        self.install("standard")
+        self.assertTrue(self.read(".gitignore").startswith("*.log\n"))
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), "*.log\n")
+
+    def test_a_marker_quoted_in_prose_is_not_mistaken_for_the_block(self):
+        """A BEGIN whose END has another BEGIN in between opens nothing.
+
+        Treating it as an opener made an uninstall take everything from a
+        passing mention of the marker down to the real block's END, and the
+        user's own lines with it (EMP-LC-026).
+        """
+
+        component = self.distribution.component("gitignore-entry")
+        spec = plannerlib.block_spec(component)
+        prose = f"# see {spec.begin} for what the stack adds\n*.log\nbuild/\n"
+        self.write(".gitignore", prose)
+
+        self.install("standard")
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), prose,
+                         "a quoted marker made the uninstall eat user content")
+
     def test_block_apply_and_remove_are_exact_inverses(self):
         spec = external.BlockSpec("marker", "#", ("a", "b"))
         path = self.write("config", self.UNRELATED)
         applied, changed = external.apply(path, spec)
         self.assertTrue(changed)
-        path.write_text(applied, encoding="utf-8")
+        write_text(path, applied)
         removed, changed = external.remove(path, spec)
         self.assertTrue(changed)
         self.assertEqual(removed, self.UNRELATED)

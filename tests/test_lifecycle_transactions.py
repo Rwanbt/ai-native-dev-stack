@@ -17,7 +17,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from tests.lifecycle_support import LifecycleTestCase
+from tests.lifecycle_support import LifecycleTestCase, write_text
 from ainative.lifecycle import lock as locklib
 from ainative.lifecycle import legacy as legacylib
 from ainative.lifecycle import planner as plannerlib
@@ -162,6 +162,64 @@ class TransactionSafety(LifecycleTestCase):
         self.assertEqual(self.read(".ai-native/lifecycle/state.json"), before)
         self.assertFalse(self.exists(".ai-native/lifecycle/verified.json"))
 
+    def test_a_killed_transaction_persists_what_it_had_already_applied(self):
+        """A journal nobody wrote to is a journal nobody can recover from.
+
+        Changes were appended in memory and the journal was written only at
+        commit, so a killed process left `completed_changes: []` — `repair` had
+        nothing to undo and the half-applied files stayed (EMP-LC-031).
+        """
+
+        from ainative.lifecycle import installer
+
+        self.install("standard")
+
+        class KilledPartway(_Interrupting):
+            stop_after = 1
+
+            def rollback(self):
+                return  # a killed process never gets here
+
+        original_applier = txnlib.Applier
+        txnlib.Applier = KilledPartway
+        self.addCleanup(setattr, txnlib, "Applier", original_applier)
+        with self.assertRaises(Interruption):
+            installer.install(self.project, "verified", distribution=self.distribution,
+                              source=self.source)
+
+        pending = txnlib.interrupted(self.project)
+        self.assertEqual(len(pending), 1)
+        self.assertGreaterEqual(len(pending[0].completed_changes), 1,
+                                "the journal recorded nothing to recover from")
+        self.assertTrue(self.exists(".ai-native/lifecycle/verified.json"),
+                        "the fixture did not apply the change it is about to recover")
+
+        recovery.repair(self.project, distribution=self.distribution, source=self.source)
+        self.assertEqual(txnlib.interrupted(self.project), [])
+        self.assertTrue(recovery.diagnose(self.project,
+                                          distribution=self.distribution).healthy)
+
+    def test_undo_ignores_a_journal_record_this_code_never_wrote(self):
+        """`undo` reads records from a file inside the project: they are data."""
+
+        self.install("standard")
+        victim = self.write("my-notes.txt", "hours of work\n")
+        journal = txnlib.read_journals(self.project)[0]
+        journal.completed_changes = [
+            {"action": "CREATE", "path": "my-notes.txt"},          # ours? no.
+            {"action": "DELETE_EVERYTHING", "path": "README.md"},  # not an action
+            {"action": "CREATE", "path": "../outside.txt"},        # not in the project
+        ]
+        journal.state = txnlib.APPLYING
+        txnlib.write_journal(self.project, journal)
+
+        txnlib.undo(self.project, journal)
+        self.assertEqual(self.read("README.md"), "my project\n")
+        self.assertFalse((self.root / "outside.txt").exists())
+        # The first record is well-formed, so it is honoured — the guard is
+        # against records this code never writes, not against its own.
+        self.assertFalse(victim.exists())
+
     def test_an_interrupted_journal_is_detected_and_blocks_further_mutation(self):
         plan, _, _ = self._plan()
         applier = txnlib.Applier(self.project, self.distribution, self.source, plan)
@@ -219,7 +277,7 @@ class TransactionSafety(LifecycleTestCase):
                                  backup_location=".ai-native/lifecycle/backups/txn_test")
         backup = self.project / journal.backup_location / "AGENTS.md"
         backup.parent.mkdir(parents=True, exist_ok=True)
-        backup.write_text(original, encoding="utf-8")
+        write_text(backup, original)
         journal.completed_changes = [{"action": "REPLACE", "path": "AGENTS.md",
                                       "component": "engineering-method",
                                       "ownership": "MANAGED_MUTABLE", "reason": "",
@@ -307,6 +365,30 @@ class Locking(LifecycleTestCase):
                 with locklib.acquire(self.project, "uninstall"):
                     pass
         self.assertEqual(raised.exception.code, "LOCK_HELD")
+
+    def test_a_lock_being_written_is_not_treated_as_invalid(self):
+        """`O_EXCL` made existence atomic; the payload was written after.
+
+        A second process looking in that window read nothing, called the lock
+        invalid, and deleted a live owner's claim (EMP-LC-030).
+        """
+
+        path = locklib.lock_path(self.project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()                       # exists, empty: mid-creation
+
+        with self.assertRaises(LifecycleError) as raised:
+            with locklib.acquire(self.project, "second"):
+                pass
+        self.assertEqual(raised.exception.code, "LOCK_HELD")
+        self.assertTrue(path.exists(), "a lock being created was deleted")
+
+    def test_force_unlock_still_clears_an_unreadable_lock(self):
+        path = locklib.lock_path(self.project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        with locklib.acquire(self.project, "init", force=True):
+            pass
 
     def test_the_lock_is_released_even_when_the_operation_raises(self):
         with self.assertRaises(ValueError):

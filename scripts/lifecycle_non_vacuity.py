@@ -216,6 +216,57 @@ CASES = (
               ".test_a_dry_run_update_writes_nothing"),
     ),
     Case(
+        name="ownership_flag_typing",
+        guards="a non-boolean ownership flag must preserve, not delete",
+        edits=(Edit("ainative/lifecycle/state.py",
+                    "            created_by_ainative=created if isinstance(created, bool) "
+                    "else False,\n",
+                    "            created_by_ainative=bool(created),\n"),),
+        test=("tests.test_lifecycle_security.CorruptState"
+              ".test_a_non_boolean_ownership_flag_preserves_rather_than_deletes"),
+    ),
+    Case(
+        name="journal_durability",
+        guards="a killed transaction must leave a journal that can be recovered from",
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        self.journal.completed_changes.append(change.to_record())\n"
+                    "        write_journal(self.project, self.journal)\n",
+                    "        self.journal.completed_changes.append(change.to_record())\n"),),
+        test=("tests.test_lifecycle_transactions.TransactionSafety"
+              ".test_a_killed_transaction_persists_what_it_had_already_applied"),
+    ),
+    Case(
+        name="crlf_preservation",
+        guards="an external config file must keep its own line endings",
+        edits=(Edit("ainative/lifecycle/external.py",
+                    '        with path.open("r", encoding="utf-8", newline="") as handle:\n'
+                    "            return handle.read()\n",
+                    '        return path.read_text(encoding="utf-8")\n'),),
+        test=("tests.test_lifecycle_ownership.ExternalConfiguration"
+              ".test_a_crlf_file_keeps_its_line_endings"),
+    ),
+    Case(
+        name="lock_atomicity",
+        guards="a lock being written must not be mistaken for an invalid one",
+        edits=(Edit("ainative/lifecycle/lock.py",
+                    "        if existing is None:\n"
+                    "            # Unreadable. That is either corruption or a claim being made "
+                    "right\n"
+                    "            # now, and this code cannot tell them apart — so it refuses "
+                    "rather\n"
+                    "            # than deleting what may be a live owner's lock.\n"
+                    "            raise LifecycleError(\n"
+                    '                "LOCK_HELD",\n'
+                    '                f"{path} exists but cannot be read as a lock. If no '
+                    'lifecycle "\n'
+                    '                "operation is running, re-run with --force-unlock.")\n',
+                    "        if existing is None:\n"
+                    "            path.unlink(missing_ok=True)\n"
+                    "            continue\n"),),
+        test=("tests.test_lifecycle_transactions.Locking"
+              ".test_a_lock_being_written_is_not_treated_as_invalid"),
+    ),
+    Case(
         name="journal_id_containment",
         guards="a tampered transaction journal must not write outside the project",
         # Three layers: the id checked on read, the id checked on write, and

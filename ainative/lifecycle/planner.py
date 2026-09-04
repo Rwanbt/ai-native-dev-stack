@@ -33,6 +33,10 @@ BLOCK_WRITE = "BLOCK_WRITE"
 BLOCK_REMOVE = "BLOCK_REMOVE"
 
 MUTATING_ACTIONS = (CREATE, REPLACE, REMOVE, BLOCK_WRITE, BLOCK_REMOVE)
+# Every action this code writes into a journal. Anything else read back
+# from one was not written by this code and is ignored.
+ACTIONS = (CREATE, REPLACE, REMOVE, SKIP, PRESERVE, CONFLICT,
+           BLOCK_WRITE, BLOCK_REMOVE)
 
 
 @dataclass(frozen=True)
@@ -434,7 +438,7 @@ def managed_entries(component: Component, changes: Sequence[Change]) -> list[Man
 
 __all__ = [
     "CREATE", "REPLACE", "REMOVE", "SKIP", "PRESERVE", "CONFLICT",
-    "BLOCK_WRITE", "BLOCK_REMOVE", "MUTATING_ACTIONS",
+    "BLOCK_WRITE", "BLOCK_REMOVE", "MUTATING_ACTIONS", "ACTIONS",
     "Change", "Plan", "block_spec", "marker_payload", "component_files",
     "plan_component_install", "plan_component_removal",
     "build_install_plan", "build_uninstall_plan", "managed_entries",

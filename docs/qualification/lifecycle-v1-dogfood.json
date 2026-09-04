@@ -1,14 +1,14 @@
 {
   "authority": "production_boundary",
   "authority_claim": "none - dogfood evidence only",
-  "contract_digest": "4f4584efa433a36a07cfec5fa0b6c0de31bf27aa50405a5c86cd9ebcaf6894fe",
+  "contract_digest": "a32a973d86a5a9a0ec5156755f096980c41b40ddf3fc5881996be28c07579612",
   "fingerprint": "",
   "gaps": [],
   "reason": "all deterministic conditions satisfied",
-  "recorded_at": "2026-09-04T15:17:55Z",
+  "recorded_at": "2026-09-04T17:24:19Z",
   "requirements": 8,
   "schema_version": 1,
-  "source_commit": "73060cae27f5b82bd135c3c8b7a825510fb27b84",
+  "source_commit": "dd7ea5c0dc3d6deb3d2b4ab98fdea07e9087829f",
   "subject": "Distribution & Lifecycle Manager v1",
   "surface": "evaluate_work",
   "trust_provenance": "agent_bootstrapped_in_a_throwaway_clone",
@@ -16,67 +16,67 @@
   "verifications": [
     {
       "command": "profiles",
-      "duration_seconds": 4.0,
-      "evidence_uid": "run_01M1PFSFKYYNW7PZ0BD62HEJ32",
+      "duration_seconds": 4.6,
+      "evidence_uid": "run_01M1PPXPJ7YJ07CT3M8EE0P0Y2",
       "requirement": "profiles",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFC7T5SPA919SSNFEKX"
+      "specification": "verify_01M1PPXGFXY4YPVEKEZSMPPD3E"
     },
     {
       "command": "transitions",
-      "duration_seconds": 14.5,
-      "evidence_uid": "run_01M1PFSXR7VSYD8V67BM2C46E6",
+      "duration_seconds": 19.8,
+      "evidence_uid": "run_01M1PPY9SB3AT8JAMGSC6PF25E",
       "requirement": "transitions",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFCW0XQJQH6378WK6JB"
+      "specification": "verify_01M1PPXGFXRMJJANC6GRCWBBP5"
     },
     {
       "command": "ownership",
-      "duration_seconds": 9.3,
-      "evidence_uid": "run_01M1PFT6V12GGJN2Y5Q0XAF5Q6",
+      "duration_seconds": 14.2,
+      "evidence_uid": "run_01M1PPYQK8RVC15S7CFHBV4TEQ",
       "requirement": "ownership",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFCRG47R3PDFJ1W9QKR"
+      "specification": "verify_01M1PPXGFXQD13YBHWYE9SS78V"
     },
     {
       "command": "transactions",
-      "duration_seconds": 8.4,
-      "evidence_uid": "run_01M1PFTF19MNTNVW7741WE1N2H",
+      "duration_seconds": 17.1,
+      "evidence_uid": "run_01M1PPZ48CPVET5FGH4V5VRA7Q",
       "requirement": "transactions",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFC73G6VJ2FMG954Z40"
+      "specification": "verify_01M1PPXGFYMB95G3WNNP119PYA"
     },
     {
       "command": "updates",
-      "duration_seconds": 11.9,
-      "evidence_uid": "run_01M1PFTTNDPVV9QAPBMG2W983D",
+      "duration_seconds": 24.2,
+      "evidence_uid": "run_01M1PPZZXTFGF2TQYY4AJDRESN",
       "requirement": "updates",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFC3S9A1EGVAXW9R5AK"
+      "specification": "verify_01M1PPXGFYAA8EA33RWE7K9JME"
     },
     {
       "command": "safety",
-      "duration_seconds": 5.8,
-      "evidence_uid": "run_01M1PFV0B4WJB6GX6NP1RCBWYD",
+      "duration_seconds": 9.2,
+      "evidence_uid": "run_01M1PQ08ZWE4FV2W7B9M18WVRF",
       "requirement": "safety",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFC9CKMPVT6SEZFVRX6"
+      "specification": "verify_01M1PPXGFYY4K68T3M5GG5188D"
     },
     {
       "command": "cli",
-      "duration_seconds": 15.0,
-      "evidence_uid": "run_01M1PFVEX6AZ3NTMKV8DCHPSH5",
+      "duration_seconds": 18.7,
+      "evidence_uid": "run_01M1PQ0VAKQRYVS0RKBX5MT3NM",
       "requirement": "cli",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFCX1XHW1F7ZMC3AJ04"
+      "specification": "verify_01M1PPXGFYCE4E90BSE8QRKVHD"
     },
     {
       "command": "non_vacuity",
-      "duration_seconds": 30.4,
-      "evidence_uid": "run_01M1PFWCKEMMH0M7SNCSY9Q2CB",
+      "duration_seconds": 48.4,
+      "evidence_uid": "run_01M1PQ2AJRDYC79N1H2MQBR4NJ",
       "requirement": "non_vacuity",
       "result": "PASS",
-      "specification": "verify_01M1PFSAFC1DB0GKK47H31KB9W"
+      "specification": "verify_01M1PPXGFYDAEKCRXBNV3Y2MY5"
     }
   ]
 }

@@ -1,9 +1,9 @@
 """One lifecycle mutation at a time, per project.
 
 Two concurrent mutations would interleave a plan built against one state with
-writes made against another. The lock is a file created with `O_EXCL`, which is
-atomic on every platform we support, and it records the owning process so a
-lock left by a crash can be distinguished from a lock held by a live run.
+writes made against another. The lock is created complete — payload and all —
+in one atomic step, and it records the owning process so a lock left by a crash
+can be distinguished from a lock held by a live run.
 
 A stale lock is reclaimed only when its recorded process is provably gone. A
 lock whose owner cannot be judged is left alone and reported: deleting a live
@@ -15,6 +15,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -154,6 +155,43 @@ def _reclaim_if_dead(project: Path, info: LockInfo) -> bool:
     return False
 
 
+def _claim(path: Path, payload: str) -> bool:
+    """Create the lock complete, or not at all. True when this process won it.
+
+    `O_EXCL` makes the *existence* atomic, but the payload was written after,
+    leaving a window in which the file existed and was empty. A second process
+    that looked in that window read nothing, concluded the lock was invalid, and
+    deleted a live owner's claim (EMP-LC-030).
+
+    Writing the payload to a temporary file and hard-linking it into place makes
+    creation and content one step: another process either sees no file, or sees
+    a complete one. Where `os.link` is unavailable the O_EXCL path is used and
+    an unreadable lock is retained rather than removed, which is slower to
+    recover but never wrong.
+    """
+
+    # Unique per attempt, not per process: two threads share a pid, and a
+    # shared staging name let one truncate the file the other was about to
+    # link into place.
+    descriptor, name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.")
+    staging = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+        try:
+            os.link(staging, path)
+            return True
+        except FileExistsError:
+            return False
+        except (OSError, NotImplementedError, AttributeError):
+            handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(payload)
+            return True
+    finally:
+        staging.unlink(missing_ok=True)
+
+
 @contextmanager
 def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[LockInfo]:
     path = lock_path(project)
@@ -165,38 +203,43 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
 
     for attempt in range(2):
         try:
-            handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            won = _claim(path, payload)
         except FileExistsError:
-            existing = read(project)
-            if existing is None:
-                # Unreadable lock file: it is not a valid claim, so replace it.
-                path.unlink(missing_ok=True)
-                continue
-            if attempt == 0 and force:
-                # A human said this lock is stale. Retrying without removing it
-                # just failed again on the next O_EXCL (EMP-LC-008).
-                path.unlink(missing_ok=True)
-                continue
-            if attempt == 0 and _reclaim_if_dead(project, existing):
-                continue
-            raise LifecycleError(
-                "LOCK_HELD",
-                f"another lifecycle operation holds the lock (pid {existing.pid}, "
-                f"{existing.operation or 'unknown'}). If that process is gone, "
-                f"re-run with --force-unlock.",
-                holder=existing.to_record()) from None
+            won = False
         except OSError as error:
             if error.errno == errno.EACCES:
                 raise LifecycleError("LOCK_HELD", f"cannot create {path}: {error}") from error
             raise
-        else:
+
+        if won:
             try:
-                with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                    stream.write(payload)
                 yield info
             finally:
                 path.unlink(missing_ok=True)
             return
+
+        existing = read(project)
+        if attempt == 0 and force:
+            # A human said this lock is stale. Retrying without removing it
+            # just failed again on the next attempt (EMP-LC-008).
+            path.unlink(missing_ok=True)
+            continue
+        if existing is None:
+            # Unreadable. That is either corruption or a claim being made right
+            # now, and this code cannot tell them apart — so it refuses rather
+            # than deleting what may be a live owner's lock.
+            raise LifecycleError(
+                "LOCK_HELD",
+                f"{path} exists but cannot be read as a lock. If no lifecycle "
+                "operation is running, re-run with --force-unlock.")
+        if attempt == 0 and _reclaim_if_dead(project, existing):
+            continue
+        raise LifecycleError(
+            "LOCK_HELD",
+            f"another lifecycle operation holds the lock (pid {existing.pid}, "
+            f"{existing.operation or 'unknown'}). If that process is gone, "
+            f"re-run with --force-unlock.",
+            holder=existing.to_record()) from None
 
     raise LifecycleError("LOCK_HELD", f"could not acquire {path} after reclaiming a stale lock")
 

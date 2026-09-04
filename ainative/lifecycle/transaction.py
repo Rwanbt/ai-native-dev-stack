@@ -330,6 +330,15 @@ class Applier:
     def _apply(self, change: Change) -> None:
         target = resolve_within(self.project, change.path)
         self._backup(change, target)
+        # Recorded before the write, and persisted immediately. Appending to an
+        # in-memory list and only writing the journal at commit meant a killed
+        # process left `completed_changes: []`, so `repair` had nothing to undo
+        # and the half-applied files stayed (EMP-LC-031). Recording a change
+        # that then did not happen is harmless: the backup is already taken, so
+        # restoring it is a no-op, and removing a CREATE that never landed is
+        # `missing_ok`.
+        self.journal.completed_changes.append(change.to_record())
+        write_journal(self.project, self.journal)
         if change.action in (plannerlib.CREATE, plannerlib.REPLACE):
             self._write_file(change, target)
         elif change.action == plannerlib.REMOVE:
@@ -341,7 +350,6 @@ class Applier:
         else:
             return
         self.applied.append((change, target))
-        self.journal.completed_changes.append(change.to_record())
 
     # --- verification ----------------------------------------------------
 
@@ -438,10 +446,16 @@ def undo(project: Path, journal: Journal) -> dict:
     removed: list[str] = []
     backup_root = project / journal.backup_location if journal.backup_location else None
     for record in reversed(journal.completed_changes):
+        # The journal is a file inside the project, so its records are data.
+        # A record naming an action this code never writes, or a path that does
+        # not resolve inside the project, governs nothing.
         path = record.get("path")
-        if not isinstance(path, str):
+        if not isinstance(path, str) or record.get("action") not in plannerlib.ACTIONS:
             continue
-        target = resolve_within(project, path)
+        try:
+            target = resolve_within(project, path)
+        except LifecycleError:
+            continue
         saved = backup_root / path if backup_root else None
         if saved is not None and saved.is_dir():
             shutil.copytree(saved, target, dirs_exist_ok=True, symlinks=True)
