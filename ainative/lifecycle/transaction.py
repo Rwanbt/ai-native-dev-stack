@@ -58,6 +58,10 @@ class Journal:
     started_at: str = field(default_factory=statelib.now)
     finished_at: str | None = None
     stack_version: str = "0.0.0"
+    # Whether the install state this transaction was about to replace was saved
+    # alongside the files. Without it an undo restores the bytes and leaves the
+    # record describing a version that is no longer on disk (EMP-LC-014).
+    state_backed_up: bool = False
 
     def to_record(self) -> dict:
         return {
@@ -70,6 +74,7 @@ class Journal:
             "planned_changes": self.planned_changes,
             "completed_changes": self.completed_changes,
             "backup_location": self.backup_location,
+            "state_backed_up": self.state_backed_up,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "stack_version": self.stack_version,
@@ -89,6 +94,7 @@ class Journal:
             started_at=str(raw.get("started_at", "")),
             finished_at=raw.get("finished_at"),
             stack_version=str(raw.get("stack_version", "0.0.0")),
+            state_backed_up=bool(raw.get("state_backed_up", False)),
         )
 
     @property
@@ -310,12 +316,29 @@ class Applier:
             elif change.action == plannerlib.REMOVE and target.exists():
                 raise LifecycleError("APPLY_FAILED", f"{change.path} still exists after removal")
 
+    def _backup_install_state(self) -> None:
+        """Save the install state this transaction is about to replace.
+
+        Undoing a committed transaction has to put the record back as well as
+        the bytes. Without this, `update rollback` restored v1's files and left
+        a state that still described v2 (EMP-LC-014).
+        """
+
+        current = statelib.state_path(self.project)
+        if not current.is_file():
+            return
+        destination = self.backup_root / statelib.STATE_RELATIVE
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(current, destination)
+        self.journal.state_backed_up = True
+
     def rollback(self) -> None:
         for change, target in reversed(self.applied):
             try:
                 self._restore(change, target)
             except OSError:
                 continue
+        restore_install_state(self.project, self.journal)
         self.journal.state = ROLLED_BACK
         self.journal.finished_at = statelib.now()
         write_journal(self.project, self.journal)
@@ -329,6 +352,7 @@ class Applier:
         self.journal.state = APPLYING
         self.journal.backup_location = str(
             self.backup_root.relative_to(self.project).as_posix())
+        self._backup_install_state()
         write_journal(self.project, self.journal)
 
         try:
@@ -347,18 +371,27 @@ class Applier:
         return self.journal
 
 
-def recover(project: Path, journal: Journal) -> dict:
-    """Undo an interrupted transaction from its recorded backup.
+def restore_install_state(project: Path, journal: Journal) -> bool:
+    """Put back the install state this transaction replaced, if it saved one."""
 
-    Deterministic and conservative: it restores every file the journal says it
-    completed, and removes a file that was created and has no backup. It never
-    guesses at a change that was planned but not recorded as completed — that
-    change never ran.
+    if not journal.state_backed_up or not journal.backup_location:
+        return False
+    saved = project / journal.backup_location / statelib.STATE_RELATIVE
+    if not saved.is_file():
+        return False
+    statelib.write_atomic(statelib.state_path(project),
+                          saved.read_text(encoding="utf-8"))
+    return True
+
+
+def undo(project: Path, journal: Journal) -> dict:
+    """Reverse one transaction's completed changes, files and state alike.
+
+    Deterministic and conservative: it restores every path the journal recorded
+    as completed, removes a file that was created and therefore has no backup,
+    and puts the install state back. It never guesses at a change that was
+    planned but not recorded as completed — that change never ran.
     """
-
-    if journal.effective_state != INTERRUPTED:
-        return {"transaction": journal.identifier, "action": "none",
-                "state": journal.effective_state}
 
     restored: list[str] = []
     removed: list[str] = []
@@ -377,14 +410,28 @@ def recover(project: Path, journal: Journal) -> dict:
             shutil.copy2(saved, target)
             restored.append(path)
         elif record.get("action") == plannerlib.CREATE and target.is_file():
+            # Created by this transaction, so there is nothing to restore: the
+            # previous state did not have it. Leaving it behind is what made
+            # `update rollback` produce a v1 project holding v2's new files.
             target.unlink(missing_ok=True)
             removed.append(path)
 
+    state_restored = restore_install_state(project, journal)
     journal.state = ROLLED_BACK
     journal.finished_at = statelib.now()
     write_journal(project, journal)
     return {"transaction": journal.identifier, "action": "rolled_back",
-            "restored": sorted(restored), "removed": sorted(removed)}
+            "restored": sorted(restored), "removed": sorted(removed),
+            "install_state_restored": state_restored}
+
+
+def recover(project: Path, journal: Journal) -> dict:
+    """Undo an interrupted transaction. A committed one is not touched here."""
+
+    if journal.effective_state != INTERRUPTED:
+        return {"transaction": journal.identifier, "action": "none",
+                "state": journal.effective_state}
+    return undo(project, journal)
 
 
 def summarise(journals: Sequence[Journal]) -> list[dict]:
@@ -395,6 +442,7 @@ def summarise(journals: Sequence[Journal]) -> list[dict]:
 
 __all__ = [
     "PREPARED", "APPLYING", "COMMITTED", "ROLLED_BACK", "INTERRUPTED", "RETENTION",
-    "Journal", "Applier", "recover", "read_journals", "interrupted", "prune",
+    "Journal", "Applier", "recover", "undo", "restore_install_state",
+    "read_journals", "interrupted", "prune",
     "transactions_dir", "backups_dir", "journal_path", "write_journal", "summarise",
 ]

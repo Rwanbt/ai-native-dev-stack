@@ -364,28 +364,38 @@ def rollback(project: Path, *, dry_run: bool = False) -> dict:
         raise LifecycleError("ROLLBACK_UNAVAILABLE",
                              f"transaction {identifier} kept no backup to restore from")
 
-    restored = sorted(str(item.relative_to(backup).as_posix())
-                      for item in backup.rglob("*") if item.is_file())
+    # Reversing the update means both halves: files it replaced come back from
+    # the backup, and files it *created* go away. Restoring only the first left
+    # a project holding the old version's content and the new version's new
+    # files, with a state that agreed with neither (EMP-LC-014).
+    would_restore = sorted(item["path"] for item in journal.completed_changes
+                           if isinstance(item.get("path"), str)
+                           and item.get("action") != "CREATE")
+    would_remove = sorted(item["path"] for item in journal.completed_changes
+                          if isinstance(item.get("path"), str)
+                          and item.get("action") == "CREATE")
     if dry_run:
         return {"operation": "update rollback", "dry_run": True,
                 "transaction": identifier, "to_version": record.get("from_version"),
-                "would_restore": restored, "scope": record.get("scope", "")}
+                "would_restore": would_restore, "would_remove": would_remove,
+                "scope": record.get("scope", "")}
 
     from . import lock as locklib
 
     with locklib.acquire(project, "update-rollback"):
-        for relative in restored:
-            target = installerlib.require_project(project) / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(backup / relative, target)
+        outcome = txnlib.undo(project, journal)
         state = statelib.load(project)
-        if state is not None:
+        if state is not None and not outcome["install_state_restored"]:
+            # No saved state to put back (a transaction from before this was
+            # recorded). Say what we can rather than leaving a stale version.
             state.stack_version = str(record.get("from_version", state.stack_version))
             state.source_version = state.stack_version
             statelib.save(project, state)
         record_path.unlink(missing_ok=True)
     return {"operation": "update rollback", "dry_run": False, "transaction": identifier,
-            "to_version": record.get("from_version"), "restored": restored,
+            "to_version": record.get("from_version"), "restored": outcome["restored"],
+            "removed": outcome["removed"],
+            "install_state_restored": outcome["install_state_restored"],
             "scope": record.get("scope", "")}
 
 

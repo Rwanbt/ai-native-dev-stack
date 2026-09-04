@@ -198,6 +198,51 @@ class UpdateRecovery(LocalReleaseFixture):
         self.assertEqual(statelib.load(self.project).stack_version, "1.0.0")
         self.assertIn("project assets", record["scope"])
 
+    def test_rollback_also_removes_the_files_the_update_created(self):
+        """Reversing an update is both halves, or it is not a reversal.
+
+        Restoring only what was replaced left a project holding the old
+        version's content *and* the new version's new files, with an install
+        state that agreed with neither (EMP-LC-014).
+        """
+
+        from ainative.lifecycle import recovery
+
+        newer = build_distribution_tree(self.root / "dist-v2b", "2.0.0",
+                                        extra_skill="brand-new")
+        archive = make_release_archive(newer, self.releases / "stack-2.0.0b.zip")
+        self.publish("2.0.0", archive)
+
+        self.install("standard")
+        self.assertFalse(self.exists(".claude/skills/brand-new/SKILL.md"))
+
+        updaterlib.apply(self.project, distribution=self.distribution)
+        self.assertTrue(self.exists(".claude/skills/brand-new/SKILL.md"))
+        self.assertEqual(statelib.load(self.project).stack_version, "2.0.0")
+
+        record = updaterlib.rollback(self.project)
+        self.assertFalse(self.exists(".claude/skills/brand-new/SKILL.md"),
+                         "a file the update created survived the rollback")
+        self.assertEqual(self.read("AGENTS.md"), "# Engineering method 1.0.0\n")
+        self.assertEqual(statelib.load(self.project).stack_version, "1.0.0")
+        self.assertTrue(record["install_state_restored"],
+                        "the install state was not restored with the files")
+        self.assertTrue(recovery.diagnose(self.project,
+                                          distribution=self.distribution).healthy)
+
+    def test_the_install_state_is_backed_up_before_it_is_replaced(self):
+        self.install("standard")
+        updaterlib.apply(self.project, distribution=self.distribution)
+        # By operation, not by list position: journals are named by a random
+        # id, so the glob order says nothing about which ran last.
+        journal = next(item for item in txnlib.read_journals(self.project)
+                       if item.operation == "update")
+        self.assertTrue(journal.state_backed_up)
+        saved = (self.project / journal.backup_location / statelib.STATE_RELATIVE)
+        self.assertTrue(saved.is_file())
+        self.assertEqual(json.loads(saved.read_text(encoding="utf-8"))["stack_version"],
+                         "1.0.0")
+
     def test_rollback_dry_run_lists_without_restoring(self):
         self.install("standard")
         updaterlib.apply(self.project, distribution=self.distribution)
