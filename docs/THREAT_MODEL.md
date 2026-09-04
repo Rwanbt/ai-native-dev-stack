@@ -86,6 +86,26 @@ These are the harder ones: manufacturing the things the evaluator does accept.
 | Historical evidence bound to a commit but not to an object | Rewrite the committed manifest's chain entry | Name a commit that is real and signed while claiming it contained an approval it never held | The evaluator reads the approval out of that commit at the recorded path and requires the recorded digest to match before deriving any facts | The working tree is never consulted for a historical transition, so a rewritten history is the remaining assumption — already outside the V2 threat model | A107 |
 | Approval replay | Keep an approval issued earlier | Replay it from a different state to undo a strengthening committed since | `mutation_approval` binds `base_digest`, so it authorizes one transition rather than one destination | A creation approval remains content-addressed by decision (ADR-0007 §3) | A106 |
 
+## Status of this model
+
+Ten external authority reviews, closed at `2fb2154`:
+
+```text
+P0 authority = 0    external finding, not self-certified
+P1 authority = 0    external finding, not self-certified
+AUTHORITY GATE = CLOSED, architecture frozen
+```
+
+The architecture should not be reopened without a **concrete empirical
+reproducer** or a newly adopted threat-model requirement. Every threat below
+carries the case that holds it; a change that cannot name a failing case is a
+speculative pass, and this document exists partly to say so.
+
+Outstanding, and deliberately not authority work: `_valid_root_chain` applies
+current authority facts to some historical root-level `required_mutation_facts`
+while transition authorization uses bound historical facts. No false-success
+reproducer is known; the risk, if any, is a false *refusal*. Recorded as P2.
+
 ## The bootstrap boundary — an assumption, not a defence
 
 | Question | Answer |

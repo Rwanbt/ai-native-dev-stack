@@ -18,52 +18,54 @@ CONVERGENCE:  PASS
 ADVERSARIAL:  PASS (A01-A53 and A71, covered across the Linux and Windows legs)
 CI:           PASS
 
-CONTROLLER_AUTHORITY:            ADDRESSED, awaiting external review
-AUTHORITATIVE_E2E:               ADDRESSED, awaiting external review
-PER_EVIDENCE_TRUST:              ADDRESSED, awaiting external review
-PER_EVIDENCE_FRESHNESS:          ADDRESSED, awaiting external review
+CONTROLLER_AUTHORITY:            PASS, closed by external review
+AUTHORITATIVE_E2E:               PASS, closed by external review
+PER_EVIDENCE_TRUST:              PASS, closed by external review
+PER_EVIDENCE_FRESHNESS:          PASS, closed by external review
 
-AUTHENTICATED_EVIDENCE:          ADDRESSED, awaiting external review
-PROVENANCE_CAPABILITIES:         ADDRESSED, awaiting external review
-SUCCESS_CONDITION_AUTHORIZATION: ADDRESSED, awaiting external review
-AUTHORIZATION_EVIDENCE:          ADDRESSED, awaiting external review
-ROOT_TRANSITION_BINDING:         ADDRESSED, awaiting external review
-EXACT_WORK_BINDING:              ADDRESSED, awaiting external review
-REGISTRY_SCHEMA:                 ADDRESSED, awaiting external review
+AUTHENTICATED_EVIDENCE:          PASS, closed by external review
+PROVENANCE_CAPABILITIES:         PASS, closed by external review
+SUCCESS_CONDITION_AUTHORIZATION: PASS, closed by external review
+AUTHORIZATION_EVIDENCE:          PASS, closed by external review
+ROOT_TRANSITION_BINDING:         PASS, closed by external review
+EXACT_WORK_BINDING:              PASS, closed by external review
+REGISTRY_SCHEMA:                 PASS, closed by external review
 
-APPROVAL_ORIGIN:                 ADDRESSED, awaiting external review
-AUTHORITY_STABILITY:             ADDRESSED, awaiting external review
-ROOT_CHAIN_RESOLUTION:           ADDRESSED, awaiting external review
-HUMAN_APPROVAL_CONVERGENCE:      ADDRESSED, awaiting external review
-AUTHORING_FACADE:                ADDRESSED, awaiting external review
+APPROVAL_ORIGIN:                 PASS, closed by external review
+AUTHORITY_STABILITY:             PASS, closed by external review
+ROOT_CHAIN_RESOLUTION:           PASS, closed by external review
+HUMAN_APPROVAL_CONVERGENCE:      PASS, closed by external review
+AUTHORING_FACADE:                PASS, closed by external review
 
-APPROVAL_PREDICATE:              ADDRESSED, awaiting external review
-GENESIS_TRUST_BOOTSTRAP:         ADDRESSED, awaiting external review
-COMMITTED_ROOT_HISTORY:          ADDRESSED, awaiting external review
-PREDICATE_PROVIDER:              ADDRESSED, awaiting external review (signature; git_reviewed and ci_verified remain unimplementable)
+APPROVAL_PREDICATE:              PASS, closed by external review
+GENESIS_TRUST_BOOTSTRAP:         PASS, closed by external review
+COMMITTED_ROOT_HISTORY:          PASS, closed by external review
+PREDICATE_PROVIDER:              PASS, closed by external review (signature; git_reviewed and ci_verified remain unimplementable)
 
-INITIAL_CONTRACT_ADMISSION:      ADDRESSED, awaiting external review
-SIGNER_AUTHORIZATION:            ADDRESSED, awaiting external review
-CONJUNCTIVE_PATH_PROVENANCE:     ADDRESSED, awaiting external review
-ROOT_CHAIN_CONNECTIVITY:         ADDRESSED, awaiting external review
+INITIAL_CONTRACT_ADMISSION:      PASS, closed by external review
+SIGNER_AUTHORIZATION:            PASS, closed by external review
+CONJUNCTIVE_PATH_PROVENANCE:     PASS, closed by external review
+ROOT_CHAIN_CONNECTIVITY:         PASS, closed by external review
 
-POLICY_EVOLUTION:                ADDRESSED, awaiting external review
-CONTROLLER_ANCHOR_VERIFICATION:  ADDRESSED, awaiting external review
+POLICY_EVOLUTION:                PASS, closed by external review
+CONTROLLER_ANCHOR_VERIFICATION:  PASS, closed by external review
 
-POLICY_ROOT_ATOMICITY:           ADDRESSED, awaiting external review
-HISTORICAL_TRANSITION_EVIDENCE:  ADDRESSED, awaiting external review (commit + path + digest)
-AUTHORITY_PREFLIGHT:             ADDRESSED, awaiting external review (one boundary, every production surface)
-APPROVAL_SCOPE:                  ADDRESSED, awaiting external review (decided, not left ambiguous)
+POLICY_ROOT_ATOMICITY:           PASS, closed by external review
+HISTORICAL_TRANSITION_EVIDENCE:  PASS, closed by external review (commit + path + digest)
+AUTHORITY_PREFLIGHT:             PASS, closed by external review (one boundary, every production surface)
+APPROVAL_SCOPE:                  PASS, closed by external review (decided, not left ambiguous)
 BOOTSTRAP_TRUST:                 OUT OF SCOPE, declared (ADR-0006, A101)
 REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 
 ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A112)
+EXECUTION_SURFACES:              PASS (converge and verify gated; debug run-command non-authoritative by design)
 
 HISTORICAL:   OPEN
 PILOT:        OPEN
 
-P0 = not claimable
-P1 = not claimable
+AUTHORITY GATE = CLOSED by external review at 2fb2154
+P0 authority = 0   (external finding, not self-certified)
+P1 authority = 0   (external finding, not self-certified)
 
 → NO-GO
 ```
@@ -71,8 +73,16 @@ P1 = not claimable
 `NO-GO` is the plan's own verdict for this state, not a judgement about the
 code.
 
-**P0 = 0 is deliberately not claimed here**, and the second review is why the
-rule earns its keep. The first round closed five authority findings, every one
+**`P0 authority = 0` is now written here because an external reviewer wrote it
+first**, at `2fb2154`, after ten rounds. It was never claimed by the author,
+and the discipline that kept it unclaimed is why the figure means anything —
+this is what the rest of this section is a record of.
+
+The authority architecture is frozen. Reopening it should require a concrete
+empirical reproducer or a newly adopted threat-model requirement, not another
+speculative pass.
+
+The second review is why the rule earns its keep. The first round closed five authority findings, every one
 held by an end-to-end case, all green on two platforms — and an external
 reviewer then found four more P0s in what those cases did not ask. A
 hand-written `verification_run` converged. A signature satisfied a policy
@@ -250,6 +260,11 @@ model. Three findings remained; all three are corrected.
 
 ## Open gates
 
+> **The two gates below are now the whole of what stands between this branch and
+> a production decision.** Authority hardening is closed and frozen; neither of
+> these can be closed by writing more code, and neither can be closed by the
+> author alone.
+
 ### Historical — never executed
 
 No blind historical validation has been run. The protocol is written down in
@@ -272,6 +287,12 @@ the four qualification gates at a commit. That is gate reproducibility, not the
 pilot protocol of section 48, which requires per-item contracts, revisions,
 reruns, interventions and friction across two real features, a bugfix, a
 refactor and a hotfix.
+
+The closure review adds a requirement the current harness does not meet: **the
+pilot must exercise the authoritative production surfaces**, not the pure
+`converge()` kernel. `scripts/workplane_pilot.py` calls the kernel directly and
+labels itself `authority: smoke_pilot_only`. Closing this gate therefore needs
+the harness rewritten around `evaluate_work` *and* five real work items.
 
 ## Local verification at the time of writing
 
