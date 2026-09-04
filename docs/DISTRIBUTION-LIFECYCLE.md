@@ -133,7 +133,7 @@ classified and its content hashed at the moment the stack writes it.
 | `MANAGED_IMMUTABLE` | replaced only when the file still holds the bytes we wrote | removed only when unchanged |
 | `MANAGED_MUTABLE` | never silently overwritten; a changed file keeps its content and gets `<name>.new` beside it | preserved if changed, removed if unchanged |
 | `USER_DATA` | never touched | never removed; `--purge` only |
-| `EXTERNAL_CONFIG` | only the delimited region is rewritten | only the region is taken back, byte for byte |
+| `EXTERNAL_CONFIG` | only the delimited region is rewritten | only the region is taken back, byte for byte (one exception below) |
 
 Comparing `digest_at_install` with the bytes on disk yields one of four states:
 
@@ -164,9 +164,17 @@ tools/ai_docs/config.sh
 # <<< END ai-native-dev-stack
 ```
 
-`apply` and `remove` are exact inverses. After an uninstall the file is byte-for-byte
-what it was before the install, minus nothing. The one normalisation is a trailing
-newline on a file that lacked one.
+`apply` and `remove` are exact inverses, with one stated exception: a file that
+did **not** end with a newline gets one, and keeps it after the region is
+removed. `abc` becomes `abc
+`. The alternative is appending the block to the
+file's last line, which corrupts that line — so the newline is added
+deliberately, and it is the only byte outside the managed region that any
+lifecycle operation ever changes.
+
+Everything else is exact, including CRLF: the file is read and written with no
+newline translation, and the block is rendered with whatever line ending the
+file already uses.
 
 ---
 

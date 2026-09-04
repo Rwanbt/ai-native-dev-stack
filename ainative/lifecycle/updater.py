@@ -188,6 +188,9 @@ class UpdateResult:
     check: CheckResult
     plan: dict | None = None
     conflicts: list[str] = field(default_factory=list)
+    # Where each new version landed. Usually `<path>.new`, but never on top
+    # of one the user already had (EMP-LC-037).
+    side_by_side: list[str] = field(default_factory=list)
     transaction: str | None = None
     rollback_available: bool = False
 
@@ -195,7 +198,9 @@ class UpdateResult:
         return {"operation": "update", "applied": self.applied, "dry_run": self.dry_run,
                 "from_version": self.from_version, "to_version": self.to_version,
                 "check": self.check.to_record(), "plan": self.plan,
-                "conflicts": sorted(self.conflicts), "transaction": self.transaction,
+                "conflicts": sorted(self.conflicts),
+                "side_by_side": sorted(self.side_by_side),
+                "transaction": self.transaction,
                 "rollback_available": self.rollback_available}
 
 
@@ -318,10 +323,15 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
         # After the transaction, not before: a `.new` written first survived an
         # install that then failed, leaving a file no journal knew about and no
         # rollback would remove (EMP-LC-035).
-        for path in conflicts:
-            _write_side_by_side(project, plan, staged_source, path)
+        # `conflicts` stays the files the user changed; `side_by_side` is where
+        # each new version actually landed, which is not always `<path>.new`.
+        side_by_side = [name for name in
+                        (_write_side_by_side(project, plan, staged_source, path,
+                                             staged_source.version)
+                         for path in conflicts) if name]
         return UpdateResult(True, False, state.stack_version, staged_source.version, outcome,
-                            result.plan.to_record(), conflicts, result.transaction,
+                            result.plan.to_record(), conflicts, side_by_side,
+                            result.transaction,
                             rollback_available=rollback_candidate(project) is not None)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -333,8 +343,15 @@ def _staging_root(project: Path) -> Path:
     return root
 
 
-def _write_side_by_side(project: Path, plan, source: DistributionSource, path: str) -> None:
+def _write_side_by_side(project: Path, plan, source: DistributionSource,
+                        path: str, version: str) -> str | None:
     """A file the user changed keeps its content; the new one lands beside it.
+
+    Never on top of an existing `.new`. The stack does not track those files —
+    they are the user's to compare and delete — so overwriting one destroyed
+    content nothing could restore (EMP-LC-037). A taken name gets the release
+    appended, and the path actually used is returned so the caller can report
+    it rather than guess.
 
     Merging is deliberately not attempted. A deterministic merge of arbitrary
     content is not available here, and an LLM merge has no place in a lifecycle
@@ -347,9 +364,23 @@ def _write_side_by_side(project: Path, plan, source: DistributionSource, path: s
         try:
             payload = source.path(change.source).read_bytes()
         except OSError:
-            return
-        statelib.write_bytes_atomic(project / f"{path}.new", payload)
-        return
+            return None
+        for candidate in _side_by_side_names(path, version):
+            target = project / candidate
+            if not target.exists():
+                statelib.write_bytes_atomic(target, payload)
+                return candidate
+        return None
+    return None
+
+
+def _side_by_side_names(path: str, version: str):
+    """`<path>.new`, then names that cannot collide with it."""
+
+    yield f"{path}.new"
+    yield f"{path}.new-{version}"
+    for index in range(2, 100):
+        yield f"{path}.new-{version}-{index}"
 
 
 def rollback(project: Path, *, dry_run: bool = False) -> dict:

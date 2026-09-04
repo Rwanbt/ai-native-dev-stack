@@ -205,6 +205,33 @@ class UpdateApply(LocalReleaseFixture):
                          "a .new file survived an update that failed")
         self.assertEqual(self.read("AGENTS.md"), "# mine\n")
 
+    def test_an_existing_new_file_is_never_overwritten(self):
+        """`.new` files are the user's — the stack does not track them.
+
+        Writing over one destroyed content nothing could restore
+        (EMP-LC-037).
+        """
+
+        self.install("standard")
+        self.write("AGENTS.md", "# my customised method\n")
+        self.write("AGENTS.md.new", "# MY OWN NOTES\n")
+
+        result = updaterlib.apply(self.project, distribution=self.distribution)
+
+        self.assertEqual(self.read("AGENTS.md.new"), "# MY OWN NOTES\n")
+        self.assertIn("AGENTS.md", result.conflicts)
+        landed = result.side_by_side
+        self.assertEqual(len(landed), 1)
+        self.assertNotEqual(landed[0], "AGENTS.md.new")
+        self.assertEqual(self.read(landed[0]), "# Engineering method 2.0.0\n")
+
+    def test_a_free_new_name_is_used_when_there_is_no_collision(self):
+        self.install("standard")
+        self.write("AGENTS.md", "# mine\n")
+        result = updaterlib.apply(self.project, distribution=self.distribution)
+        self.assertEqual(result.side_by_side, ["AGENTS.md.new"])
+        self.assertEqual(self.read("AGENTS.md.new"), "# Engineering method 2.0.0\n")
+
     def test_a_tampered_archive_digest_stops_the_update_before_any_write(self):
         self.install("standard")
         self.publish("2.0.0", self.archive, digest="0" * 64)

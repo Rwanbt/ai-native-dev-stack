@@ -314,14 +314,16 @@ CASES = (
         # Removing it outright would be vacuous — no `.new` at all also leaves
         # none behind.
         edits=(Edit("ainative/lifecycle/updater.py",
-                    '        for path in conflicts:\n'
-                    '            _write_side_by_side(project, plan, staged_source, path)\n',
-                    '        pass\n'),
+                    '        side_by_side = [name for name in\n',
+                    '        _early = [name for name in\n'),
                Edit("ainative/lifecycle/updater.py",
                     '        result = installerlib.install(project, state.active_profile, '
                     'operation="update",\n',
-                    '        for path in conflicts:\n'
-                    '            _write_side_by_side(project, plan, staged_source, path)\n'
+                    '        side_by_side = [name for name in\n'
+                    '                        (_write_side_by_side(project, plan, '
+                    'staged_source, path,\n'
+                    '                                             staged_source.version)\n'
+                    '                         for path in conflicts) if name]\n'
                     '        result = installerlib.install(project, state.active_profile, '
                     'operation="update",\n')),
         test=("tests.test_lifecycle_update.UpdateApply"
@@ -335,6 +337,56 @@ CASES = (
                     "                path.unlink(missing_ok=True)" + '\\n'),),
         test=("tests.test_lifecycle_transactions.Locking"
               ".test_force_unlock_does_not_make_the_old_owner_delete_the_new_lock"),
+    ),
+    Case(
+        name="new_file_never_overwritten",
+        guards="an existing .new file must not be overwritten by an update",
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    "        for candidate in _side_by_side_names(path, version):\n"
+                    "            target = project / candidate\n"
+                    "            if not target.exists():\n"
+                    "                statelib.write_bytes_atomic(target, payload)\n"
+                    "                return candidate\n"
+                    "        return None\n",
+                    '        statelib.write_bytes_atomic(project / f"{path}.new", payload)\n'
+                    '        return f"{path}.new"\n'),),
+        test=("tests.test_lifecycle_update.UpdateApply"
+              ".test_an_existing_new_file_is_never_overwritten"),
+    ),
+    Case(
+        name="undo_bounded_by_the_plan",
+        guards="an undo must not act on a path the plan never named",
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        if planned and path not in planned:\n"
+                    "            conflicts.append(path)\n"
+                    "            continue\n",
+                    "        if False:\n"
+                    "            conflicts.append(path)\n"
+                    "            continue\n"),),
+        test=("tests.test_lifecycle_security.TamperedJournal"
+              ".test_a_completed_change_the_plan_never_named_is_refused"),
+    ),
+    Case(
+        name="repair_archives_the_state",
+        guards="repair must keep a copy of the install state it rewrites",
+        edits=(Edit("ainative/lifecycle/recovery.py",
+                    "            _archive_state(project)\n",
+                    "            pass\n"),),
+        test=("tests.test_lifecycle_transactions.TransactionSafety"
+              ".test_repair_keeps_a_copy_of_the_state_it_rewrites"),
+    ),
+    Case(
+        name="force_unlock_reports_refusals",
+        guards="a refused unlink under --force-unlock must be a lifecycle error",
+        edits=(Edit("ainative/lifecycle/lock.py",
+                    "            try:\n"
+                    "                path.unlink(missing_ok=True)\n"
+                    "            except OSError as error:\n",
+                    "            if True:\n"
+                    "                path.unlink(missing_ok=True)\n"
+                    "            elif False:\n"),),
+        test=("tests.test_lifecycle_transactions.Locking"
+              ".test_force_unlock_reports_a_refused_unlink_instead_of_a_traceback"),
     ),
     Case(
         name="journal_id_containment",

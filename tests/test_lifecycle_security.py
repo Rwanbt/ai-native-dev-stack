@@ -163,6 +163,27 @@ class TamperedJournal(LifecycleTestCase):
                             and "evil.json" in item["path"]
                             for item in diagnosis.findings), diagnosis.findings)
 
+    def test_a_completed_change_the_plan_never_named_is_refused(self):
+        """The plan is written before anything is touched, so it bounds what a
+        completed record may claim (EMP-LC-038)."""
+
+        from ainative.lifecycle import recovery
+        from ainative.lifecycle import transaction as txnlib
+        from ainative.lifecycle.digest import digest_file
+
+        self.install("standard")
+        victim = self.write("user.txt", "hours of work\n")
+        journal = txnlib.read_journals(self.project)[0]
+        journal.state = txnlib.APPLYING
+        journal.completed_changes = [{
+            "action": "CREATE", "path": "user.txt", "component": "conventions",
+            "ownership": "MANAGED_IMMUTABLE", "reason": "", "kind": "file",
+            "pruned": False, "result_digest": digest_file(victim)}]
+        txnlib.write_journal(self.project, journal)
+
+        recovery.repair(self.project, distribution=self.distribution, source=self.source)
+        self.assertEqual(self.read("user.txt"), "hours of work\n")
+
     def test_a_backup_location_that_escapes_is_refused_at_load(self):
         from ainative.lifecycle import transaction as txnlib
         from ainative.lifecycle.errors import LifecycleError

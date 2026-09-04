@@ -11,6 +11,7 @@ shipped version of a file the user edited is a data-loss bug wearing the word
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -208,6 +209,18 @@ class RepairResult:
         }
 
 
+def _archive_state(project: Path) -> None:
+    """Keep the install state this repair is about to rewrite."""
+
+    current = statelib.state_path(project)
+    if not current.is_file():
+        return
+    destination = (project / statelib.BACKUPS_RELATIVE / "repair"
+                   / f"state-{statelib.now().replace(':', '')}.json")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(current, destination)
+
+
 def _state_unreadable(diagnosis: Diagnosis) -> bool:
     return any(item["status"] == CORRUPTED and item["path"] == statelib.STATE_RELATIVE.as_posix()
                for item in diagnosis.findings)
@@ -286,6 +299,11 @@ def repair(project: Path, *, dry_run: bool = False,
             return result
 
         if orphaned:
+            # Dropping a record is a state mutation, and every state
+            # mutation gets a copy of what it replaced (EMP-LC-040). The
+            # write itself is atomic, so this is recoverability, not
+            # torn-write protection.
+            _archive_state(project)
             for path in orphaned:
                 state.managed_files = [item for item in state.managed_files
                                        if item.path != path]

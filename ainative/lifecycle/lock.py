@@ -235,7 +235,14 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
         if attempt == 0 and force:
             # A human said this lock is stale. Retrying without removing it
             # just failed again on the next attempt (EMP-LC-008).
-            path.unlink(missing_ok=True)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as error:
+                # A refused unlink is a refusal to report, not a traceback
+                # to print at the user (EMP-LC-039).
+                raise LifecycleError(
+                    "LOCK_HELD",
+                    f"cannot remove {path}: {error}") from error
             continue
         if existing is None:
             # Unreadable. That is either corruption or a claim being made right

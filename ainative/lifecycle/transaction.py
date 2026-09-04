@@ -476,9 +476,17 @@ def undo(project: Path, journal: Journal) -> dict:
     removed: list[str] = []
     conflicts: list[str] = []
     backup_root = project / journal.backup_location if journal.backup_location else None
+    # The plan is written at PREPARED, before anything is touched. A completed
+    # change naming a path the plan never did was not part of this
+    # transaction, so it governs nothing (EMP-LC-038).
+    planned = {item.get("path") for item in journal.planned_changes
+               if isinstance(item.get("path"), str)}
     for record in reversed(journal.completed_changes):
         path = record.get("path")
         if not isinstance(path, str) or record.get("action") not in plannerlib.ACTIONS:
+            continue
+        if planned and path not in planned:
+            conflicts.append(path)
             continue
         try:
             target = resolve_within(project, path)

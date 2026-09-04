@@ -213,12 +213,14 @@ class TransactionSafety(LifecycleTestCase):
         journal.state = txnlib.APPLYING
         txnlib.write_journal(self.project, journal)
 
-        txnlib.undo(self.project, journal)
+        outcome = txnlib.undo(self.project, journal)
         self.assertEqual(self.read("README.md"), "my project\n")
         self.assertFalse((self.root / "outside.txt").exists())
-        # The first record is well-formed, so it is honoured — the guard is
-        # against records this code never writes, not against its own.
-        self.assertFalse(victim.exists())
+        # Well-formed but outside the plan, which is written before anything is
+        # touched — so it is refused too, and reported rather than obeyed
+        # (EMP-LC-038).
+        self.assertEqual(self.read("my-notes.txt"), "hours of work\n")
+        self.assertIn("my-notes.txt", outcome["conflicts"])
 
     def test_repair_leaves_a_file_the_user_fixed_after_the_interruption(self):
         """A recovery that overwrites the user's fix is not a recovery.
@@ -376,6 +378,28 @@ class TransactionSafety(LifecycleTestCase):
                          txnlib.ROLLED_BACK)
         self.assertTrue(result.diagnosis.healthy, result.diagnosis.findings)
 
+    def test_repair_keeps_a_copy_of_the_state_it_rewrites(self):
+        """Dropping a record is a state mutation (EMP-LC-040)."""
+
+        self.install("standard")
+        path = self.project / statelib.STATE_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["managed_files"].append({
+            "path": "ghost.txt", "component": "no-such-component",
+            "ownership": "MANAGED_IMMUTABLE", "digest_at_install": "0" * 64,
+            "created_by_ainative": True, "kind": "file"})
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        recovery.repair(self.project, distribution=self.distribution, source=self.source)
+
+        archived = sorted((self.project / statelib.BACKUPS_RELATIVE / "repair")
+                          .glob("state-*.json"))
+        self.assertEqual(len(archived), 1, "repair rewrote the state with no copy kept")
+        kept = json.loads(archived[0].read_text(encoding="utf-8"))
+        self.assertTrue(any(item["path"] == "ghost.txt" for item in kept["managed_files"]))
+        self.assertTrue(all(item.path != "ghost.txt"
+                            for item in statelib.load(self.project).managed_files))
+
     def test_repair_restores_a_deleted_managed_file(self):
         self.install("standard")
         (self.project / ".claude/skills/demo-skill/SKILL.md").unlink()
@@ -491,6 +515,27 @@ class Locking(LifecycleTestCase):
         path.touch()
         with locklib.acquire(self.project, "init", force=True):
             pass
+
+    def test_force_unlock_reports_a_refused_unlink_instead_of_a_traceback(self):
+        """EMP-LC-039: a raw OSError is not an answer a user can act on."""
+
+        path = locklib.lock_path(self.project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+        real_unlink = Path.unlink
+
+        def denied(self, *args, **kwargs):
+            if self == path:
+                raise PermissionError(13, "Permission denied")
+            return real_unlink(self, *args, **kwargs)
+
+        Path.unlink = denied
+        self.addCleanup(setattr, Path, "unlink", real_unlink)
+        with self.assertRaises(LifecycleError) as raised:
+            with locklib.acquire(self.project, "init", force=True):
+                pass
+        self.assertEqual(raised.exception.code, "LOCK_HELD")
 
     def test_the_lock_is_released_even_when_the_operation_raises(self):
         with self.assertRaises(ValueError):
