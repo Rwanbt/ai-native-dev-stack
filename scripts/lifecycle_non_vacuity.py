@@ -165,6 +165,40 @@ CASES = (
               ".test_rollback_also_removes_the_files_the_update_created"),
     ),
     Case(
+        name="purge_respects_user_edits",
+        guards="--purge must not delete a managed file the user edited",
+        edits=(Edit("ainative/lifecycle/planner.py",
+                    "        elif digestlib.is_safe_to_remove(status):\n"
+                    "            changes.append(Change(REMOVE, entry.path, component.identifier, "
+                    "entry.ownership,\n"
+                    "                                  \"unchanged since install\"))\n",
+                    "        elif purge or digestlib.is_safe_to_remove(status):\n"
+                    "            changes.append(Change(REMOVE, entry.path, component.identifier, "
+                    "entry.ownership,\n"
+                    "                                  \"unchanged since install\"))\n"),),
+        test=("tests.test_lifecycle_matrix.TransitionMatrix"
+              ".test_purge_still_keeps_a_managed_file_the_user_edited"),
+    ),
+    Case(
+        name="journal_id_containment",
+        guards="a tampered transaction journal must not write outside the project",
+        # Three layers: the id checked on read, the id checked on write, and
+        # the backup location. Any one of them refuses the tampered journal, so
+        # a case that removes fewer measures redundancy instead of necessity.
+        edits=(Edit("ainative/lifecycle/transaction.py",
+                    "        if not _JOURNAL_ID.match(identifier):\n",
+                    "        if False:\n"),
+               Edit("ainative/lifecycle/transaction.py",
+                    "    if not _JOURNAL_ID.match(journal.identifier):\n",
+                    "    if False:\n"),
+               Edit("ainative/lifecycle/transaction.py",
+                    "            validate_relative(location)"
+                    "      # refuses .., absolute, drive, UNC, NUL\n",
+                    "            pass\n")),
+        test=("tests.test_lifecycle_security.TamperedJournal"
+              ".test_a_journal_id_that_escapes_cannot_make_repair_write_outside"),
+    ),
+    Case(
         name="purge_recovery_gate",
         guards="purging user data must refuse while a transaction is unrecovered",
         edits=(Edit("ainative/lifecycle/uninstaller.py",

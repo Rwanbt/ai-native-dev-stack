@@ -294,9 +294,16 @@ Preserved user-data: 4
 ainative uninstall --purge --yes
 ```
 
-Additionally deletes the data roots the manifests declare. Even `--purge` never
-removes a path outside a root AI Native explicitly owns, and never removes a
-file the stack did not write.
+Additionally deletes the **data roots the manifests declare** —
+`.ai-native/{trust,work,runs}` — and the lifecycle's own bookkeeping
+(`state.json`, the journal, the backups, the update cache), named one by one
+rather than by emptying the directory.
+
+What `--purge` does **not** widen: it still never removes a file the stack did
+not write, and it still never removes a managed file you edited. Its extra
+reach is over declared data roots, not over everything on disk. So
+`tools/ai_docs/config.sh` — your machine config, seeded from a template —
+survives a purge, and so does an `AGENTS.md` you customised.
 
 **`git clean`, `git checkout .` and `git restore .` are prohibited as uninstall
 or update mechanisms.** They operate on your whole working tree rather than on
@@ -479,7 +486,7 @@ would let the lifecycle layer assert authority over Verified state.
 | `update rollback` | restored; files the update added are removed | **kept** — `.new` files stay | kept | kept | region restored |
 | `repair` | restored if missing | **kept** | kept | kept | region restored |
 | `uninstall` | removed | **kept** | kept | **kept** | region removed |
-| `uninstall --purge` | removed | **kept** | removed if a declared data root | **removed** | region removed |
+| `uninstall --purge` | removed | **kept** | **kept** unless it is a declared data root | **removed** | region removed |
 | `profile purge verified` | kept | kept | kept | **removed** | kept |
 
 Files the stack never wrote are in the "kept" column of every row.

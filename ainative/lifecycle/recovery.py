@@ -173,6 +173,13 @@ def diagnose(project: Path, *, distribution: Distribution | None = None,
             diagnosis.legacy = {"legacy_install": True, "adopted": True}
 
     diagnosis.transactions = txnlib.summarise(txnlib.interrupted(project))
+    for name in txnlib.malformed(project):
+        # Refused rather than obeyed, and reported rather than deleted: a
+        # journal this code did not write may be evidence of how it got there.
+        diagnosis.findings.append({
+            "path": (statelib.TRANSACTIONS_RELATIVE / name).as_posix(),
+            "component": "lifecycle", "status": CORRUPTED,
+            "detail": "transaction journal is malformed or has an illegal id; ignored"})
     diagnosis.lock = locklib.describe(project)
     diagnosis.update = updaterlib.cached_notice(project, allow_network=check_updates)
     return diagnosis

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +31,7 @@ from . import planner as plannerlib
 from . import state as statelib
 from .errors import LifecycleError
 from .manifest import Component, Distribution
-from .paths import is_within, resolve_within
+from .paths import is_within, resolve_within, validate_relative
 from .planner import Change, Plan
 from .source import DistributionSource
 
@@ -43,6 +44,10 @@ INTERRUPTED = "INTERRUPTED"
 # Keep the last N transaction journals and their backups. Unbounded growth in a
 # hidden directory is a slow disk leak nobody notices until it matters.
 RETENTION = 5
+
+# What this code writes as an id, and therefore the only shape it will read
+# back. A journal is data inside the project; its id becomes a filename.
+_JOURNAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 @dataclass
@@ -82,8 +87,23 @@ class Journal:
 
     @classmethod
     def from_record(cls, raw: dict) -> "Journal":
+        # A journal file sits inside the project, so anything that can write to
+        # the project can write one. Its id becomes a filename and its
+        # `backup_location` becomes a directory we read and write, so both are
+        # validated here rather than trusted: an id of `../../../escaped` made
+        # `repair` write outside the project root (EMP-LC-019).
+        identifier = str(raw.get("id", ""))
+        if not _JOURNAL_ID.match(identifier):
+            raise LifecycleError("INSTALL_STATE_CORRUPTED",
+                                 f"transaction journal has an illegal id: {identifier!r}")
+        location = raw.get("backup_location")
+        if location is not None:
+            if not isinstance(location, str):
+                raise LifecycleError("INSTALL_STATE_CORRUPTED",
+                                     "transaction journal has a non-string backup_location")
+            validate_relative(location)      # refuses .., absolute, drive, UNC, NUL
         return cls(
-            identifier=str(raw.get("id", "")),
+            identifier=identifier,
             operation=str(raw.get("operation", "")),
             from_profile=raw.get("from_profile"),
             to_profile=raw.get("to_profile"),
@@ -117,6 +137,9 @@ def journal_path(project: Path, identifier: str) -> Path:
 
 
 def write_journal(project: Path, journal: Journal) -> Path:
+    if not _JOURNAL_ID.match(journal.identifier):
+        raise LifecycleError("INSTALL_STATE_CORRUPTED",
+                             f"refusing to write a journal with id {journal.identifier!r}")
     path = journal_path(project, journal.identifier)
     statelib.write_atomic(path, json.dumps(journal.to_record(), indent=2, sort_keys=True) + "\n")
     return path
@@ -130,9 +153,27 @@ def read_journals(project: Path) -> list[Journal]:
     for path in sorted(directory.glob("*.json")):
         try:
             journals.append(Journal.from_record(json.loads(path.read_text(encoding="utf-8"))))
-        except (OSError, ValueError):
+        except (OSError, ValueError, LifecycleError):
+            # Unreadable or illegal: it is not a transaction this code wrote, so
+            # it governs nothing. `malformed(project)` reports it to `doctor`;
+            # the file itself is left alone because it may be evidence.
             continue
     return journals
+
+
+def malformed(project: Path) -> list[str]:
+    """Journal files this code refuses to read, for `doctor` to report."""
+
+    directory = transactions_dir(project)
+    if not directory.is_dir():
+        return []
+    rejected: list[str] = []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            Journal.from_record(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, LifecycleError):
+            rejected.append(path.name)
+    return rejected
 
 
 def interrupted(project: Path) -> list[Journal]:
@@ -443,6 +484,6 @@ def summarise(journals: Sequence[Journal]) -> list[dict]:
 __all__ = [
     "PREPARED", "APPLYING", "COMMITTED", "ROLLED_BACK", "INTERRUPTED", "RETENTION",
     "Journal", "Applier", "recover", "undo", "restore_install_state",
-    "read_journals", "interrupted", "prune",
+    "read_journals", "malformed", "interrupted", "prune",
     "transactions_dir", "backups_dir", "journal_path", "write_journal", "summarise",
 ]

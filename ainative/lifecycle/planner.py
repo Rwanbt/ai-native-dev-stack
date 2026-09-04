@@ -295,7 +295,11 @@ def plan_component_removal(project: Path, component: Component, state: InstallSt
             changes.append(Change(action, entry.path, component.identifier, entry.ownership,
                                   reason, kind="data_root"))
             continue
-        if entry.ownership == manifestlib.USER_DATA and not purge:
+        if entry.ownership == manifestlib.USER_DATA:
+            # `--purge` deletes declared *data roots* (handled above), not every
+            # file that happens to be user-owned. `tools/ai_docs/config.sh` is
+            # the user's machine config, seeded from a template; the retention
+            # table keeps it under purge and the code now agrees.
             changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
                                   "user data - preserved"))
             continue
@@ -307,18 +311,20 @@ def plan_component_removal(project: Path, component: Component, state: InstallSt
             changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
                                   "adopted but not written by ainative - preserved"))
             continue
+        # The digest decides, and `--purge` does not override it. It used to:
+        # a managed file the user had edited was deleted under purge, silently,
+        # while the retention table promised it was kept (EMP-LC-018). Purge's
+        # extra reach is over declared data roots, nothing else.
         status = digestlib.classify(target, entry.digest_at_install)
         if status == digestlib.MISSING:
             changes.append(Change(SKIP, entry.path, component.identifier, entry.ownership,
                                   "already absent"))
-        elif purge or digestlib.is_safe_to_remove(status):
-            reason = "purge requested" if purge and status != digestlib.UNCHANGED \
-                else "unchanged since install"
+        elif digestlib.is_safe_to_remove(status):
             changes.append(Change(REMOVE, entry.path, component.identifier, entry.ownership,
-                                  reason))
+                                  "unchanged since install"))
         else:
             changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  f"{status} — preserved"))
+                                  f"{status} - preserved"))
     return changes
 
 

@@ -224,6 +224,34 @@ class TransitionMatrix(LifecycleTestCase):
         self.assertEqual(self.read("mine/keep.txt"), "not yours\n")
         self.assertEqual(self.read("README.md"), "my project\n")
 
+    def test_purge_still_keeps_a_managed_file_the_user_edited(self):
+        """`--purge` reaches declared data roots, not everything on disk.
+
+        It used to delete a managed file the user had edited, silently, while
+        the retention table promised it was kept (EMP-LC-018).
+        """
+
+        self.install("verified")
+        self.seed_verified_history()
+        self.write("AGENTS.md", "# hours of my own work\n")
+        self.write("tools/ai_docs/config.sh", "VAULT=/my/vault\n")
+
+        result = self.uninstall(purge=True, assume_yes=True)
+
+        self.assertEqual(self.read("AGENTS.md"), "# hours of my own work\n")
+        self.assertEqual(self.read("tools/ai_docs/config.sh"), "VAULT=/my/vault\n")
+        self.assertFalse(self.exists(".ai-native/work/w1/manifest.json"),
+                         "purge did not remove the declared data root")
+        self.assertIn("AGENTS.md", result.preserved_user_modified)
+
+    def test_purge_does_not_remove_a_user_file_from_the_lifecycle_directory(self):
+        self.install("standard")
+        self.write(".ai-native/lifecycle/my-notes.md", "mine\n")
+        self.uninstall(purge=True, assume_yes=True)
+        self.assertEqual(self.read(".ai-native/lifecycle/my-notes.md"), "mine\n")
+        self.assertFalse(self.exists(".ai-native/lifecycle/state.json"))
+        self.assertFalse(self.exists(".ai-native/lifecycle/transactions"))
+
     def test_purge_refuses_without_confirmation_when_there_is_no_terminal(self):
         from ainative.lifecycle.errors import LifecycleError
 

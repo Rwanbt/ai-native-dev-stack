@@ -93,11 +93,31 @@ def _remove_lifecycle_bookkeeping(project: Path) -> list[str]:
 
     removed: list[str] = []
     root = project / statelib.LIFECYCLE_DIRNAME
-    if not is_within(project, root):
+    if not is_within(project, root) or not root.is_dir():
         return removed
-    if root.is_dir():
-        shutil.rmtree(root, ignore_errors=True)
+
+    # Named, not `rmtree`. Emptying the directory took anything a user had put
+    # there with it (EMP-LC-020); these are the paths the lifecycle itself
+    # writes, and nothing else is ours to delete.
+    for relative in (statelib.STATE_RELATIVE, statelib.UPDATE_CACHE_RELATIVE,
+                     statelib.TRANSACTIONS_RELATIVE, statelib.BACKUPS_RELATIVE,
+                     statelib.LIFECYCLE_DIRNAME / "staged"):
+        target = project / relative
+        if not target.exists() or not is_within(project, target):
+            continue
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            target.unlink(missing_ok=True)
+        removed.append(relative.as_posix())
+
+    try:
+        next(root.iterdir())
+    except StopIteration:
+        root.rmdir()
         removed.append(statelib.LIFECYCLE_DIRNAME.as_posix())
+    except OSError:
+        pass
     # `.ai-native/` itself belongs to us; remove it only once it is empty, so a
     # directory somebody else put something in survives.
     parent = root.parent
@@ -166,8 +186,13 @@ def uninstall(project: Path, *, purge: bool = False, dry_run: bool = False,
         removed, user_modified, user_data = _classify_plan(plan, state)
         applier = txnlib.Applier(project, distribution, None, plan)
         journal = applier.run(lambda: _commit(project, state, plan, purge))
-        if purge:
-            removed += _remove_lifecycle_bookkeeping(project)
+
+    # After the lock is released, not inside it: the lock file lives in the very
+    # directory this removes, so from inside the block it is never empty and the
+    # purge left a hollow `.ai-native/lifecycle/` behind. By here the state is
+    # already gone, so a concurrent operation sees an uninstalled project.
+    if purge:
+        removed += _remove_lifecycle_bookkeeping(project)
 
     return UninstallResult(plan, applied=True, dry_run=False, purge=purge, removed=removed,
                            preserved_user_modified=user_modified,

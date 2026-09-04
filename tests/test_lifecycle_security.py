@@ -114,6 +114,73 @@ class LinkEscape(LifecycleTestCase):
         self.assertTrue(victim.is_file(), "a tampered state deleted a file outside the project")
 
 
+class TamperedJournal(LifecycleTestCase):
+    """A journal file lives in the project, so it is attacker-writable data."""
+
+    def _plant(self, name: str, payload: dict) -> Path:
+        from ainative.lifecycle import transaction as txnlib
+
+        path = txnlib.transactions_dir(self.project) / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_a_journal_id_that_escapes_cannot_make_repair_write_outside(self):
+        from ainative.lifecycle import recovery
+
+        self.install("standard")
+        outside = self.root / "escaped.json"
+        self._plant("evil.json", {
+            "schema_version": 1, "id": "../../../../escaped", "operation": "update",
+            "state": "APPLYING", "completed_changes": [],
+            "backup_location": "../../../outside", "started_at": "2026-01-01"})
+
+        recovery.repair(self.project, distribution=self.distribution, source=self.source)
+        self.assertFalse(outside.exists(),
+                         "a tampered journal id wrote outside the project root")
+
+    def test_an_illegal_journal_is_ignored_rather_than_obeyed(self):
+        from ainative.lifecycle import transaction as txnlib
+
+        self.install("standard")
+        self._plant("evil.json", {"schema_version": 1, "id": "../escape",
+                                  "operation": "update", "state": "APPLYING",
+                                  "started_at": "2026-01-01"})
+        self.assertEqual(txnlib.interrupted(self.project), [],
+                         "an illegal journal was treated as a real transaction")
+        self.assertIn("evil.json", txnlib.malformed(self.project))
+
+    def test_doctor_reports_an_illegal_journal_instead_of_hiding_it(self):
+        from ainative.lifecycle import recovery
+
+        self.install("standard")
+        self._plant("evil.json", {"schema_version": 1, "id": "..", "operation": "update",
+                                  "state": "APPLYING", "started_at": "2026-01-01"})
+        diagnosis = recovery.diagnose(self.project, distribution=self.distribution)
+        self.assertFalse(diagnosis.healthy)
+        self.assertTrue(any(item["status"] == recovery.CORRUPTED
+                            and "evil.json" in item["path"]
+                            for item in diagnosis.findings), diagnosis.findings)
+
+    def test_a_backup_location_that_escapes_is_refused_at_load(self):
+        from ainative.lifecycle import transaction as txnlib
+        from ainative.lifecycle.errors import LifecycleError
+
+        with self.assertRaises(LifecycleError):
+            txnlib.Journal.from_record({"id": "txn_ok", "operation": "update",
+                                        "backup_location": "../../elsewhere"})
+
+    def test_the_ids_this_code_writes_are_accepted(self):
+        from ainative.lifecycle import state as statelib
+        from ainative.lifecycle import transaction as txnlib
+
+        identifier = statelib.new_identifier("txn")
+        journal = txnlib.Journal.from_record({"id": identifier, "operation": "init",
+                                              "backup_location":
+                                              f".ai-native/lifecycle/backups/{identifier}"})
+        self.assertEqual(journal.identifier, identifier)
+
+
 class TamperedManifests(unittest.TestCase):
 
     def _write(self, directory: Path, components: dict, profiles: dict) -> Path:
