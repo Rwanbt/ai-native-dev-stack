@@ -33,3 +33,6 @@ scripts/vault_last_sync_date.txt
 # Build artefacts from `pip install .`
 build/
 *.egg-info/
+
+# Lifecycle payload staged at build time by _build_backend.py — never tracked.
+ainative/_payload/

@@ -17,7 +17,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-PACKAGE = REPO / "ainative_workplane"
+# Both shipped packages. The lifecycle layer decides what to delete from a
+# user's project; publishing a budget and measuring only half the code that
+# enforces it is the same omission this script was written for.
+PACKAGES = (REPO / "ainative_workplane", REPO / "ainative", REPO / "ainative" / "lifecycle")
 BLOCKING = 25
 BRANCHING = (ast.If, ast.For, ast.While, ast.Try, ast.BoolOp, ast.comprehension)
 
@@ -28,15 +31,18 @@ def complexity(node: ast.AST) -> int:
 
 def main() -> int:
     findings, checked = [], 0
-    for path in sorted(PACKAGE.glob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            checked += 1
-            measured = complexity(node)
-            if measured > BLOCKING:
-                findings.append({"file": path.name, "function": node.name, "complexity": measured,
-                                 "detail": f"exceeds the blocking budget of {BLOCKING} declared in AGENTS.md"})
+    for package in PACKAGES:
+        for path in sorted(package.glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                checked += 1
+                measured = complexity(node)
+                if measured > BLOCKING:
+                    findings.append({
+                        "file": str(path.relative_to(REPO).as_posix()),
+                        "function": node.name, "complexity": measured,
+                        "detail": f"exceeds the blocking budget of {BLOCKING} declared in AGENTS.md"})
 
     completed = subprocess.run([sys.executable, "-m", "unittest", "tests.test_workplane_traceability", "-q"],
                                cwd=REPO, capture_output=True, text=True, timeout=600, check=False)

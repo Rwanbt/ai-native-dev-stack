@@ -1,0 +1,309 @@
+"""Ownership, user modifications, and external configuration.
+
+The single question behind every test here: can any operation destroy something
+the user wrote? The answer must be no for a managed file they edited, for their
+own files, for their Verified history, and for the parts of a config file the
+stack does not own.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from tests.lifecycle_support import (LifecycleTestCase, build_distribution_tree,
+                                     write_text)
+from ainative.lifecycle import digest as digestlib
+from ainative.lifecycle import external, manifest as manifestlib
+from ainative.lifecycle import planner as plannerlib
+from ainative.lifecycle import recovery, source as sourcelib
+
+
+class ManagedFileOwnership(LifecycleTestCase):
+
+    def test_a_user_edited_managed_file_is_never_replaced_by_an_install(self):
+        self.install("standard")
+        edited = "#!/bin/sh\n# my own hook\n"
+        self.write("tools/ai_docs/run_hook.sh", edited)
+        self.install("standard")
+        self.assertEqual(self.read("tools/ai_docs/run_hook.sh"), edited)
+
+    def test_a_user_edited_managed_file_is_never_removed_by_an_uninstall(self):
+        self.install("standard")
+        self.write(".claude/skills/demo-skill/SKILL.md", "# mine now\n")
+        result = self.uninstall()
+        self.assertTrue(self.exists(".claude/skills/demo-skill/SKILL.md"))
+        self.assertEqual(self.read(".claude/skills/demo-skill/SKILL.md"), "# mine now\n")
+        self.assertIn(".claude/skills/demo-skill/SKILL.md", result.preserved_user_modified)
+
+    def test_an_edit_survives_install_update_downgrade_and_uninstall(self):
+        """The fixture the plan asks for: one edit, four operations, still there."""
+
+        self.install("standard")
+        edited = "# generate_all.py — my version\n"
+        self.write("tools/ai_docs/generate_all.py", edited)
+
+        self.switch("verified")
+        self.assertEqual(self.read("tools/ai_docs/generate_all.py"), edited)
+
+        newer = build_distribution_tree(self.root / "dist-v2", "1.1.0")
+        source_v2 = sourcelib.DistributionSource(root=newer.resolve(), origin="test",
+                                                 version="1.1.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "verified", operation="update",
+                          distribution=self.distribution, source=source_v2)
+        self.assertEqual(self.read("tools/ai_docs/generate_all.py"), edited)
+
+        installer.install(self.project, "standard", operation="profile-switch",
+                          distribution=self.distribution, source=source_v2)
+        self.assertEqual(self.read("tools/ai_docs/generate_all.py"), edited)
+
+        self.uninstall()
+        self.assertEqual(self.read("tools/ai_docs/generate_all.py"), edited)
+
+    def test_a_file_the_upstream_dropped_is_pruned_only_when_unchanged(self):
+        extended = build_distribution_tree(self.root / "dist-extra", "1.0.0",
+                                           extra_skill="going-away")
+        source_extra = sourcelib.DistributionSource(root=extended.resolve(), origin="test",
+                                                    version="1.0.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "standard", distribution=self.distribution,
+                          source=source_extra)
+        self.assertTrue(self.exists(".claude/skills/going-away/SKILL.md"))
+
+        # The next release no longer ships it. One copy is untouched, one edited.
+        self.write(".agents/skills/going-away/SKILL.md", "# I edited this\n")
+        installer.install(self.project, "standard", operation="update",
+                          distribution=self.distribution, source=self.source)
+
+        self.assertFalse(self.exists(".claude/skills/going-away/SKILL.md"),
+                         "an unchanged file removed upstream survived")
+        self.assertEqual(self.read(".agents/skills/going-away/SKILL.md"), "# I edited this\n",
+                         "an edited file removed upstream was deleted")
+
+    def test_pruning_stops_tracking_the_file_it_pruned(self):
+        """An install must not stay unhealthy after a routine update.
+
+        Pruning removed the file and kept its state record, so `doctor`
+        reported MISSING for something nothing would ever restore, `status`
+        exited non-zero for good, and `repair` could not clear it
+        (EMP-LC-012).
+        """
+
+        extended = build_distribution_tree(self.root / "dist-extra", "1.0.0",
+                                           extra_skill="going-away")
+        source_extra = sourcelib.DistributionSource(root=extended.resolve(), origin="test",
+                                                    version="1.0.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "standard", distribution=self.distribution,
+                          source=source_extra)
+        self.assertTrue(any("going-away" in entry.path
+                            for entry in self.state().managed_files))
+
+        installer.install(self.project, "standard", operation="update",
+                          distribution=self.distribution, source=self.source)
+
+        remaining = [entry.path for entry in self.state().managed_files
+                     if "going-away" in entry.path]
+        self.assertEqual(remaining, [], "a pruned file is still recorded as managed")
+        diagnosis = recovery.diagnose(self.project, distribution=self.distribution)
+        self.assertTrue(diagnosis.healthy,
+                        [item for item in diagnosis.findings if item["status"] != "OK"])
+
+    def test_a_pruned_file_the_user_edited_stays_on_disk_and_stops_being_tracked(self):
+        extended = build_distribution_tree(self.root / "dist-extra2", "1.0.0",
+                                           extra_skill="going-away")
+        source_extra = sourcelib.DistributionSource(root=extended.resolve(), origin="test",
+                                                    version="1.0.0")
+        from ainative.lifecycle import installer
+
+        installer.install(self.project, "standard", distribution=self.distribution,
+                          source=source_extra)
+        self.write(".claude/skills/going-away/SKILL.md", "# mine now\n")
+        installer.install(self.project, "standard", operation="update",
+                          distribution=self.distribution, source=self.source)
+
+        self.assertEqual(self.read(".claude/skills/going-away/SKILL.md"), "# mine now\n")
+        self.assertEqual([entry.path for entry in self.state().managed_files
+                          if "going-away" in entry.path], [])
+        self.assertTrue(recovery.diagnose(self.project,
+                                          distribution=self.distribution).healthy)
+
+    def test_a_pre_existing_unmanaged_file_is_reported_not_overwritten(self):
+        self.write("AGENTS.md", "# my own AGENTS.md\n")
+        result = self.install("standard")
+        self.assertEqual(self.read("AGENTS.md"), "# my own AGENTS.md\n")
+        conflicts = [c.path for c in result.plan.changes
+                     if c.action == plannerlib.CONFLICT]
+        self.assertIn("AGENTS.md", conflicts)
+
+    def test_user_owned_template_copy_is_never_overwritten_or_removed(self):
+        self.install("standard")
+        self.write("tools/ai_docs/config.sh", "VAULT=/my/vault\n")
+        self.install("standard")
+        self.assertEqual(self.read("tools/ai_docs/config.sh"), "VAULT=/my/vault\n")
+        self.uninstall()
+        self.assertEqual(self.read("tools/ai_docs/config.sh"), "VAULT=/my/vault\n")
+
+    def test_state_records_a_digest_for_every_managed_file(self):
+        self.install("verified")
+        for entry in self.state().managed_files:
+            if entry.kind != "file":
+                continue
+            self.assertIsNotNone(entry.digest_at_install,
+                                 f"{entry.path} was recorded without an install digest")
+            status = digestlib.classify(self.project / entry.path, entry.digest_at_install)
+            self.assertEqual(status, digestlib.UNCHANGED, entry.path)
+
+
+class ExternalConfiguration(LifecycleTestCase):
+
+    UNRELATED = ("# project ignores\n"
+                 "*.log\n"
+                 "build/\n"
+                 "\n"
+                 "# my own section\n"
+                 "secrets.env\n")
+
+    def test_install_adds_only_a_delimited_region(self):
+        self.write(".gitignore", self.UNRELATED)
+        self.install("standard")
+        content = self.read(".gitignore")
+        self.assertTrue(content.startswith(self.UNRELATED),
+                        "the installer rewrote content it does not own")
+        self.assertIn("tools/ai_docs/config.sh", content)
+
+    def test_uninstall_restores_the_file_byte_for_byte(self):
+        self.write(".gitignore", self.UNRELATED)
+        self.install("standard")
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), self.UNRELATED)
+
+    def test_user_lines_added_after_the_block_survive_uninstall(self):
+        self.write(".gitignore", self.UNRELATED)
+        self.install("standard")
+        self.write(".gitignore", self.read(".gitignore") + "added-later.txt\n")
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), self.UNRELATED + "added-later.txt\n")
+
+    def test_a_file_the_stack_created_alone_is_removed_entirely(self):
+        self.install("standard")
+        self.assertTrue(self.exists(".gitignore"))
+        self.uninstall()
+        self.assertFalse(self.exists(".gitignore"),
+                         "a file whose only content was the managed block survived")
+
+    def test_reinstalling_the_block_is_idempotent(self):
+        self.write(".gitignore", self.UNRELATED)
+        self.install("standard")
+        first = self.read(".gitignore")
+        self.install("standard")
+        self.assertEqual(self.read(".gitignore"), first)
+
+    def test_a_second_managed_block_is_reported_as_duplicate(self):
+        self.write(".gitignore", self.UNRELATED)
+        self.install("standard")
+        component = self.distribution.component("gitignore-entry")
+        spec = plannerlib.block_spec(component)
+        self.write(".gitignore", self.read(".gitignore") + spec.render())
+        diagnosis = recovery.diagnose(self.project, distribution=self.distribution)
+        statuses = {item["path"]: item["status"] for item in diagnosis.findings}
+        self.assertEqual(statuses[".gitignore"], recovery.DUPLICATE)
+
+    def test_a_crlf_file_keeps_its_line_endings(self):
+        """Text mode translates CRLF to LF on read, so writing it back rewrote
+        every line of a file the stack does not own (EMP-LC-025)."""
+
+        path = self.project / ".gitignore"
+        path.write_bytes(b"*.log\r\nbuild/\r\n")
+        self.install("standard")
+
+        raw = path.read_bytes()
+        self.assertTrue(raw.startswith(b"*.log\r\nbuild/\r\n"),
+                        f"user lines were rewritten: {raw!r}")
+        self.assertIn(b"\r\n# >>> BEGIN", raw, "the block used the wrong line ending")
+
+        self.uninstall()
+        self.assertEqual(path.read_bytes(), b"*.log\r\nbuild/\r\n")
+
+    def test_a_file_without_a_trailing_newline_is_not_corrupted(self):
+        path = self.project / ".gitignore"
+        write_text(path, "*.log")
+        self.install("standard")
+        self.assertTrue(self.read(".gitignore").startswith("*.log\n"))
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), "*.log\n")
+
+    def test_a_marker_quoted_in_prose_is_not_mistaken_for_the_block(self):
+        """A BEGIN whose END has another BEGIN in between opens nothing.
+
+        Treating it as an opener made an uninstall take everything from a
+        passing mention of the marker down to the real block's END, and the
+        user's own lines with it (EMP-LC-026).
+        """
+
+        component = self.distribution.component("gitignore-entry")
+        spec = plannerlib.block_spec(component)
+        prose = f"# see {spec.begin} for what the stack adds\n*.log\nbuild/\n"
+        self.write(".gitignore", prose)
+
+        self.install("standard")
+        self.uninstall()
+        self.assertEqual(self.read(".gitignore"), prose,
+                         "a quoted marker made the uninstall eat user content")
+
+    def test_a_line_that_only_starts_like_a_marker_is_not_one(self):
+        """A marker is a whole line. A prefix match opened a region on a user
+        line and took everything down to the next one (EMP-LC-033)."""
+
+        component = self.distribution.component("gitignore-entry")
+        spec = plannerlib.block_spec(component)
+        text = (f"*.log\n{spec.begin} and some more text\n"
+                f"MY IMPORTANT LINE\n{spec.end} and more\nbuild/\n")
+        path = self.write(".gitignore", text)
+
+        removed, changed = external.remove(path, spec)
+        self.assertFalse(changed, "a suffixed marker line was treated as a block")
+        self.assertIn("MY IMPORTANT LINE", removed)
+
+    def test_block_apply_and_remove_are_exact_inverses(self):
+        spec = external.BlockSpec("marker", "#", ("a", "b"))
+        path = self.write("config", self.UNRELATED)
+        applied, changed = external.apply(path, spec)
+        self.assertTrue(changed)
+        write_text(path, applied)
+        removed, changed = external.remove(path, spec)
+        self.assertTrue(changed)
+        self.assertEqual(removed, self.UNRELATED)
+
+
+class OwnershipDeclarations(unittest.TestCase):
+
+    def test_every_declared_component_uses_a_known_ownership_class(self):
+        distribution = manifestlib.load()
+        for identifier, component in distribution.components.items():
+            self.assertIn(component.ownership, manifestlib.OWNERSHIPS, identifier)
+            self.assertIn(component.kind, manifestlib.KINDS, identifier)
+
+    def test_verified_history_is_declared_user_data(self):
+        distribution = manifestlib.load()
+        component = distribution.component("verified-data")
+        self.assertEqual(component.ownership, manifestlib.USER_DATA)
+        self.assertEqual(component.kind, manifestlib.KIND_DATA_ROOT)
+        self.assertIn(".ai-native/trust", component.paths)
+        self.assertIn(".ai-native/work", component.paths)
+
+    def test_verified_extends_standard_without_restating_it(self):
+        distribution = manifestlib.load()
+        standard = set(distribution.profile("standard").components)
+        verified_own = set(distribution.profile("verified").components)
+        self.assertFalse(standard & verified_own,
+                         "the verified profile restates a standard component")
+        effective = set(distribution.effective_component_ids("verified"))
+        self.assertTrue(standard <= effective)
+
+
+if __name__ == "__main__":
+    unittest.main()

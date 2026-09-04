@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
-# stack-upgrade.sh — Pull the latest stack, non-destructively.
+# stack-upgrade.sh — fast-forward the stack *clone*, non-destructively.
+#
+# SCOPE. This upgrades the shared git checkout. It does not update the files
+# installed into any project: nothing here reads an install state, an ownership
+# record or a digest, so it cannot tell your edit from a shipped file.
+#
+#   this script          the shared git clone      `git pull --ff-only`
+#   ainative update      one project's install     recorded ownership, digests,
+#                                                  transactional apply, rollback
+#
+# After upgrading the clone, update each project with `ainative update`. There
+# is deliberately no second project-level updater (ADR-0009 §7).
 #
 # Non-destructive guarantees:
 #   - Refuses to run if your working tree has uncommitted changes (so a local
@@ -69,6 +80,11 @@ fi
 if git pull --ff-only --quiet origin "${upstream#origin/}"; then
   echo "✅ Upgraded to v$(cat VERSION 2>/dev/null || echo "$new_ver")."
   echo "   Referenced configs (@AGENTS.md) pick up the new version automatically."
+  echo ""
+  echo "   Projects that INSTALLED the stack are not updated by this. In each one:"
+  echo "     ainative update check     # what is available"
+  echo "     ainative update --dry-run # what would change"
+  echo "     ainative update           # apply it, transactionally"
 else
   echo "❌ Fast-forward failed (history diverged). Resolve manually:"
   echo "     cd $STACK_ROOT && git status"

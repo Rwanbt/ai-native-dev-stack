@@ -1,24 +1,35 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+# In-tree backend: it stages ainative/_payload/ (the files the installer copies
+# into a project) before delegating to setuptools, so a wheel installed on a
+# machine with no checkout can still install a profile. See _build_backend.py.
+build-backend = "_build_backend"
+backend-path = ["."]
 
 [project]
-name = "ainative-workplane"
-description = "Verified Work Plane V2 — deterministic work contracts, bound verification evidence, and convergence verdicts."
+name = "ainative-dev-stack"
+description = "AI Native Dev Stack — Standard and Verified profiles, lifecycle management, and the Verified Work Plane."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dynamic = ["version"]
+# The lifecycle layer is stdlib-only on purpose: argparse, json, pathlib,
+# hashlib, urllib, tempfile, shutil, zipfile. See ADR-0009.
 dependencies = []
 
-# The runtime version is the package's own. It is deliberately not the
-# repository VERSION file and not SCHEMA_VERSION: a stack release, a runtime
-# release and an artifact schema change are three different events.
+# The distribution version is the lifecycle package's own. It is deliberately
+# neither the Work Plane runtime version (ainative_workplane.__version__) nor
+# the lifecycle state schema: a stack release, a runtime release and a state
+# schema change are three different events.
 [tool.setuptools.dynamic]
-version = { attr = "ainative_workplane.__version__" }
+version = { attr = "ainative.__version__" }
 
 [project.scripts]
-ainative = "ainative_workplane.cli:main"
+ainative = "ainative.cli:main"
 
 [tool.setuptools]
-packages = ["ainative_workplane"]
+packages = ["ainative", "ainative.lifecycle", "ainative_workplane"]
+
+[tool.setuptools.package-data]
+"ainative.lifecycle" = ["data/*.json"]
+"ainative" = ["_payload/**/*"]
