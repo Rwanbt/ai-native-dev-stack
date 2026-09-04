@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import installer as installerlib
 from . import manifest as manifestlib
+from . import planner as plannerlib
 from . import provider as providerlib
 from . import source as sourcelib
 from . import state as statelib
@@ -117,9 +118,14 @@ def checks_disabled(state: statelib.InstallState | None) -> bool:
 
 
 def check(project: Path, *, force: bool = False, allow_network: bool = True,
-          state: statelib.InstallState | None = None,
+          record: bool = True, state: statelib.InstallState | None = None,
           source: DistributionSource | None = None) -> CheckResult:
-    """Resolve the newest compatible release. Never fatal, never a traceback."""
+    """Resolve the newest compatible release. Never fatal, never a traceback.
+
+    `record=False` answers without touching the cache. `update --dry-run` needs
+    it: the cache is a file, and a dry run that wrote one was a dry run that
+    changed the project (EMP-LC-024).
+    """
 
     project = installerlib.require_project(project)
     state = state if state is not None else statelib.load(project)
@@ -146,14 +152,16 @@ def check(project: Path, *, force: bool = False, allow_network: bool = True,
         status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
         result = CheckResult(status, current, detail=error.message,
                              checked_at=statelib.now())
-        _write_cache(project, result)
+        if record:
+            _write_cache(project, result)
         return result
 
     newer = versionlib.is_newer(release.version, current)
     result = CheckResult(UPDATE_AVAILABLE if newer else UP_TO_DATE, current,
                          latest=release.version, notes=release.notes,
                          checked_at=statelib.now())
-    _write_cache(project, result)
+    if record:
+        _write_cache(project, result)
     return result
 
 
@@ -276,7 +284,7 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
         raise LifecycleError("NOT_INSTALLED",
                              f"no AI Native installation recorded in {project}")
 
-    outcome = check(project, force=True, state=state)
+    outcome = check(project, force=True, record=not dry_run, state=state)
     if outcome.status not in (UPDATE_AVAILABLE,) and not force:
         return UpdateResult(applied=False, dry_run=dry_run, from_version=state.stack_version,
                             to_version=outcome.latest, check=outcome)
@@ -297,13 +305,16 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
                                                state.active_profile, operation="update",
                                                state=state)
         conflicts = [change.path for change in plan.changes
-                     if change.action == "CONFLICT"]
-        for path in conflicts:
-            _write_side_by_side(project, plan, staged_source, path)
+                     if change.action == plannerlib.CONFLICT]
 
+        # Before the writes, not after: a `.new` file is a write, and a dry run
+        # that produced one was a dry run that changed the project (EMP-LC-024).
         if dry_run:
             return UpdateResult(False, True, state.stack_version, staged_source.version,
                                 outcome, plan.to_record(), conflicts)
+
+        for path in conflicts:
+            _write_side_by_side(project, plan, staged_source, path)
 
         result = installerlib.install(project, state.active_profile, operation="update",
                                       distribution=distribution, source=staged_source)

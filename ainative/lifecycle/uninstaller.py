@@ -35,6 +35,10 @@ from .state import InstallState
 # data roots. Everything else must be named by a managed-file record.
 PURGE_ROOTS = (".ai-native",)
 
+# Mirrored from updater.STAGED_RELATIVE. Importing the updater here just to
+# read one constant would pull the whole update path into every uninstall.
+STAGED_RELATIVE = statelib.LIFECYCLE_DIRNAME / "staged"
+
 
 @dataclass
 class UninstallResult:
@@ -82,13 +86,20 @@ def _classify_plan(plan: Plan, state: InstallState) -> tuple[list[str], list[str
 
 
 def _remove_lifecycle_bookkeeping(project: Path) -> list[str]:
-    """Delete the lifecycle's own directory — after the transaction, never inside it.
+    """Delete the lifecycle's own records - after the transaction, never inside it.
 
     This cannot be a change in the plan. The journal and the backups live under
     `.ai-native/lifecycle/`, so backing that directory up copies it into itself
     and recurses until the interpreter gives up (EMP-LC-010). By the time this
     runs the transaction has committed, and a purge is exactly the operation
     that gives up the ability to roll it back.
+
+    Nothing here is recursive over a directory a user can reach. `rmtree` on the
+    lifecycle directory took anything they had put there (EMP-LC-020), and
+    `rmtree` on its subdirectories took nested files the same way (EMP-LC-022).
+    So each artefact is named: the two files directly, the journals by the id
+    this code writes, and the backup and staging trees by the ids those journals
+    carry. Directories are dropped only once they are genuinely empty.
     """
 
     removed: list[str] = []
@@ -96,40 +107,48 @@ def _remove_lifecycle_bookkeeping(project: Path) -> list[str]:
     if not is_within(project, root) or not root.is_dir():
         return removed
 
-    # Named, not `rmtree`. Emptying the directory took anything a user had put
-    # there with it (EMP-LC-020); these are the paths the lifecycle itself
-    # writes, and nothing else is ours to delete.
-    for relative in (statelib.STATE_RELATIVE, statelib.UPDATE_CACHE_RELATIVE,
-                     statelib.TRANSACTIONS_RELATIVE, statelib.BACKUPS_RELATIVE,
-                     statelib.LIFECYCLE_DIRNAME / "staged"):
+    for relative in (statelib.STATE_RELATIVE, statelib.UPDATE_CACHE_RELATIVE):
         target = project / relative
-        if not target.exists() or not is_within(project, target):
-            continue
-        if target.is_dir():
-            shutil.rmtree(target, ignore_errors=True)
-        else:
+        if target.is_file() and is_within(project, target):
             target.unlink(missing_ok=True)
-        removed.append(relative.as_posix())
+            removed.append(relative.as_posix())
 
+    identifiers = [journal.identifier for journal in txnlib.read_journals(project)]
+    for identifier in identifiers:
+        journal_file = txnlib.journal_path(project, identifier)
+        if journal_file.is_file() and is_within(project, journal_file):
+            journal_file.unlink(missing_ok=True)
+            removed.append(journal_file.relative_to(project).as_posix())
+
+    for parent in (statelib.BACKUPS_RELATIVE, STAGED_RELATIVE):
+        for identifier in identifiers:
+            target = project / parent / identifier
+            if target.is_dir() and is_within(project, target):
+                shutil.rmtree(target, ignore_errors=True)
+                removed.append((parent / identifier).as_posix())
+
+    # Innermost first, so a parent can become empty once its children are gone.
+    for relative in (statelib.TRANSACTIONS_RELATIVE, statelib.BACKUPS_RELATIVE,
+                     STAGED_RELATIVE, statelib.LIFECYCLE_DIRNAME,
+                     statelib.LIFECYCLE_DIRNAME.parent):
+        removed.extend(_remove_if_empty(project, relative))
+    return removed
+
+
+def _remove_if_empty(project: Path, relative: Path) -> list[str]:
+    """Drop one directory, and only when nothing is left in it."""
+
+    target = project / relative
+    if target == project or not target.is_dir() or not is_within(project, target):
+        return []
     try:
-        next(root.iterdir())
+        next(target.iterdir())
     except StopIteration:
-        root.rmdir()
-        removed.append(statelib.LIFECYCLE_DIRNAME.as_posix())
+        target.rmdir()
+        return [relative.as_posix()]
     except OSError:
         pass
-    # `.ai-native/` itself belongs to us; remove it only once it is empty, so a
-    # directory somebody else put something in survives.
-    parent = root.parent
-    if parent.is_dir() and parent != project and is_within(project, parent):
-        try:
-            next(parent.iterdir())
-        except StopIteration:
-            parent.rmdir()
-            removed.append(parent.relative_to(project).as_posix())
-        except OSError:
-            pass
-    return removed
+    return []
 
 
 def plan_uninstall(project: Path, distribution: Distribution, state: InstallState, *,

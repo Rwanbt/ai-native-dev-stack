@@ -168,16 +168,52 @@ CASES = (
         name="purge_respects_user_edits",
         guards="--purge must not delete a managed file the user edited",
         edits=(Edit("ainative/lifecycle/planner.py",
-                    "        elif digestlib.is_safe_to_remove(status):\n"
-                    "            changes.append(Change(REMOVE, entry.path, component.identifier, "
-                    "entry.ownership,\n"
-                    "                                  \"unchanged since install\"))\n",
-                    "        elif purge or digestlib.is_safe_to_remove(status):\n"
-                    "            changes.append(Change(REMOVE, entry.path, component.identifier, "
-                    "entry.ownership,\n"
-                    "                                  \"unchanged since install\"))\n"),),
+                    "    if digestlib.is_safe_to_remove(status):\n"
+                    "        return Change(REMOVE, entry.path, entry.component, entry.ownership,\n"
+                    "                      f\"unchanged since install{suffix}\")\n",
+                    "    if purge or digestlib.is_safe_to_remove(status):\n"
+                    "        return Change(REMOVE, entry.path, entry.component, entry.ownership,\n"
+                    "                      f\"unchanged since install{suffix}\")\n"),),
         test=("tests.test_lifecycle_matrix.TransitionMatrix"
               ".test_purge_still_keeps_a_managed_file_the_user_edited"),
+    ),
+    Case(
+        name="orphan_respects_user_edits",
+        guards="the orphaned-record path must decide removals the same way as "
+               "every other path",
+        edits=(Edit("ainative/lifecycle/planner.py",
+                    "            plan.changes.append(removal_change(project, entry, purge=purge,\n"
+                    "                                               note=\"orphaned record\"))\n",
+                    "            _s = digestlib.classify(resolve_within(project, entry.path),\n"
+                    "                                    entry.digest_at_install)\n"
+                    "            plan.changes.append(Change(\n"
+                    "                REMOVE if (purge or digestlib.is_safe_to_remove(_s)) "
+                    "else PRESERVE,\n"
+                    "                entry.path, entry.component, entry.ownership,\n"
+                    "                \"orphaned managed file\", kind=entry.kind))\n"),),
+        test=("tests.test_lifecycle_matrix.TransitionMatrix"
+              ".test_purge_after_a_plain_uninstall_still_keeps_a_user_edited_file"),
+    ),
+    Case(
+        name="dry_run_update_writes_nothing",
+        guards="a dry-run update must not write a conflict file or a cache entry",
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    "        if dry_run:\n"
+                    "            return UpdateResult(False, True, state.stack_version, "
+                    "staged_source.version,\n"
+                    "                                outcome, plan.to_record(), conflicts)\n"
+                    "\n"
+                    "        for path in conflicts:\n"
+                    "            _write_side_by_side(project, plan, staged_source, path)\n",
+                    "        for path in conflicts:\n"
+                    "            _write_side_by_side(project, plan, staged_source, path)\n"
+                    "\n"
+                    "        if dry_run:\n"
+                    "            return UpdateResult(False, True, state.stack_version, "
+                    "staged_source.version,\n"
+                    "                                outcome, plan.to_record(), conflicts)\n"),),
+        test=("tests.test_lifecycle_update.UpdateApply"
+              ".test_a_dry_run_update_writes_nothing"),
     ),
     Case(
         name="journal_id_containment",
@@ -225,8 +261,9 @@ CASES = (
                     "        if component.ownership == manifestlib.USER_DATA:\n",
                     "        if False:\n"),
                Edit("ainative/lifecycle/planner.py",
-                    "            action = REMOVE if purge else PRESERVE\n",
-                    "            action = REMOVE\n")),
+                    "        return Change(REMOVE if purge else PRESERVE, entry.path, "
+                    "entry.component,\n",
+                    "        return Change(REMOVE, entry.path, entry.component,\n")),
         test=("tests.test_lifecycle_matrix.TransitionMatrix"
               ".test_verified_switch_standard_preserves_the_audit_trail"),
     ),

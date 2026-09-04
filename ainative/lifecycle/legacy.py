@@ -79,8 +79,13 @@ def _adopt_component(project: Path, component, source: DistributionSource,
         spec = BlockSpec(component.marker or component.identifier,
                          component.comment_prefix, component.lines)
         if block_count(resolve_within(project, destination), spec):
+            # `created_by_ainative=True`, and the markers are why: a region
+            # delimited by this stack's own BEGIN/END markers was written by
+            # some version of this stack, and only the bytes between them are
+            # ever taken back. Recording it as not-ours contradicted the removal
+            # path, which correctly removes it (EMP-LC-023).
             adopted.append(ManagedFile(destination, component.identifier, component.ownership,
-                                       None, created_by_ainative=False, kind="external_block"))
+                                       None, created_by_ainative=True, kind="external_block"))
         return adopted, unmanaged
 
     for destination, source_relative in plannerlib.component_files(component, source):

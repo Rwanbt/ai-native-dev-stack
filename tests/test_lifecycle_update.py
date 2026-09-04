@@ -150,11 +150,30 @@ class UpdateApply(LocalReleaseFixture):
             self.assertEqual(self.read(relative), content)
 
     def test_a_dry_run_update_writes_nothing(self):
+        """Nothing means nothing: not the file, not a `.new`, not the cache.
+
+        The conflict files were written before the dry-run check, and the check
+        recorded its answer, so a dry run left two new files behind
+        (EMP-LC-024).
+        """
+
+        from ainative.lifecycle.digest import digest_file
+
         self.install("standard")
-        before = self.read("AGENTS.md")
+        self.write("AGENTS.md", "# mine\n")
+
+        def snapshot():
+            return sorted((path.relative_to(self.project).as_posix(), digest_file(path) or "")
+                          for path in self.project.rglob("*") if path.is_file())
+
+        before = snapshot()
         result = updaterlib.apply(self.project, dry_run=True, distribution=self.distribution)
+
         self.assertFalse(result.applied)
-        self.assertEqual(self.read("AGENTS.md"), before)
+        self.assertIn("AGENTS.md", result.conflicts)
+        self.assertEqual(snapshot(), before, "a dry-run update touched the project")
+        self.assertFalse(self.exists("AGENTS.md.new"))
+        self.assertFalse(updaterlib.cache_path(self.project).exists())
 
     def test_a_user_modified_file_survives_and_gets_the_new_one_beside_it(self):
         self.install("standard")

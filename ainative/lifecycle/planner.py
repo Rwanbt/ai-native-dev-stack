@@ -277,55 +277,65 @@ def _external_preview(target: Path, component: Component) -> tuple[str, bool]:
     return external.apply(target, block_spec(component))
 
 
+def removal_change(project: Path, entry: ManagedFile, *, purge: bool,
+                   note: str = "") -> Change:
+    """What removing one recorded path would do. The single decision point.
+
+    Every caller that deletes goes through here. It used to be duplicated —
+    once per component, once again for orphaned records — and the copy drifted:
+    it kept a `purge or ...` short-circuit that deleted a file the user had
+    edited (EMP-LC-018, then EMP-LC-021 in the copy). One function, so the next
+    change cannot land in only half of them.
+    """
+
+    suffix = f" ({note})" if note else ""
+
+    if entry.kind == "external_block":
+        # The region is delimited by markers this stack writes, and only the
+        # bytes between them are taken back. The markers are the ownership
+        # proof, which is why `created_by_ainative` does not gate this.
+        return Change(BLOCK_REMOVE, entry.path, entry.component, entry.ownership,
+                      f"remove only the managed region{suffix}", kind="external_block")
+
+    if entry.kind == "data_root":
+        return Change(REMOVE if purge else PRESERVE, entry.path, entry.component,
+                      entry.ownership,
+                      f"{'purge requested' if purge else 'user data - preserved'}{suffix}",
+                      kind="data_root")
+
+    if entry.ownership == manifestlib.USER_DATA:
+        # `--purge` deletes declared *data roots* (handled above), not every
+        # file that happens to be user-owned. `tools/ai_docs/config.sh` is the
+        # user's machine config, seeded from a template; the retention table
+        # keeps it under purge and the code agrees.
+        return Change(PRESERVE, entry.path, entry.component, entry.ownership,
+                      f"user data - preserved{suffix}")
+
+    if not entry.created_by_ainative:
+        # Adoption may never make the uninstaller delete a file the stack did
+        # not write (ADR-0009, consequences). `--purge` does not lift this.
+        return Change(PRESERVE, entry.path, entry.component, entry.ownership,
+                      f"adopted but not written by ainative - preserved{suffix}")
+
+    # The digest decides, and `--purge` does not override it. Purge's extra
+    # reach is over declared data roots, nothing else.
+    status = digestlib.classify(resolve_within(project, entry.path), entry.digest_at_install)
+    if status == digestlib.MISSING:
+        return Change(SKIP, entry.path, entry.component, entry.ownership,
+                      f"already absent{suffix}")
+    if digestlib.is_safe_to_remove(status):
+        return Change(REMOVE, entry.path, entry.component, entry.ownership,
+                      f"unchanged since install{suffix}")
+    return Change(PRESERVE, entry.path, entry.component, entry.ownership,
+                  f"{status} - preserved{suffix}")
+
+
 def plan_component_removal(project: Path, component: Component, state: InstallState, *,
                            purge: bool) -> list[Change]:
-    """What removing a component would do. `purge` also takes user data."""
+    """What removing a component would do."""
 
-    changes: list[Change] = []
-    for entry in state.files_for_component(component.identifier):
-        target = resolve_within(project, entry.path)
-        if entry.kind == "external_block":
-            changes.append(Change(BLOCK_REMOVE, entry.path, component.identifier,
-                                  entry.ownership, "remove only the managed region",
-                                  kind="external_block"))
-            continue
-        if entry.kind == "data_root":
-            action = REMOVE if purge else PRESERVE
-            reason = "purge requested" if purge else "user data — preserved"
-            changes.append(Change(action, entry.path, component.identifier, entry.ownership,
-                                  reason, kind="data_root"))
-            continue
-        if entry.ownership == manifestlib.USER_DATA:
-            # `--purge` deletes declared *data roots* (handled above), not every
-            # file that happens to be user-owned. `tools/ai_docs/config.sh` is
-            # the user's machine config, seeded from a template; the retention
-            # table keeps it under purge and the code now agrees.
-            changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  "user data - preserved"))
-            continue
-        if not entry.created_by_ainative:
-            # Adoption may never make the uninstaller delete a file the stack
-            # did not write (ADR-0009, consequences). `--purge` does not lift
-            # this: purge removes AI Native's own data roots, not a file whose
-            # bytes were always the user's.
-            changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  "adopted but not written by ainative - preserved"))
-            continue
-        # The digest decides, and `--purge` does not override it. It used to:
-        # a managed file the user had edited was deleted under purge, silently,
-        # while the retention table promised it was kept (EMP-LC-018). Purge's
-        # extra reach is over declared data roots, nothing else.
-        status = digestlib.classify(target, entry.digest_at_install)
-        if status == digestlib.MISSING:
-            changes.append(Change(SKIP, entry.path, component.identifier, entry.ownership,
-                                  "already absent"))
-        elif digestlib.is_safe_to_remove(status):
-            changes.append(Change(REMOVE, entry.path, component.identifier, entry.ownership,
-                                  "unchanged since install"))
-        else:
-            changes.append(Change(PRESERVE, entry.path, component.identifier, entry.ownership,
-                                  f"{status} - preserved"))
-    return changes
+    return [removal_change(project, entry, purge=purge)
+            for entry in state.files_for_component(component.identifier)]
 
 
 def build_install_plan(project: Path, distribution: Distribution, source: DistributionSource,
@@ -379,14 +389,14 @@ def build_uninstall_plan(project: Path, distribution: Distribution, state: Insta
             continue
         plan.changes.extend(plan_component_removal(project, component, state, purge=purge))
         plan.components_removed.append(identifier)
-    # Orphans: recorded files whose component vanished from the manifests.
+    # Orphans: recorded files whose component is no longer installed — which is
+    # every record after a plain uninstall. They go through the same decision as
+    # everything else, so a user's edit is as safe here as anywhere.
     known = set(state.installed_components)
-    orphans = [entry for entry in state.managed_files if entry.component not in known]
-    for entry in orphans:
-        status = digestlib.classify(resolve_within(project, entry.path), entry.digest_at_install)
-        action = REMOVE if (purge or digestlib.is_safe_to_remove(status)) else PRESERVE
-        plan.changes.append(Change(action, entry.path, entry.component, entry.ownership,
-                                   "orphaned managed file", kind=entry.kind))
+    for entry in state.managed_files:
+        if entry.component not in known:
+            plan.changes.append(removal_change(project, entry, purge=purge,
+                                               note="orphaned record"))
     return plan
 
 
@@ -411,8 +421,9 @@ def managed_entries(component: Component, changes: Sequence[Change]) -> list[Man
                                        None, created_by_ainative=False, kind="data_root"))
             continue
         if change.kind == "external_block":
+            # The region — not the file — is ours, and the markers prove it.
             entries.append(ManagedFile(change.path, component.identifier, component.ownership,
-                                       None, created_by_ainative=False, kind="external_block"))
+                                       None, created_by_ainative=True, kind="external_block"))
             continue
         if change.action == CONFLICT:
             continue

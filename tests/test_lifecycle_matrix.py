@@ -252,6 +252,35 @@ class TransitionMatrix(LifecycleTestCase):
         self.assertFalse(self.exists(".ai-native/lifecycle/state.json"))
         self.assertFalse(self.exists(".ai-native/lifecycle/transactions"))
 
+    def test_purge_does_not_remove_a_user_file_nested_in_the_journal_directory(self):
+        """The subdirectories were still emptied with rmtree (EMP-LC-022)."""
+
+        self.install("standard")
+        self.write(".ai-native/lifecycle/transactions/my-notes.txt", "mine\n")
+        self.write(".ai-native/lifecycle/backups/keepsake.txt", "also mine\n")
+        self.uninstall(purge=True, assume_yes=True)
+
+        self.assertEqual(self.read(".ai-native/lifecycle/transactions/my-notes.txt"), "mine\n")
+        self.assertEqual(self.read(".ai-native/lifecycle/backups/keepsake.txt"),
+                         "also mine\n")
+        self.assertEqual(list((self.project / ".ai-native/lifecycle/transactions")
+                              .glob("*.json")), [],
+                         "a journal this code wrote survived the purge")
+
+    def test_purge_after_a_plain_uninstall_still_keeps_a_user_edited_file(self):
+        """Every record is orphaned after an uninstall, and the orphan path had
+        its own copy of the decision — which still deleted a user's edit
+        (EMP-LC-021, the same class as EMP-LC-018 in a second location)."""
+
+        self.install("standard")
+        self.write("AGENTS.md", "# hours of my own work\n")
+        self.uninstall()
+        self.assertEqual(self.state().installed_components, [])
+
+        self.uninstall(purge=True, assume_yes=True)
+        self.assertEqual(self.read("AGENTS.md"), "# hours of my own work\n")
+        self.assertEqual(self.read("README.md"), "my project\n")
+
     def test_purge_refuses_without_confirmation_when_there_is_no_terminal(self):
         from ainative.lifecycle.errors import LifecycleError
 
