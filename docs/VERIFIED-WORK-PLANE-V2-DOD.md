@@ -60,8 +60,10 @@ REUSABLE_ATTESTED_EVIDENCE:      NOT BUILT, designed for
 ADVERSARIAL_E2E:                 PASS (A54-A70, A72-A112)
 EXECUTION_SURFACES:              PASS (converge and verify gated; debug run-command non-authoritative by design)
 
-HISTORICAL:   OPEN
-PILOT:        OPEN
+HISTORICAL:   OPEN, 1 case conducted (H01: verdict frozen, reveal pending)
+PILOT:        OPEN, 0 of 5 real items, 1 of 2 real harnesses available
+
+EMP-002 (evidence execution window)  FIXED, non-vacuity proven, 1126419
 
 AUTHORITY GATE = CLOSED by external review at 2fb2154
 P0 authority = 0   (external finding, not self-certified)
