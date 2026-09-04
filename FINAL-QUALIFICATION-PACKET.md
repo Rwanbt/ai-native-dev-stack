@@ -2,11 +2,9 @@
 
     repository   Rwanbt/ai-native-dev-stack
     branch       spec  (PR #16)
-    reviewed at  c8878ec58e56a49715d5b91f722158fc10ee878b
+    candidate    27a5fd655a4dee3420396e0e56bdbc241a18b68e
+    CI run       33872777281, all jobs green on that exact SHA
     date         2026-09-04
-
-The candidate SHA below is the commit this packet was written on top of; CI is
-green on it and on this commit.
 
 ## Gates
 
