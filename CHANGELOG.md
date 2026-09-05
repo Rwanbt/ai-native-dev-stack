@@ -4,11 +4,18 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - Unreleased
+
+Release version pending until the human maintainer tags it. This release ships
+the **Distribution & Lifecycle Manager** (Standard and Verified profiles,
+recorded file ownership, transactional install / update / uninstall) and the
+**Verified Work Plane V2**. The stack release version is 2.0.0; the Work Plane
+runtime version and the lifecycle state-schema version are independent numbers
+(see `docs/DISTRIBUTION-LIFECYCLE.md`, section 13).
 
 ### Added
 
-#### Distribution & Lifecycle Manager v1
+#### Distribution & Lifecycle Manager
 
 - **Two profiles, `standard` and `verified`**, declared in
   `ainative/lifecycle/data/profiles.json`. `verified` extends `standard` and
@@ -83,6 +90,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
   inside `.git/`. Covered by a CI job on Linux and Windows.
 - `scripts/measure_scope.py` + a CI job — re-measures the repository and fails
   when `AGENTS.md`'s scope table drifts from reality.
+- `skills/commit-convention/` — Conventional Commits 1.0 enforcer with two
+  complementary modes:
+  - **Auto-suggest** — when the user says "commit", `/commit`, or has a
+    non-empty staged diff and seems ready to commit, the skill inspects
+    `git diff --staged`, infers type/scope/subject, and proposes 1–3
+    candidates via AskUserQuestion.
+  - **Validator hook** — `bin/validate-commit.sh` (PreToolUse on `Bash`)
+    validates every `git commit` first line against the CC regex. PASS is
+    silent `allow`; non-conformant or soft-warning commits (full line > 100
+    chars, trailing period, BREAKING CHANGE without `!`) trigger `ask` with
+    a `[warn]` prefix. `--no-verify` is honored as a user override.
+  - 18 zero-dependency smoke tests (`tests/test_validate.sh`) cover allow /
+    ask / warn paths and pass green.
+- `install.sh` copies `commit-convention` into `.claude/skills/` of the target
+  project, alongside the existing `verify-ai-docs` and `verify-standards`.
 
 ### Fixed
 
@@ -171,22 +193,37 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `scripts/loc_gate.ps1` — merged into `run_gate.js` (recoverable via
   `git log -S`).
 
-- `skills/commit-convention/` — Conventional Commits 1.0 enforcer with two
-  complementary modes:
-  - **Auto-suggest** — when the user says "commit", `/commit`, or has a
-    non-empty staged diff and seems ready to commit, the skill inspects
-    `git diff --staged`, infers type/scope/subject, and proposes 1–3
-    candidates via AskUserQuestion.
-  - **Validator hook** — `bin/validate-commit.sh` (PreToolUse on `Bash`)
-    validates every `git commit` first line against the CC regex. PASS is
-    silent `allow`; non-conformant or soft-warning commits (full line > 100
-    chars, trailing period, BREAKING CHANGE without `!`) trigger `ask` with
-    a `[warn]` prefix. `--no-verify` is honored as a user override.
-  - 18 zero-dependency smoke tests (`tests/test_validate.sh`) cover allow /
-    ask / warn paths and pass green.
-- `install.sh` step 2 now also copies `commit-convention` into
-  `.claude/skills/` of the target project, alongside the existing
-  `verify-ai-docs` and `verify-standards`.
+### Security / Safety
+
+- **Recorded ownership.** Every managed file carries the SHA-256 it had when
+  the stack wrote it; a file the user edited is never replaced and never
+  removed — not by an update, an uninstall, or `--purge`.
+- **Transactional mutations.** Backup first, install state committed last,
+  journaled, and recoverable with `ainative repair` — no half-installed state.
+- **Path safety.** Manifest destinations and every archive entry are validated
+  against traversal (`../../etc/cron.d/x` is refused); archive entry count and
+  expanded size are bounded.
+- **Detection is automatic; application never is.** Updates are never applied
+  without an explicit command, and the authority commands (`verify`,
+  `converge`, `trust`, `work`) never touch the network.
+- **Trust bootstrap stays human.** `ainative init --profile verified` prepares
+  the environment but never manufactures the trust anchor (ADR-0006).
+- **Integrity boundary, stated precisely.** SHA-256 protects against a
+  corrupted or substituted archive in transit; it does not protect against a
+  compromised release source. Release signing is not implemented and not
+  claimed — tracked as a signed-releases issue on the security roadmap.
+
+### Known limitations
+
+- Machine-wide harness integration (global hooks, cross-CLI skill links, Vault
+  governance blocks, the OpenCode plugin) is installed separately by
+  `scripts/install_agents.py` — `ainative init` configures the project only.
+- The lifecycle CLI requires Python 3.11+; the AI-docs tooling it installs
+  still runs on 3.8+.
+- Verified Work Plane genesis trust is inside the TCB: bootstrap trust before
+  a controlled agent has repository access (ADR-0006; deployment requirement).
+- There is no machine-level lifecycle yet (`ainative machine …`): global
+  install, status and removal remain `scripts/install_agents.py` operations.
 
 ## [1.0.0] - 2026-06-19
 

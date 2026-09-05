@@ -1,5 +1,5 @@
 # Universal Engineering Rules
-<!-- stack-version: 1.0.0 -->
+<!-- stack-version: 2.0.0 -->
 <!-- Cross-tool: Claude Code (@AGENTS.md in CLAUDE.md), Cursor (reads AGENTS.md natively at root + nested dirs), Codex (auto-loaded AGENTS.md) -->
 <!-- Keep this file at the project root. Customize per project as needed. -->
 <!-- Canonical source — reference this file (@AGENTS.md), do not copy it. Updates flow via `git pull` + /stack-upgrade. See UPDATING.md. -->

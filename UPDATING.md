@@ -111,8 +111,8 @@ reinstall that with your package manager.
 
 ```bash
 bash scripts/stack-update-check.sh
-# → UP_TO_DATE 1.0.0
-# → UPGRADE_AVAILABLE 1.0.0 -> 1.1.0 (4 commits)
+# → UP_TO_DATE 2.0.0
+# → UPGRADE_AVAILABLE 2.0.0 -> 2.1.0 (4 commits)
 # → OFFLINE | NOT_A_CLONE
 
 bash scripts/stack-upgrade.sh            # show the changelog, then ff-only pull
@@ -159,7 +159,7 @@ team wants to extend, or a `CLAUDE.md` that prefers inlining over `@include`.
 For those, wrap the stack-managed region in markers and edit only outside them:
 
 ```markdown
-<!-- STACK:BEGIN v1.0.0 — managed by ai-native-dev-stack, do not edit inside -->
+<!-- STACK:BEGIN v2.0.0 — managed by ai-native-dev-stack, do not edit inside -->
 ... canonical content, replaced wholesale on update ...
 <!-- STACK:END -->
 
