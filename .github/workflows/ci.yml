@@ -182,6 +182,9 @@ jobs:
       - name: CLI contract, exit codes, JSON and the layer boundary
         run: python -m unittest tests.test_lifecycle_cli -v
 
+      - name: GitHub work skills and managed-template ownership
+        run: python -m unittest tests.test_github_work_skills tests.test_lifecycle_github_templates -v
+
       - name: Non-vacuity — each guard must actually block
         # A protection nobody has seen refuse is a comment. This reverts each
         # guard in a scratch copy and asserts the matching test then fails.
