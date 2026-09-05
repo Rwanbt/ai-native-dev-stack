@@ -738,7 +738,7 @@ coffre qui ne satisfait pas le contrat.
 | Validation | La stack appelle `<coffre>/_system/tooling/vault.py check` (avec fallback `lint`) — elle ne ré-implémente pas le schéma. |
 | Verrou de maintenance | Un sentinel `.git/maintenance.lock` arrête le sync. Ne le supprimer que lorsque l'orchestrateur a terminé. |
 | Bloc par harnais | `scripts/install_agents.py` écrit un bloc « Vault governance » pour Claude (`~/.claude/CLAUDE.md`), Codex, OpenCode, Cursor (`~/.cursor/rules/ai-native-dev-stack.mdc`), Gemini (`~/.gemini/GEMINI.md`) et Mavis. |
-| Boards | Le hook SessionEnd n'écrit jamais dans `BOARD.md` — les boards sont des vues générées ; les cartes canoniques portent le statut. |
+| Boards | Le hook SessionEnd n'écrit jamais dans `BOARD.md` — les boards sont des vues historiques/de navigation générées ; les GitHub Issues portent l'état du travail actif. |
 | Sync | `scripts/vault_sync.py` exécute le validateur v4 avant le staging, préserve le scan de secrets, le single-writer, la détection de divergence et la vérification du SHA distant. |
 | Check / rollback | `python scripts/install_agents.py --check --vault <coffre> --project-slug <slug>` rapporte l'état des blocs ; `python scripts/vault_sync.py --no-validator-check` est la *seule* opt-in legacy. |
 
