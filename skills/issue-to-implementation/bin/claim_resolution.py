@@ -2,9 +2,18 @@
 """Deterministic claim resolution for GitHub Issues.
 
 docs/GITHUB-WORKFLOW.md, "Multi-agent claims": GitHub Issue assignment is the
-preferred claim; an explicit claim comment is the fallback for actors that
-cannot assign. There is no lock service and no lock — GitHub state is the
-claim, and this pure function decides who proceeds.
+PREFERRED way to create a claim; an explicit claim comment is the fallback
+for actors that cannot assign. That preference is an acquisition rule — it
+must never become an arbitration override.
+
+Each actor is represented in arbitration by their EARLIEST valid observable
+claim event, whatever its kind:
+
+    Alice comment 09:00, Alice assignment 12:00  ->  Alice stands at 09:00
+
+Otherwise a later assignment could rewrite an actor's earlier comment into a
+losing position, and claim chronology would depend on when permissions were
+granted rather than on who claimed first.
 
 Decision table:
     0 claimants     -> CLAIM_FAILED   (nobody proceeds)
@@ -43,16 +52,10 @@ CLAIM_FAILED = "CLAIM_FAILED"
 CLAIM_CONFLICT = "CLAIM_CONFLICT"
 
 KINDS = ("assignment", "comment")
-# The preferred form wins representation when one actor signalled twice.
-_KIND_RANK = {"assignment": 0, "comment": 1}
-# Sort placeholder so a missing timestamp loses to any real one when picking
-# an actor's representative signal — never used for cross-actor ordering,
-# which refuses instead.
-_MISSING = "~"
 
 
 class Claim:
-    """One actor's normalized claim."""
+    """One actor's normalized claim: their earliest orderable event."""
 
     __slots__ = ("kind", "actor", "created_at", "identifier")
 
@@ -85,17 +88,22 @@ def _claim_worthy(signal: dict) -> bool:
             and bool(signal["actor"].strip()))
 
 
-def normalize(signals) -> list[Claim]:
-    """Collapse signals into one claim per actor, preferring the assignment.
+def _is_orderable_signal(signal: dict) -> bool:
+    created_at = signal.get("created_at")
+    identifier = signal.get("identifier")
+    return (isinstance(created_at, str) and bool(created_at.strip())
+            and identifier is not None
+            and not isinstance(identifier, (dict, list)))
 
-    The same actor signalling twice is one claimant, not two; the assignment
-    represents the actor when one exists, else the earliest comment. Signals
-    without an actor or kind never reach here.
-    """
+
+def normalize(signals) -> list[Claim]:
+    """Collapse signals into one claim per actor, represented by that
+    actor's earliest reliably orderable claim event. The same actor
+    signalling twice is one claimant, not two — and the earlier event
+    speaks for both, whatever its kind."""
 
     valid = [s for s in (signals or []) if _claim_worthy(s)]
-    types = {type(s["identifier"]) for s in valid
-             if s.get("identifier") is not None and not isinstance(s["identifier"], (dict, list))}
+    types = {type(s["identifier"]) for s in valid if _is_orderable_signal(s)}
     if len(types) > 1:
         raise ValueError("identifier types differ across signals; "
                          "ordering would be arbitrary")
@@ -104,11 +112,14 @@ def normalize(signals) -> list[Claim]:
         by_actor.setdefault(signal["actor"].strip().lower(), []).append(signal)
     claims: list[Claim] = []
     for pool in by_actor.values():
-        assignments = [s for s in pool if s["kind"] == "assignment"]
-        candidates = assignments or pool
-        representative = min(candidates, key=lambda s: (s.get("created_at") or _MISSING,
-                                                        _KIND_RANK[s["kind"]],
-                                                        str(s.get("identifier"))))
+        orderable = [s for s in pool if _is_orderable_signal(s)]
+        if orderable:
+            representative = min(orderable, key=lambda s: (s["created_at"],
+                                                           str(s["identifier"])))
+        else:
+            # No orderable event for this actor: keep the evidence, the
+            # actor stays in the set as unorderable (fail-closed upstream).
+            representative = pool[0]
         claims.append(Claim(representative["kind"], representative["actor"].strip(),
                             representative.get("created_at"),
                             representative.get("identifier")))
