@@ -26,7 +26,7 @@ mavis hook list --agent mavis --human
 Pour le LOC gate (PreToolUse):
 ```powershell
 # Créer manuellement via le fichier hook:
-# C:\Users\barat\.mavis\agents\mavis\hooks\pretool-loc-gate.md
+# ~/.mavis/agents/mavis/hooks/pretool-loc-gate.md
 ```
 
 ## Installation Claude Code
@@ -57,7 +57,7 @@ Pour le LOC gate (PreToolUse):
 ### Vault sync quotidien
 Dans `~/.claude/CLAUDE.md`, section début de session:
 ```powershell
-pwsh -NoProfile -File 'D:/App/ai-native-dev-stack/scripts/vault_sync_once_daily.ps1'
+pwsh -NoProfile -File '<STACK_ROOT>/scripts/vault_sync_once_daily.ps1'
 ```
 
 ## Installation OpenCode (Linux)
@@ -83,4 +83,4 @@ skills partagés sont installés sous `~/.agents/skills/` sur Linux.
 - API Key: lue depuis la variable d'environnement `OBSIDIAN_API_KEY` (jamais commitée).
   Récupérer la clé dans Obsidian → plugin *Local REST API* → puis l'exporter :
   `setx OBSIDIAN_API_KEY "<votre-clé>"` (Windows) / `export OBSIDIAN_API_KEY=...` (bash)
-- Prérequis: Obsidian ouvert avec le vault `IA_Dev_Brain` + plugin Local REST API activé
+- Prérequis: Obsidian ouvert avec votre vault `<OBSIDIAN_VAULT>` + plugin Local REST API activé

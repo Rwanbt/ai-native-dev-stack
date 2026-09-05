@@ -317,6 +317,10 @@ Contexte, mémoire, skills et outillage AI-native. **Recommandé pour
 l'apprentissage, le développement personnel et le travail assisté par IA
 ordinaire** — étudiants, développeurs seuls, installation rapide.
 
+Standard fournit le contexte, les skills et l'outillage AI-native **côté
+projet**. Les intégrations machine globales et les liaisons Vault optionnelles
+s'installent séparément avec l'installateur global (`scripts/install_agents.py`).
+
 ### Verified
 
 Standard **plus** des Work Contracts gouvernés et une vérification
@@ -331,6 +335,20 @@ Verified étend Standard ; Standard ne dépend jamais de Verified. Vous pouvez
 passer de l'un à l'autre à tout moment, dans les deux sens, et redescendre vers
 Standard **préserve** votre historique Verified sous forme d'état dormant au
 lieu de le supprimer.
+
+### Ce que fait `ainative init` — et ce qu'il ne fait pas
+
+`ainative init` est le cycle de vie **du projet**. Il installe des fichiers
+dans le projet uniquement (`AGENTS.md`, `conventions.json`, `tools/ai_docs/`,
+skills dans le projet, la région du `.gitignore`, et l'intégration Verified si
+choisie) et enregistre la propriété de chacun.
+
+L'intégration machine globale est une surface séparée : hooks globaux, liens
+de skills cross-CLI, blocs de gouvernance Vault dans `~/.claude/CLAUDE.md`,
+`~/.codex/AGENTS.md`, `~/.config/opencode/`, `~/.cursor/`, `~/.gemini/` et
+Mavis, et le plugin OpenCode — tout cela s'installe avec
+`python scripts/install_agents.py` (voir *Installer la méthode sur la machine*
+ci-dessous). Garder les deux séparés, c'est ce qui rend les deux réversibles.
 
 ---
 
@@ -581,24 +599,21 @@ docs: add threading constraints to AudioModule AI_CONTEXT
 ## Structure du coffre Obsidian
 
 ```
-Obsidian/MonCoffre/
+<OBSIDIAN_VAULT>/
 ├── INDEX.md                  ← hub de navigation central
-├── LOG.md                    ← journal chronologique de sessions
+├── LOG.md                    ← journal chronologique de sessions (append-only)
 ├── SCHEMA.md                 ← conventions de frontmatter et wikilinks
 │
-├── ProjetA/                  ← un dossier par projet
-│   ├── _memory/
-│   │   └── memory.md         ← mémoire IA des sessions (décisions, patterns)
-│   ├── decisions-log.md      ← décisions notables avec [[wikilinks]] ADR
-│   └── architecture/
-│       └── notes.md
+├── projects/<slug>/          ← un dossier par projet enregistré
+│   ├── INDEX.md / AGENTS.md / BOARD.md
+│   ├── _memory/memory.md     ← mémoire IA des sessions (décisions, patterns)
+│   ├── decisions/            ← ADRs, un par fichier
+│   ├── operations/sessions/  ← une note de session par hook SessionEnd
+│   └── work/                 ← initiatives, tâches, runbooks
 │
-├── ProjetB/                  ← autre projet
-│   └── _memory/memory.md
-│
-└── _global/                  ← notes transversales
-    ├── professional-code-standards.md
-    └── handoff/
+├── inbox/                    ← notes non triées
+├── archive/                  ← contenu déplacé/supersédé
+└── _system/                  ← infrastructure du coffre (contrat, tooling, schémas)
 ```
 
 ### Template frontmatter (chaque note du coffre)
@@ -631,19 +646,12 @@ related: [[INDEX]], [[ProjetA/CLAUDE]], [[ADR-0004]]
 
 ## Protocole de fin de session
 
-À la fin de chaque session (obligatoire) :
-
-1. **Mettre à jour la mémoire projet** (`ProjetA/_memory/memory.md`) :
-   - Ce qui a été construit/décidé
-   - Patterns découverts
-   - Prochaines étapes
-
-2. **Appender dans `LOG.md`** :
-   ```
-   ## YYYY-MM-DD — [Projet] — Résumé (3-5 bullets)
-   ```
-
-3. **Lancer `/verify-ai-docs`** pour confirmer que tout est en sync.
+Le protocole obligatoire est défini une seule fois, dans la section v4 du
+coffre ci-dessus : le hook SessionEnd écrit une note de session immuable sous
+`projects/<slug>/operations/sessions/` et append une seule ligne dans `LOG.md`
+(append-only, jamais de réécriture) ; le hook SessionStart recharge
+`projects/<slug>/AGENTS.md`, `BOARD.md` et l'`AGENTS.md` du coffre. Terminez
+par `/verify-ai-docs` pour confirmer que tout est en sync.
 
 La prochaine session — même des semaines plus tard, même sur une autre machine — démarrera avec le contexte complet.
 

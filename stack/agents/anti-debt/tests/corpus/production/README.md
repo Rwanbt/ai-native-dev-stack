@@ -23,7 +23,7 @@ Human overrides in `.debt-history.json` serve as ground truth:
 python tools/production_mining.py --history /path/to/.debt-history.json --output tests/corpus/production/
 
 # Mine from all projects in a directory
-python tools/production_mining.py --history-dir D:/App/ --output tests/corpus/production/
+python tools/production_mining.py --history-dir <HISTORY_DIR> --output tests/corpus/production/
 ```
 
 ## Versioning

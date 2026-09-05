@@ -186,7 +186,7 @@ allowed but not line-validated.
 }
 ```
 
-`<STACK_ROOT>` resolves to `D:/App/ai-native-dev-stack/` on this machine.
+`<STACK_ROOT>` resolves to the stack clone root on the machine (for example `~/dev/ai-native-dev-stack/`).
 The hook ships with the stack installer (`install.sh` step 2). Other agents
 (Codex, OpenCode, MiniMax/Mavis) use the same `bin/validate-commit.sh` —
 see each agent's hook docs for the equivalent event name (`pre_tool_use` etc.).

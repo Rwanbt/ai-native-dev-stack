@@ -54,5 +54,5 @@ Dans le `hooks.json` du projet (ou global) :
 
 ## Source originale
 
-Portée depuis `C:\Users\barat\.codex\hooks.json` (Erwan Barat) qui utilisait un
+Portée depuis la configuration Codex personnelle de l'auteur qui utilisait un
 bash inline avec `case "$CMD"`. La version Node.js est multiplateforme sans dépendance bash.

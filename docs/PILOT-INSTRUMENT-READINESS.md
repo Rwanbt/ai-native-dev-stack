@@ -1,5 +1,10 @@
 # Pilot Instrument — Readiness
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 The pilot harness has been rewritten to meet the closure review's requirement.
 The instrument is ready; **the pilot has not been run and cannot be run without
 five real work items through at least two real harnesses.**

@@ -36,3 +36,6 @@ build/
 
 # Lifecycle payload staged at build time by _build_backend.py — never tracked.
 ainative/_payload/
+
+# agent session state (personal, never commit)
+state.md

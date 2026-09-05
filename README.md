@@ -403,6 +403,10 @@ Context, memory, skills and AI-native tooling. **Recommended for learning,
 personal development and normal AI-assisted work** — students, individual
 developers, fast setup.
 
+Standard provides the project-side AI-native context, skills and tooling.
+Machine-wide harness integrations and optional Vault bindings are installed
+separately with the global agent installer (`scripts/install_agents.py`).
+
 ### Verified
 
 Standard **plus** governed Work Contracts and deterministic verification.
@@ -422,6 +426,20 @@ ainative init --profile verified
 ainative profile switch standard      # keeps trust, contracts and evidence
 ainative profile switch verified      # reactivates them
 ```
+
+### What `ainative init` does — and what it deliberately does not
+
+`ainative init` is the **project** lifecycle. It installs files inside the
+project only (`AGENTS.md`, `conventions.json`, `tools/ai_docs/`, in-project
+skills, the `.gitignore` region, and the Verified integration when chosen) and
+records ownership for every one of them.
+
+Machine-global integration is a separate surface: global hooks, cross-CLI
+skill links, the Vault governance blocks in `~/.claude/CLAUDE.md`,
+`~/.codex/AGENTS.md`, `~/.config/opencode/`, `~/.cursor/`, `~/.gemini/` and
+Mavis, and the OpenCode plugin — all installed by
+`python scripts/install_agents.py` (see *Whole-stack transfer* below). Keeping
+the two apart is what makes both reversible.
 
 ---
 
@@ -695,24 +713,21 @@ docs: add threading constraints to AudioModule AI_CONTEXT
 ## Obsidian Vault Structure
 
 ```
-Obsidian/MyVault/
+<OBSIDIAN_VAULT>/
 ├── INDEX.md                  ← central navigation hub
-├── LOG.md                    ← chronological session journal
+├── LOG.md                    ← chronological session journal (append-only)
 ├── SCHEMA.md                 ← frontmatter and wikilink conventions
 │
-├── ProjectA/                 ← one folder per project
-│   ├── _memory/
-│   │   └── memory.md         ← AI session memory (decisions, patterns)
-│   ├── decisions-log.md      ← notable decisions with [[wikilinks]] to ADRs
-│   └── architecture/
-│       └── notes.md
+├── projects/<slug>/          ← one folder per registered project
+│   ├── INDEX.md / AGENTS.md / BOARD.md
+│   ├── _memory/memory.md     ← AI session memory (decisions, patterns)
+│   ├── decisions/            ← ADRs, one per file
+│   ├── operations/sessions/  ← one session note per SessionEnd hook
+│   └── work/                 ← initiatives, tasks, runbooks
 │
-├── ProjectB/                 ← another project
-│   └── _memory/memory.md
-│
-└── _global/                  ← cross-project notes
-    ├── professional-code-standards.md
-    └── handoff/
+├── inbox/                    ← unchecked notes
+├── archive/                  ← moved/superseded content
+└── _system/                  ← vault infrastructure (contract, tooling, schemas)
 ```
 
 ### Frontmatter Template (every vault note)
@@ -745,21 +760,15 @@ related: [[INDEX]], [[ProjectA/CLAUDE]], [[ADR-0004]]
 
 ## End-of-Session Protocol
 
-At the end of every session (mandatory):
+The mandatory protocol is defined once, in the Obsidian v4 section above: the
+SessionEnd hook writes one immutable session note under
+`projects/<slug>/operations/sessions/` and appends a single line to `LOG.md`
+(append-only, never a rewrite); the SessionStart hook reloads
+`projects/<slug>/AGENTS.md`, `BOARD.md` and the vault-level `AGENTS.md`.
+Finish with `/verify-ai-docs` to confirm everything is in sync.
 
-1. **Update project memory** (`ProjectA/_memory/memory.md`):
-   - What was built / decided
-   - Patterns discovered
-   - Next steps
-
-2. **Append to `LOG.md`**:
-   ```
-   ## YYYY-MM-DD — [Project] — Summary (3-5 bullets)
-   ```
-
-3. **Run `/verify-ai-docs`** to confirm everything is in sync.
-
-The next session — even weeks later, even on a different machine — will start with full context.
+The next session — even weeks later, even on a different machine — will start
+with full context.
 
 ---
 

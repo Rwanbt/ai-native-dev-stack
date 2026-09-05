@@ -1,5 +1,10 @@
 # Blind historical validation — case H01
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 The first case of the historical gate. Conducted blind: the contract was built
 from a ticket and the snapshot alone, frozen, and only then evaluated.
 

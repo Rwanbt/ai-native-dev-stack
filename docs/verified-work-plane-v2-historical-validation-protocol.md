@@ -1,5 +1,10 @@
 # Verified Work Plane V2 — Blind Historical Validation Protocol
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 Status: **defined, never executed.** No historical validation evidence exists
 for this branch.
 

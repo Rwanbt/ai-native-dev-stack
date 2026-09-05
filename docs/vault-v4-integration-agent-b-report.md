@@ -8,6 +8,10 @@ created: 2026-08-30
 updated: 2026-08-30
 related: [[AGENTS]], [[README]], [[_system/migrations/v4/REPORT]], [[_shared/global/plans/plan-vault-v4-ai-native-dev-stack-remediation-2-minimax-2026-08-30]]
 ---
+> **STATUS: HISTORICAL RECORD** — retained for auditability.
+> This report records the vault v4 integration work at the time it was
+> performed; it is not the current operational status. See the "v4 vault
+> integration" section of [README.md](../README.md) for current state.
 
 # Vault v4 integration — Agent B report
 

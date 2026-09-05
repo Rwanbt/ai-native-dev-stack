@@ -1,5 +1,10 @@
 # Review Packet — Authority Hardening, Round 10
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 One P0 — the surface the round-9 packet flagged and declined to widen unasked.
 Closed. Tiny round, as asked.
 

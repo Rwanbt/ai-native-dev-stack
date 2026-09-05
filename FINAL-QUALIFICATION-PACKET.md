@@ -1,5 +1,10 @@
 # Final qualification packet — `spec`
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
     repository   Rwanbt/ai-native-dev-stack
     branch       spec  (PR #16)
     candidate    27a5fd655a4dee3420396e0e56bdbc241a18b68e
@@ -155,3 +160,16 @@ initialisation, which restores the pre-existing TIMEOUT path.
     MERGE-READY = YES
 
 Merge to `main` is not performed: it was not authorised.
+
+---
+
+## Status addendum — 2026-09-05
+
+Merged to `main` via PR #16 (merge commit `56e9b256b014b1f1e8d9110910875c28f442b4d5`),
+and the post-promotion CI run
+[33927765004](https://github.com/Rwanbt/ai-native-dev-stack/actions/runs/33927765004)
+is green on that merge commit. The "Rollback" section above states `main` is
+untouched, and the verdict states "Merge to `main` is not performed" — those
+sentences record the state at qualification time and are superseded by this
+note. The rest of this packet describes the qualified candidate and is
+unchanged.

@@ -66,4 +66,4 @@ Dans `.codex/hooks.json` :
 
 ## Source originale
 
-Portée depuis `C:\Users\barat\.codex\hooks\readonly-env-prefix.py` (Erwan Barat).
+Portée depuis la configuration Codex personnelle de l'auteur.

@@ -168,5 +168,5 @@ integration gate: attend toutes les tracks avant de vérifier
 
 ---
 
-*Source: adapté de `C:\Users\barat\.claude\CLAUDE.md` § "Règle — Subagent vs lecture directe (v2.1)"*
+*Source: adapté d'un CLAUDE.md personnel § "Règle — Subagent vs lecture directe (v2.1)"*
 *Dernière mise à jour: 2026-06-15*
