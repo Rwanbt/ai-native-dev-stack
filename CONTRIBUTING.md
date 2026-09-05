@@ -37,18 +37,38 @@ reproducer; a plausible improvement is not a reason.
 
 ## Choosing work
 
-1. Pick an open issue — `good first issue` and `help wanted` are starting
-   points.
-2. Comment that you are taking it; then work on a branch:
+The full method lives in [docs/GITHUB-WORKFLOW.md](docs/GITHUB-WORKFLOW.md)
+and is enforced by two skills: `/github-triage` (findings to backlog) and
+`/issue-to-implementation` (backlog to merged PR). The short version:
+
+1. **Pick an open issue** — `good first issue` and `help wanted` are starting
+   points. Read its Acceptance Criteria: the PR will be held to them, and
+   they may only change with maintainer approval recorded on the issue.
+2. **Claim visibly before working.** Take the assignment if you can;
+   otherwise comment that you are taking it. If someone else claimed first
+   (earliest claim wins — assignment or comment, then stable ID), let them.
+3. **Work on a branch:**
 
 ```
-feat/<issue>-short-name     example: feat/23-machine-doctor
-fix/<issue>-short-name      example: fix/42-safe-machine-uninstall
-docs/<issue>-short-name     example: docs/7-signed-releases
+feat/123-short-name     fix/123-short-name
+docs/123-short-name     refactor/123-short-name
+chore/short-name        # truly trivial, no issue required
 ```
 
-3. Open the PR with the provided template and link the issue with
-   `Closes #<n>` in the PR body.
+4. **Implement only the issue's scope.** Unrelated findings become issues,
+   not extra commits (`/github-triage`).
+5. **Run the validation the issue and the repo require** (see below).
+6. **Open the PR with the provided template, referencing `Refs #<n>`** — not
+   `Closes` yet: the issue stays open while the PR is in review.
+7. **MERGE_READY:** all acceptance criteria satisfied, tests green,
+   documentation coherent, no relevant blocker. Only then does the PR body
+   switch to `Closes #<n>`.
+8. **Immediately before the merge, re-read the issue** and its current
+   acceptance criteria (FINAL_MERGE_FRESHNESS). A material difference is
+   `ISSUE_CHANGED`: stop, reconcile, never merge on a stale read.
+9. **Merge through the repository's authorized process.** `DONE` = merged +
+   issue closed as completed. Closed as duplicate/not-planned/invalid is not
+   Done.
 
 ## Running the tests
 

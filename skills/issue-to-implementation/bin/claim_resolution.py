@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Deterministic claim resolution for GitHub Issues.
+
+docs/GITHUB-WORKFLOW.md, "Multi-agent claims": GitHub Issue assignment is the
+PREFERRED way to create a claim; an explicit claim comment is the fallback
+for actors that cannot assign. That preference is an acquisition rule — it
+must never become an arbitration override.
+
+Each actor is represented in arbitration by their EARLIEST valid observable
+claim event, whatever its kind:
+
+    Alice comment 09:00, Alice assignment 12:00  ->  Alice stands at 09:00
+
+Otherwise a later assignment could rewrite an actor's earlier comment into a
+losing position, and claim chronology would depend on when permissions were
+granted rather than on who claimed first.
+
+Decision table:
+    0 claimants     -> CLAIM_FAILED   (nobody proceeds)
+    1 claimant      -> that claimant proceeds
+    >1 claimants    -> winner = min by (created_at, stable identifier)
+                       ascending; every loser stops
+    unorderable set -> CLAIM_CONFLICT (every claimant stops)
+
+A signal is a dict: {"kind": "assignment"|"comment", "actor": str,
+"created_at": ISO-8601 str, "identifier": stable GitHub id (comment or
+assignment-event id)}.
+
+Fail-closed policy for malformed signals: a signal without an actor or kind
+is noise and is dropped, but a signal WITH an actor is evidence that someone
+claimed — it is never silently discarded. Its claim simply cannot be ordered
+(missing created_at, missing identifier, or identifier types differing
+across signals), which makes the whole competing set indeterminate:
+CLAIM_CONFLICT. Arbitration must never win by discarding a competitor.
+
+The set must also be mutually orderable: two actors tying on both
+(created_at, identifier) cannot be separated by any stable rule.
+
+Usage:
+    echo '[{...signals...}]' | python claim_resolution.py
+    # -> {"status": "PROCEED", "winner": {...}, "losers": [...]}  (exit 0)
+    # -> {"status": "CLAIM_FAILED"|"CLAIM_CONFLICT", ...}          (exit 1)
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+
+PROCEED = "PROCEED"
+CLAIM_FAILED = "CLAIM_FAILED"
+CLAIM_CONFLICT = "CLAIM_CONFLICT"
+
+KINDS = ("assignment", "comment")
+
+
+class Claim:
+    """One actor's normalized claim: their earliest orderable event."""
+
+    __slots__ = ("kind", "actor", "created_at", "identifier",
+                 "has_unorderable_signal")
+
+    def __init__(self, kind: str, actor: str, created_at, identifier,
+                 has_unorderable_signal: bool = False) -> None:
+        self.kind = kind
+        self.actor = actor
+        self.created_at = created_at
+        self.identifier = identifier
+        self.has_unorderable_signal = has_unorderable_signal
+
+    @property
+    def orderable(self) -> bool:
+        return (not self.has_unorderable_signal
+                and bool(self.created_at)
+                and self.identifier is not None
+                and not isinstance(self.identifier, (dict, list)))
+
+    @property
+    def order_key(self):
+        return (self.created_at, self.identifier)
+
+    def to_record(self) -> dict:
+        return {"kind": self.kind, "actor": self.actor,
+                "created_at": self.created_at, "identifier": self.identifier}
+
+
+def _claim_worthy(signal: dict) -> bool:
+    """Evidence that someone claimed. Noise is dropped; claims are kept."""
+
+    return (isinstance(signal, dict)
+            and signal.get("kind") in KINDS
+            and isinstance(signal.get("actor"), str)
+            and bool(signal["actor"].strip()))
+
+
+def _is_orderable_signal(signal: dict) -> bool:
+    created_at = signal.get("created_at")
+    identifier = signal.get("identifier")
+    return (isinstance(created_at, str) and bool(created_at.strip())
+            and identifier is not None
+            and not isinstance(identifier, (dict, list)))
+
+
+def normalize(signals) -> list[Claim]:
+    """Collapse signals into one claim per actor, represented by that
+    actor's earliest reliably orderable claim event. The same actor
+    signalling twice is one claimant, not two — and the earlier event
+    speaks for both, whatever its kind."""
+
+    valid = [s for s in (signals or []) if _claim_worthy(s)]
+    types = {type(s["identifier"]) for s in valid if _is_orderable_signal(s)}
+    if len(types) > 1:
+        raise ValueError("identifier types differ across signals; "
+                         "ordering would be arbitrary")
+    by_actor: dict[str, list[dict]] = {}
+    for signal in valid:
+        by_actor.setdefault(signal["actor"].strip().lower(), []).append(signal)
+    claims: list[Claim] = []
+    for pool in by_actor.values():
+        orderable = [s for s in pool if _is_orderable_signal(s)]
+        has_unorderable_signal = len(orderable) != len(pool)
+        if orderable:
+            representative = min(orderable, key=lambda s: (s["created_at"],
+                                                           str(s["identifier"])))
+        else:
+            # No orderable event for this actor: keep the evidence, the
+            # actor stays in the set as unorderable (fail-closed upstream).
+            representative = pool[0]
+        claims.append(Claim(representative["kind"], representative["actor"].strip(),
+                            representative.get("created_at"),
+                            representative.get("identifier"),
+                            has_unorderable_signal))
+    return claims
+
+
+def resolve(signals) -> dict:
+    """Verdict for the current claim state. Pure; no re-read happens here.
+
+    The caller re-reads GitHub state before and after claiming (the skill
+    owns that procedure); this function only makes the decision deterministic.
+    """
+
+    try:
+        claims = normalize(signals)
+    except ValueError as error:
+        return {"status": CLAIM_CONFLICT, "winner": None,
+                "losers": [], "reason": str(error)}
+    if not claims:
+        return {"status": CLAIM_FAILED, "winner": None, "losers": [],
+                "reason": "no valid claim signal"}
+    if len(claims) == 1:
+        return {"status": PROCEED, "winner": claims[0].to_record(),
+                "losers": [], "reason": "single claimant"}
+    unorderable = [claim for claim in claims if not claim.orderable]
+    if unorderable:
+        return {"status": CLAIM_CONFLICT, "winner": None,
+                "losers": [claim.to_record() for claim in claims],
+                "reason": "a competing claim lacks created_at or a stable "
+                          "identifier, so no winner can be chosen fairly"}
+    keys = [claim.order_key for claim in claims]
+    if len(set(map(repr, keys))) != len(keys):
+        return {"status": CLAIM_CONFLICT, "winner": None,
+                "losers": [claim.to_record() for claim in claims],
+                "reason": "duplicate (created_at, identifier) ordering key"}
+    ordered = sorted(claims, key=lambda claim: claim.order_key)
+    return {"status": PROCEED, "winner": ordered[0].to_record(),
+            "losers": [claim.to_record() for claim in ordered[1:]],
+            "reason": "deterministic order: created_at, then identifier"}
+
+
+def main(argv: list[str]) -> int:
+    try:
+        signals = json.load(sys.stdin)
+    except ValueError as error:
+        print(json.dumps({"status": CLAIM_CONFLICT, "winner": None, "losers": [],
+                          "reason": f"unreadable input: {error}"}))
+        return 1
+    verdict = resolve(signals)
+    print(json.dumps(verdict, indent=2))
+    return 0 if verdict["status"] == PROCEED else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

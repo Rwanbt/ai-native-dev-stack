@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- GitHub-centered work management: `docs/GITHUB-WORKFLOW.md` defines Issue /
+  Project / ADR / Work Contract / Vault responsibilities, MERGE_READY vs DONE,
+  Refs-vs-Closes, deterministic multi-agent claims and review scope; root
+  `AGENTS.md` carries the always-on policy, `CONTRIBUTING.md` the contributor
+  flow.
+- Skills: `skills/github-triage` (findings to clean backlog entries, with
+  duplicate detection and P3 research discipline) and
+  `skills/issue-to-implementation` (claimed Issue to merged PR with
+  Acceptance-Criteria protection and FINAL_MERGE_FRESHNESS), plus stdlib-only
+  helpers `bin/claim_resolution.py` and `bin/ac_guard.py` with their decision
+  tables pinned by tests.
+- Generic contribution templates shipped as managed files
+  (`templates/github/`, installed via the new `github-templates` component):
+  bug and feature issue templates plus a PR template that starts with
+  `Refs #` and deliberately contains no `Closes`.
+- Managed-template ownership safety, made executable by
+  `tests/test_lifecycle_github_templates.py`: pre-existing user templates are
+  preserved and reported, user-modified managed templates are preserved as
+  conflicts, unchanged managed templates stay idempotent and updatable, and
+  `--dry-run` never touches the filesystem.
+
 ## [2.0.0] - 2026-09-05
 
 This release ships

@@ -68,6 +68,54 @@ here rather than restating it.
 
 ---
 
+## GitHub work management
+
+<!-- Canonical details live in docs/GITHUB-WORKFLOW.md; this section is the always-on policy. -->
+
+- **GitHub Issues are the canonical actionable backlog.** Project = operational
+  visualization when configured (Status: Inbox/Backlog/Ready/In Progress/Done,
+  plus Area). Milestones = delivery grouping. ADRs = accepted architecture.
+  Vault = historical context only — never current backlog, Issue status,
+  priority or assignee state. Skills = procedures. Verified Work Contracts =
+  deterministic verification when policy requires them. This repository never
+  stores project-specific backlog state.
+- **Claim before working.** Visible claim (assignment preferred, explicit
+  claim comment as fallback), then deterministic resolution — each actor
+  stands at their earliest valid claim event, actors order by `created_at`
+  then stable GitHub identifier; losers STOP. No lock service, ever. An
+  active linked implementation PR is a claim-level conflict
+  (`ACTIVE_PR_CONFLICT`): no parallel implementation unless explicitly
+  requested.
+- **Protect Acceptance Criteria.** An implementation agent MUST NOT weaken,
+  remove, replace or materially reinterpret an Issue's Acceptance Criteria to
+  make its implementation pass. It may detect ambiguity, identify
+  infeasibility, propose a change, or ask — a material AC change becomes
+  authoritative only after explicit maintainer approval AND persistence in
+  the GitHub Issue. Material = required behavior, functional scope, security,
+  performance thresholds, platforms, failure behavior, public API/contract,
+  acceptance thresholds. Uncertain -> treat as material -> ask.
+- **Scope is the Issue.** Unrelated findings never expand the current PR:
+  P0/P1 -> separate Issue/escalation (may block a release, not this PR);
+  P2/P3 -> backlog candidate via /github-triage.
+- **Deferred work leaves the chat.** Significant deferred work that is
+  actionable and worth retaining becomes a GitHub Issue; explicitly rejected
+  work gets no Issue.
+- **Refs while working, Closes when ready.** PRs start with `Refs #N`.
+  `Closes #N` only once MERGE_READY holds, and only immediately before the
+  merge — after one final re-read of the Issue and its current AC
+  (FINAL_MERGE_FRESHNESS). A material difference is `ISSUE_CHANGED` -> stop.
+- **MERGE_READY is not DONE.** DONE = MERGE_READY was valid + PR merged +
+  Issue closed *as completed* (+ Project Status = Done when configured).
+  Closed as duplicate/not-planned/invalid/superseded is not Done.
+- **Policy conflicts stop work.** A local AGENTS.md may specialize or
+  strengthen the root policy, never silently weaken it. A real contradiction
+  is surfaced visibly (POLICY_CONFLICT), never resolved by silent choice.
+
+Details, flow diagram and the skill-level procedures:
+[docs/GITHUB-WORKFLOW.md](docs/GITHUB-WORKFLOW.md).
+
+---
+
 ## Engineering discipline
 <!-- Distilled from The Pragmatic Programmer — Hunt & Thomas -->
 

@@ -67,7 +67,11 @@
       "ownership": "MANAGED_IMMUTABLE",
       "required": false,
       "title": "Templates",
-      "description": "AI_CONTEXT.md and hook-settings templates to copy from."
+      "description": "AI_CONTEXT.md and hook-settings templates to copy from.",
+      "include": [
+        "AI_CONTEXT_template.md",
+        "settings_hook_example.json"
+      ]
     },
     "skills-claude": {
       "version": 1,
@@ -114,6 +118,21 @@
       "required": false,
       "title": "Git ignore entries",
       "description": "Machine-local paths that must never be committed."
+    },
+    "github-templates": {
+      "version": 1,
+      "kind": "tree",
+      "source": "templates/github",
+      "destination": ".github",
+      "include": [
+        "ISSUE_TEMPLATE/bug.md",
+        "ISSUE_TEMPLATE/feature.md",
+        "PULL_REQUEST_TEMPLATE.md"
+      ],
+      "ownership": "MANAGED_MUTABLE",
+      "required": false,
+      "title": "GitHub contribution templates",
+      "description": "Generic bug/feature issue templates and PR template, installed as individually-owned managed files."
     },
     "verified-workplane": {
       "version": 1,
