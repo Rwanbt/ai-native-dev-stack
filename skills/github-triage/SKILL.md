@@ -79,6 +79,34 @@ backlog rots.
 
 ---
 
+## Type, priority and decomposition are independent
+
+Three axes that triage must not conflate:
+
+```text
+TYPE           = the nature of the work        (type:security, type:bug, ...)
+PRIORITY       = the consequence / urgency     (priority:P0 .. priority:P3)
+DECOMPOSITION  = the implementation granularity (one PR vs umbrella + children)
+```
+
+Consequences:
+
+- **Breadth does not lower severity.** A production/release blocker does not
+  become `priority:P2` merely because it is too large for one PR.
+- **Decomposition does not change type.** An actionable umbrella issue does
+  not become `type:research` merely because it needs child issues. Umbrella
+  means "decompose before implementation", not "unresolved question".
+- Convert an umbrella to `type:research` ONLY when the actual unresolved
+  question is genuinely research (a hypothesis to test, a decision without a
+  candidate). Concrete acceptance criteria are the opposite of research.
+- An umbrella keeps its real type and priority (a security production gate
+  with five child issues stays `type:security` / `priority:P1`), and its
+  triage rationale records that decomposition is required before
+  implementation. No new label exists for this in v1 — the concept lives in
+  the rationale, and child issues are created only when authorized.
+- An umbrella issue is not claimable as one unit of work: it first needs
+  decomposition, or it misuses the claim/scope machinery.
+
 ## Issue quality bar
 
 A filed Issue uses the repository's templates (bug / feature) and contains:

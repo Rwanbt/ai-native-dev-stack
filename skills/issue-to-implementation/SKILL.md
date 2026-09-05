@@ -45,31 +45,49 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 
 ## Phase B — Claim
 
-7. **Read the claim state:** assignees, existing claim comments, open linked
-   PRs.
-8. **Attempt a visible claim:** GitHub Issue assignment if you can; otherwise
+7. **Read the claim state:** assignees, claim comments, and open PRs that
+   reference or implement the Issue (PR body `Refs`/`Closes`/`Fixes`, issue
+   timeline links, or an explicit "implements #N" statement).
+8. **If another active linked implementation PR exists: `ACTIVE_PR_CONFLICT`
+   -> STOP.** Do not open a parallel implementation. This conflict lifts only
+   when it is explicit: a maintainer requested a competing implementation or
+   collaboration on the existing PR, the PR was explicitly abandoned or
+   superseded by its author or a maintainer, or it is the same actor
+   continuing their own implementation. Age alone never proves abandonment,
+   and stale-PR expiration is out of scope. If the relationship is ambiguous,
+   surface the ambiguity — do not create a duplicate implementation.
+9. **Attempt a visible claim:** GitHub Issue assignment if you can; otherwise
    an explicit comment ("Claiming this Issue for implementation.").
-9. **Re-read the claim state** after claiming. A claim is only as good as the
-   freshest read.
-10. **Resolve deterministically** with
+10. **Re-read the claim state** — assignments, claim comments, and open
+    linked implementation PRs. A claim is only as good as the freshest read.
+11. **If a conflicting implementation PR appeared during the race:**
+    `ACTIVE_PR_CONFLICT` -> STOP.
+12. **Resolve deterministically** with
     `skills/issue-to-implementation/bin/claim_resolution.py` (no lock service
     exists; GitHub state is the claim):
     - `0` valid claims -> `CLAIM_FAILED` -> STOP.
     - `1` valid claim -> claimant proceeds.
-    - `>1` -> sort by `created_at` ascending, then stable GitHub identifier
-      ascending; first = winner; all losers STOP.
+    - `>1` -> each actor is represented by their earliest valid claim event
+      (a later assignment never rewrites an earlier comment); actors sort by
+      `created_at` ascending, then stable GitHub identifier ascending; first
+      = winner; all losers STOP.
     - ordering indeterminate -> `CLAIM_CONFLICT` -> every claimant STOPs.
-11. **If you are not the winner: STOP.** Do not "help", do not open a
+13. **If you are not the winner: STOP.** Do not "help", do not open a
     parallel PR.
 
 ## Phase C — Scope
 
-12. **Establish the current Issue scope and Acceptance Criteria.** The AC is
-    the checklist in the Issue body — there is no separate AC database.
-13. **Bind the AC:** record the canonical AC digest
-    (`bin/ac_guard.py --bind`; content-addressed, checkbox-state independent)
-    in the session notes and, for Verified work, in the Work Contract.
-14. **You MUST NOT modify material AC without authorized approval.** Material
+14. **Establish the current Issue scope and Acceptance Criteria.** The AC is
+    the checklist in the Issue body — there is no separate AC database. The
+    AC grammar: at least one checkbox criterion is required; a criterion's
+    semantic continuation lines and nested bullets belong to it and are
+    protected by the digest, so one-line criteria are convenient but never
+    required.
+15. **Bind the AC:** record the canonical AC digest (`bin/ac_guard.py --bind`;
+    content-addressed, checkbox-state independent, covers continuation and
+    nested content). Binding refuses an Issue without usable AC
+    (`INVALID_ACCEPTANCE_CRITERIA`) — an empty checklist is not a contract.
+16. **You MUST NOT modify material AC without authorized approval.** Material
     means: required behavior, functional scope, security requirement,
     performance threshold, supported platform, failure behavior, public
     API/contract, acceptance threshold. You MAY detect ambiguity, identify
@@ -77,31 +95,31 @@ pass.** That rule has no exception inside this skill; see "AC protection".
     becomes authoritative only after explicit maintainer/user approval AND
     persistence in the GitHub Issue. If uncertain whether a change is
     material: treat it as material and ask.
-15. **Create the implementation branch** (`feat/123-description`,
+17. **Create the implementation branch** (`feat/123-description`,
     `fix/123-description`, ...).
-16. **Create or update the Work Contract if repository policy requires it**
-    (Verified profile), binding the AC digest from step 13.
+18. **Create or update the Work Contract if repository policy requires it**
+    (Verified profile), binding the AC digest from step 15.
 
 ## Phase D — Implement
 
-17. **Implement only the canonical Issue scope.** Unrelated findings are not
+19. **Implement only the canonical Issue scope.** Unrelated findings are not
     yours to fix in this PR (P0/P1: separate Issue/escalation; P2/P3:
     backlog candidate).
-18. **Run the required validation** — the repository's own gates, plus the
+20. **Run the required validation** — the repository's own gates, plus the
     Issue's AC as executable checks wherever possible.
 
 ## Phase E — PR
 
-19. **Open or update the PR with `Refs #N`** — never `Closes` yet.
-20. **Re-read the current Issue.**
-21. **Revalidate the current Acceptance Criteria** against what you
+21. **Open or update the PR with `Refs #N`** — never `Closes` yet.
+22. **Re-read the current Issue.**
+23. **Revalidate the current Acceptance Criteria** against what you
     implemented (and against your bound digest for Verified work).
-22. **If the AC drifted: `ISSUE_CHANGED`, STOP.** Reconcile scope with the
+24. **If the AC drifted: `ISSUE_CHANGED`, STOP.** Reconcile scope with the
     maintainer before continuing; do not merge, do not close.
 
 ## Phase F — MERGE_READY
 
-23. **Confirm every MERGE_READY condition:**
+25. **Confirm every MERGE_READY condition:**
     - current Issue AC satisfied;
     - required tests/checks pass;
     - documentation updated where required;
@@ -113,26 +131,26 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 
 ## Phase G — Close the loop
 
-24. **Change `Refs #N` to `Closes #N`** in the PR body — only now.
-25. **Immediately before the actual merge: FINAL_MERGE_FRESHNESS.** Re-read
-    the Issue and its current AC (step 20-21 again, now at merge time).
-26. **If anything material changed: invalidate MERGE_READY, `ISSUE_CHANGED`,
+26. **Change `Refs #N` to `Closes #N`** in the PR body — only now.
+27. **Immediately before the actual merge: FINAL_MERGE_FRESHNESS.** Re-read
+    the Issue and its current AC (steps 22-23 again, now at merge time).
+28. **If anything material changed: invalidate MERGE_READY, `ISSUE_CHANGED`,
     STOP.** Do not merge, do not close; reconcile and verify again.
-27. (Covered by 25-26 — freshness is the gate, not a formality. This is the
+29. (Covered by 27-28 — freshness is the gate, not a formality. This is the
     freshest possible pre-merge check, not an atomic GitHub transaction.)
 
 ## Phase H — Merge and finish
 
-28. **Merge only through the repository-authorized process.** Squash when the
+30. **Merge only through the repository-authorized process.** Squash when the
     repository prefers it; never bypass review or CI requirements.
-29. **Confirm the Issue closed as completed** (not as duplicate / not
+31. **Confirm the Issue closed as completed** (not as duplicate / not
     planned / invalid / superseded).
-30. **If a Project exists:** set Project Status to `Done`.
-31. **If the Project update is impossible (permissions):** report
+32. **If a Project exists:** set Project Status to `Done`.
+33. **If the Project update is impossible (permissions):** report
     `PROJECT_STATUS_SYNC_REQUIRED` — visibly, not silently.
-32. **Preserve the required verification/history** (Work Contract, run
+34. **Preserve the required verification/history** (Work Contract, run
     evidence, session summary with Issue/PR links).
-33. **STOP.** The loop is closed. Any remaining findings go to
+35. **STOP.** The loop is closed. Any remaining findings go to
     `/github-triage`, not into the next PR by momentum.
 
 ---
@@ -141,6 +159,7 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 
 ```text
 - no work without a visible claim won deterministically
+- no parallel implementation while an active linked PR holds the Issue (ACTIVE_PR_CONFLICT)
 - no implementation outside the Issue's canonical scope
 - no material AC change without authorized approval + persistence in the Issue
 - no silent policy-conflict resolution
@@ -153,7 +172,10 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 ## Helper tools (stdlib-only, no network)
 
 - `bin/claim_resolution.py` — pure claim-resolution verdict from normalized
-  claim signals (JSON in, JSON out).
-- `bin/ac_guard.py` — extract the AC checklist from an Issue body, produce
-  its canonical digest, check a bound digest for drift (`OK` /
-  `ISSUE_CHANGED`).
+  claim signals (JSON in, JSON out); each actor is represented by their
+  earliest valid claim event, so a late assignment cannot erase an earlier
+  comment.
+- `bin/ac_guard.py` — extract the AC checklist from an Issue body (including
+  continuation lines and nested bullets), produce its canonical digest,
+  refuse binding an Issue without usable AC (`INVALID_ACCEPTANCE_CRITERIA`),
+  and check a bound digest for drift (`OK` / `ISSUE_CHANGED`).

@@ -80,9 +80,12 @@ here rather than restating it.
   deterministic verification when policy requires them. This repository never
   stores project-specific backlog state.
 - **Claim before working.** Visible claim (assignment preferred, explicit
-  claim comment as fallback), then deterministic resolution — first by
-  `created_at`, then by stable GitHub identifier; losers STOP. No lock
-  service, ever.
+  claim comment as fallback), then deterministic resolution — each actor
+  stands at their earliest valid claim event, actors order by `created_at`
+  then stable GitHub identifier; losers STOP. No lock service, ever. An
+  active linked implementation PR is a claim-level conflict
+  (`ACTIVE_PR_CONFLICT`): no parallel implementation unless explicitly
+  requested.
 - **Protect Acceptance Criteria.** An implementation agent MUST NOT weaken,
   remove, replace or materially reinterpret an Issue's Acceptance Criteria to
   make its implementation pass. It may detect ambiguity, identify

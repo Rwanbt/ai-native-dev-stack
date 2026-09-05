@@ -180,21 +180,35 @@ There is no distributed lock and no lock service. The claim is GitHub state:
 
 Valid claim signals normalize to: `actor`, `created_at`,
 `stable_github_identifier` (comment or assignment event ID), `claim_kind`.
-After claiming, re-read the Issue — the claim is only as good as the freshest
-read. Resolution (implemented by
+Before claiming, also read the open PRs that reference or implement the
+Issue (PR body `Refs`/`Closes`/`Fixes`, issue timeline links, or an explicit
+"implements #N"): **an active linked implementation PR is a claim-level
+conflict** (`ACTIVE_PR_CONFLICT` -> STOP). It lifts only when explicit: a
+maintainer requested a competing implementation or collaboration, the PR was
+explicitly abandoned or superseded, or the same actor is continuing their own
+implementation. Age alone never proves abandonment; an ambiguous
+relationship is surfaced, not duplicated around. After claiming, re-read the
+Issue — the claim is only as good as the freshest read, and a PR that
+appeared during the race re-triggers the conflict.
+
+Resolution (implemented by
 `skills/issue-to-implementation/bin/claim_resolution.py`):
 
 ```text
 0 valid claims   -> CLAIM_FAILED    -> nobody proceeds
 1 valid claim    -> that claimant proceeds
 >1 valid claims  -> deterministic winner:
-                     sort by created_at ascending,
+                     each actor stands at their EARLIEST valid claim event
+                     (a later assignment never rewrites an earlier comment),
+                     actors sort by created_at ascending,
                      then stable identifier ascending;
                    first proceeds, all others STOP
 unorderable      -> CLAIM_CONFLICT  -> every claimant STOPs
 ```
 
-Stale-claim expiration, heartbeats and leases are out of scope in v1.
+Assignment preference is an acquisition rule, not an arbitration override.
+Stale-claim expiration, stale-PR expiration, heartbeats and leases are out
+of scope in v1.
 
 ## Review scope
 
