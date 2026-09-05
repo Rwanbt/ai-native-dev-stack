@@ -1,5 +1,10 @@
 # Real two-harness pilot
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 Five real, mergeable changes to this repository, each governed by the Verified
 Work Plane and measured through `evaluate_work()`. Not fixtures: every one
 fixes something that was actually wrong, and all five have landed on `spec`.

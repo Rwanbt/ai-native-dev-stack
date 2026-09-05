@@ -22,7 +22,7 @@ Charger automatiquement le contexte de session au démarrage de tout agent IA (M
 ```powershell
 # Ce hook est déjà installé via:
 # mavis hook create session-start-memory --event SessionStart --type script --agent mavis
-# Fichier: C:\Users\barat\.mavis\agents\mavis\hooks\session-start-memory.md
+# Fichier: ~/.mavis/agents/mavis/hooks/session-start-memory.md
 ```
 
 ### Claude Code

@@ -1,5 +1,10 @@
 # Historical validation gate
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 Real defects, from the real history of real projects, given to the Verified
 Work Plane blind: the author of the Work Contract does not know the defect, and
 the verdict is frozen before the defect is disclosed.

@@ -1,5 +1,10 @@
 # Verified Work Plane V2 — Contract Sketches
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 > **Historical packet.** This is the PR-01 contract sketches, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
 
 These sketches are PR-00 design input, not implemented schemas.

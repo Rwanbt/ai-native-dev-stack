@@ -1,5 +1,10 @@
 # Distribution & Lifecycle v1 — handoff
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Distribution & Lifecycle work at the
+> time it was written; it is not the current operational status. See
+> [docs/DISTRIBUTION-LIFECYCLE.md](DISTRIBUTION-LIFECYCLE.md) for current state.
+
 Written to survive the session that produced it. Everything a next agent or a
 human needs to finish this, in the order they need it.
 

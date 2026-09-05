@@ -1,5 +1,10 @@
 # Review Packet — Authority Hardening, Round 8
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 One finding. Small round, as asked.
 
 ## Revision

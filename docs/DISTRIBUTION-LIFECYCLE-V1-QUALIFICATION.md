@@ -1,5 +1,10 @@
 # Distribution & Lifecycle Manager v1 — qualification packet
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Distribution & Lifecycle work at the
+> time it was written; it is not the current operational status. See
+> [docs/DISTRIBUTION-LIFECYCLE.md](DISTRIBUTION-LIFECYCLE.md) for current state.
+
 What was built, what was proved, what was found and fixed, and what is still
 true that a reader should know before merging.
 

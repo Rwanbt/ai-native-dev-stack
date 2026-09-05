@@ -1,5 +1,10 @@
 # Verified Work Plane V2 — PR-01 Contract Boundary
 
+> **STATUS: HISTORICAL QUALIFICATION RECORD** — retained for auditability.
+> This document records the state of the Verified Work Plane work at the time
+> it was written; it is not the current operational status. See
+> [docs/VERIFIED-WORK-PLANE.md](VERIFIED-WORK-PLANE.md) for current state.
+
 > **Historical packet.** This is the PR-01 contract report, kept as the record of a decision point. It describes the branch as it was at that gate, not as it is now. For current behaviour read [ARCHITECTURE.md](ARCHITECTURE.md) and the tests.
 
 PR-01 provides only deterministic, versioned data contracts in

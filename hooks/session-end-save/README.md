@@ -24,7 +24,7 @@ Voir `run.js` (Node.js, stdlib uniquement).
 ```powershell
 # Ce hook est déjà installé via:
 # mavis hook create session-end-save --event SessionEnd --type script --agent mavis
-# Fichier: C:\Users\barat\.mavis\agents\mavis\hooks\session-end-save.md
+# Fichier: ~/.mavis/agents/mavis/hooks/session-end-save.md
 ```
 
 ### Claude Code / Codex / Cursor
