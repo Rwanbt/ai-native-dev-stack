@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose an improvement to AI Native Dev Stack
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is currently missing or difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should become possible?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this belongs in AI Native
+      description: Scope note — does it fit project lifecycle, machine integration, or the Verified Work Plane?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Are you willing to contribute this?
+      options:
+        - "Yes"
+        - "Maybe"
+        - "No"

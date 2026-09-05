@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a defect in AI Native Dev Stack
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please fill in the environment block —
+        it saves a round-trip.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "`ainative --version` prints the stack, Work Plane and schema versions."
+      placeholder: |
+        AI Native version: (from `ainative --version`)
+        OS:
+        Python version:
+        Profile: standard | verified
+        Harness: Claude Code | Codex | OpenCode | Cursor | Gemini | other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant output. Remove secrets, tokens and personal paths first.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Dry-run output of the failed command (`--dry-run`) is especially useful for lifecycle operations.
