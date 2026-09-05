@@ -57,18 +57,23 @@ KINDS = ("assignment", "comment")
 class Claim:
     """One actor's normalized claim: their earliest orderable event."""
 
-    __slots__ = ("kind", "actor", "created_at", "identifier")
+    __slots__ = ("kind", "actor", "created_at", "identifier",
+                 "has_unorderable_signal")
 
-    def __init__(self, kind: str, actor: str, created_at, identifier) -> None:
+    def __init__(self, kind: str, actor: str, created_at, identifier,
+                 has_unorderable_signal: bool = False) -> None:
         self.kind = kind
         self.actor = actor
         self.created_at = created_at
         self.identifier = identifier
+        self.has_unorderable_signal = has_unorderable_signal
 
     @property
     def orderable(self) -> bool:
-        return bool(self.created_at) and self.identifier is not None \
-            and not isinstance(self.identifier, (dict, list))
+        return (not self.has_unorderable_signal
+                and bool(self.created_at)
+                and self.identifier is not None
+                and not isinstance(self.identifier, (dict, list)))
 
     @property
     def order_key(self):
@@ -113,6 +118,7 @@ def normalize(signals) -> list[Claim]:
     claims: list[Claim] = []
     for pool in by_actor.values():
         orderable = [s for s in pool if _is_orderable_signal(s)]
+        has_unorderable_signal = len(orderable) != len(pool)
         if orderable:
             representative = min(orderable, key=lambda s: (s["created_at"],
                                                            str(s["identifier"])))
@@ -122,7 +128,8 @@ def normalize(signals) -> list[Claim]:
             representative = pool[0]
         claims.append(Claim(representative["kind"], representative["actor"].strip(),
                             representative.get("created_at"),
-                            representative.get("identifier")))
+                            representative.get("identifier"),
+                            has_unorderable_signal))
     return claims
 
 

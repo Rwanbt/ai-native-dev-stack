@@ -19,6 +19,9 @@ criterion order, nested text, punctuation — is contract. Order is not
 sorted: the sequence the maintainer wrote is the sequence the work is
 held to.
 
+Exactly one Acceptance Criteria heading is required. Multiple headings are
+structurally ambiguous and fail closed.
+
 Fail-closed contracts, pinned by tests/test_github_work_skills.py:
 
     bind(body)  -> {"digest", "criteria"}                        (valid AC)
@@ -63,6 +66,10 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 INVALID = "INVALID_ACCEPTANCE_CRITERIA"
 OK = "OK"
 CHANGED = "ISSUE_CHANGED"
+MISSING_HEADING = "MISSING_HEADING"
+MULTIPLE_HEADINGS = "MULTIPLE_HEADINGS"
+NO_CRITERIA = "NO_CRITERIA"
+VALID = "VALID"
 
 
 def _normalize_line(line: str) -> str:
@@ -77,22 +84,10 @@ def _normalize_line(line: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def extract(body: str) -> list[str]:
-    """The AC criteria, in order. Each criterion is its checkbox line plus
-    every semantic line belonging to it (continuations, nested bullets),
-    whitespace-normalized. Blank lines, template comments and checkbox
-    state never reach the canonical form."""
+def _extract_section(section: str) -> list[str]:
+    """Canonicalize checkbox criteria from one already-selected AC section."""
 
-    if not body:
-        return []
-    match = _HEADING.search(body)
-    if match is None:
-        return []
-    rest = body[match.end():]
-    next_heading = _ANY_HEADING.search(rest)
-    section = rest[:next_heading.start()] if next_heading else rest
     section = _COMMENT.sub("", section)
-
     criteria: list[str] = []
     parts = None  # None until the first top-level checkbox
     for raw in section.splitlines():
@@ -115,6 +110,31 @@ def extract(body: str) -> list[str]:
     return criteria
 
 
+def parse_acceptance_criteria(body: str) -> tuple[str, list[str]]:
+    """Return the AC structure state and canonical criteria, if valid."""
+
+    matches = list(_HEADING.finditer(body or ""))
+    if not matches:
+        return MISSING_HEADING, []
+    if len(matches) > 1:
+        return MULTIPLE_HEADINGS, []
+    rest = (body or "")[matches[0].end():]
+    next_heading = _ANY_HEADING.search(rest)
+    section = rest[:next_heading.start()] if next_heading else rest
+    criteria = _extract_section(section)
+    return (VALID, criteria) if criteria else (NO_CRITERIA, [])
+
+
+def extract(body: str) -> list[str]:
+    """The AC criteria, in order. Each criterion is its checkbox line plus
+    every semantic line belonging to it (continuations, nested bullets),
+    whitespace-normalized. Blank lines, template comments and checkbox
+    state never reach the canonical form."""
+
+    state, criteria = parse_acceptance_criteria(body)
+    return criteria if state == VALID else []
+
+
 def canonical(body: str) -> str:
     return "\n".join(extract(body))
 
@@ -131,11 +151,14 @@ def bind(body: str) -> dict:
     is absent or empty: the sha256 of an empty string is not a contract,
     and treating it as one would make every AC-less body 'bound'."""
 
-    if _HEADING.search(body or "") is None:
+    state, criteria = parse_acceptance_criteria(body)
+    if state == MISSING_HEADING:
         return {"verdict": INVALID,
                 "reason": "no 'Acceptance criteria' heading found in the Issue body"}
-    criteria = extract(body)
-    if not criteria:
+    if state == MULTIPLE_HEADINGS:
+        return {"verdict": INVALID,
+                "reason": "multiple 'Acceptance criteria' headings make the Issue contract ambiguous"}
+    if state == NO_CRITERIA:
         return {"verdict": INVALID,
                 "reason": "the 'Acceptance criteria' heading contains no checkbox criterion"}
     return {"digest": digest(body), "criteria": criteria}
@@ -149,8 +172,11 @@ def check(current_body: str, bound_digest: str) -> dict:
     if not bound_digest:
         return {"verdict": CHANGED,
                 "reason": "no bound digest was recorded; bind one before merge"}
-    current = extract(current_body or "")
-    if not current:
+    state, current = parse_acceptance_criteria(current_body)
+    if state == MULTIPLE_HEADINGS:
+        return {"verdict": CHANGED,
+                "reason": "multiple Acceptance Criteria sections exist; the canonical Issue contract is ambiguous"}
+    if state != VALID:
         return {"verdict": CHANGED,
                 "reason": "the Issue no longer contains usable Acceptance Criteria"}
     if digest(current_body) != bound_digest:

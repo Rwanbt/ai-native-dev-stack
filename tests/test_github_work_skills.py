@@ -151,6 +151,22 @@ class ClaimResolution(unittest.TestCase):
         ])
         self.assertEqual(verdict["status"], claim_resolution.CLAIM_CONFLICT)
 
+    def test_unorderable_earlier_signal_cannot_be_hidden_by_later_same_actor_assignment(self) -> None:
+        verdict = claim_resolution.resolve([
+            signal("comment", "alice", "", 101),
+            signal("assignment", "alice", "2026-09-05T12:00:00Z", 102),
+            signal("comment", "bob", "2026-09-05T10:00:00Z", 103),
+        ])
+        self.assertEqual(verdict["status"], claim_resolution.CLAIM_CONFLICT)
+
+    def test_single_actor_with_unorderable_and_orderable_signals_is_still_single_claimant(self) -> None:
+        verdict = claim_resolution.resolve([
+            signal("comment", "alice", "", 101),
+            signal("assignment", "alice", "2026-09-05T12:00:00Z", 102),
+        ])
+        self.assertEqual(verdict["status"], claim_resolution.PROCEED)
+        self.assertEqual(verdict["winner"]["actor"], "alice")
+
     def test_mixed_identifier_types_are_a_conflict_not_a_crash(self) -> None:
         verdict = claim_resolution.resolve([
             signal("comment", "alice", "2026-09-05T10:00:00Z", 201),
@@ -334,6 +350,22 @@ class AcGuard(unittest.TestCase):
             "## Acceptance criteria\n\nThe work is described in prose only.\n")
         self.assertEqual(verdict["verdict"], "INVALID_ACCEPTANCE_CRITERIA")
         self.assertIn("checkbox", verdict["reason"])
+
+    def test_bind_refuses_multiple_acceptance_criteria_headings(self) -> None:
+        verdict = ac_guard.bind("## Acceptance criteria\n\n- [ ] A\n\n"
+                                "## Acceptance criteria\n\n- [ ] B\n")
+        self.assertEqual(verdict["verdict"], "INVALID_ACCEPTANCE_CRITERIA")
+
+    def test_second_acceptance_criteria_section_after_binding_is_issue_changed(self) -> None:
+        bound = "## Acceptance criteria\n\n- [ ] A\n"
+        current = bound + "\n## Acceptance criteria\n\n- [ ] B\n"
+        verdict = ac_guard.check(current, ac_guard.digest(bound))
+        self.assertEqual(verdict["verdict"], "ISSUE_CHANGED")
+
+    def test_duplicate_empty_second_ac_heading_is_still_invalid(self) -> None:
+        verdict = ac_guard.bind("## Acceptance criteria\n\n- [ ] A\n\n"
+                                "## Acceptance criteria\n")
+        self.assertEqual(verdict["verdict"], "INVALID_ACCEPTANCE_CRITERIA")
 
     def test_check_on_body_that_lost_its_ac_is_never_ok(self) -> None:
         verdict = ac_guard.check("## Problem\nthe AC was deleted\n",
