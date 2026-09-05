@@ -210,7 +210,7 @@ class Installer:
         The block is intentionally minimal: it does not copy the contract.
         It points each harness at the vault's root `AGENTS.md`, which in
         turn delegates to the canonical contract. Anything the agent needs
-        to know about the project (board, sessions, rules) is reachable
+        to know about the project's historical context is reachable
         through the same single path.
         """
         rel_root = (vault / "AGENTS.md").as_posix()
@@ -223,12 +223,16 @@ class Installer:
             f"- Resolve the current project slug from the checkout's `AGENTS.md` or "
             f"an explicit per-session `$OBSIDIAN_PROJECT_SLUG`, then validate it in "
             f"`{registry}`. Never reuse a slug from another checkout.\n"
-            f"- Only then read `projects/<slug>/AGENTS.md` and the generated "
-            "`projects/<slug>/BOARD.md`; canonical initiative/task cards are the "
-            "authority for project status.\n"
+            "- Read `projects/<slug>/AGENTS.md` for project Vault conventions.\n"
+            f"- Project notes, sessions, decisions, research and generated views provide "
+            "historical/contextual memory. GitHub Issues are the canonical active "
+            "work state and own current scope, status, priority, assignee and backlog.\n"
+            f"- Generated `projects/<slug>/BOARD.md` and `BOARD.json` are historical/generated "
+            "navigation context only; they never override current GitHub state.\n"
             f"- Never edit generated `BOARD.md`/`BOARD.json` projections directly. "
             "Only change `_system/` when the task explicitly targets vault governance. "
-            "If canonical entries are missing, create a `needs-triage` card and stop.\n"
+            "Never create a Vault task/card because GitHub state is unavailable; surface "
+            "`GITHUB_STATE_UNAVAILABLE` instead.\n"
             f"- Vault location and validator status use `$OBSIDIAN_VAULT`. A project "
             "slug is session-local; if it cannot be resolved safely, ask the user.\n"
             f"{VAULT_END}"

@@ -853,7 +853,7 @@ vault that fails the contract.
 | Validation | The stack calls `<vault>/_system/tooling/vault.py check` (with `lint` fallback) — it does not re-implement the schema. |
 | Maintenance lock | A `.git/maintenance.lock` sentinel halts the sync. Remove it only when the orchestrator is done. |
 | Per-harness block | `scripts/install_agents.py` writes a "Vault governance" block to Claude (`~/.claude/CLAUDE.md`), Codex, OpenCode, Cursor (`~/.cursor/rules/ai-native-dev-stack.mdc`), Gemini (`~/.gemini/GEMINI.md`) and Mavis. |
-| Boards | The SessionEnd hook never writes to `BOARD.md` — boards are generated navigation views; canonical cards hold status. |
+| Boards | The SessionEnd hook never writes to `BOARD.md` — boards are generated historical/navigation views; GitHub Issues hold active work status. |
 | Sync | `scripts/vault_sync.py` runs the v4 validator before staging, preserves secret scan, single-writer, divergence detection and remote SHA verification. |
 | Check / rollback | `python scripts/install_agents.py --check --vault <vault> --project-slug <slug>` reports block state; `python scripts/vault_sync.py --no-validator-check` is the *only* legacy opt-in. |
 

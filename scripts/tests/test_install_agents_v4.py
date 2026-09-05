@@ -130,6 +130,25 @@ class InstallTests(unittest.TestCase):
         self.assertIn("projects/<slug>/AGENTS.md", body)
         self.assertNotIn("projects/demo/AGENTS.md", body)
 
+    def test_vault_block_keeps_github_as_active_authority(self) -> None:
+        result = _run(["--home", str(self._tmp_home)], env=self.env)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        targets = [
+            self._tmp_home / ".claude" / "CLAUDE.md",
+            self._tmp_home / ".codex" / "AGENTS.md",
+            self._tmp_home / ".config" / "opencode" / "AGENTS.md",
+            self._tmp_home / ".cursor" / "rules" / "ai-native-dev-stack.mdc",
+            self._tmp_home / ".gemini" / "GEMINI.md",
+            self._tmp_home / ".mavis" / "agents" / "mavis" / "agent.md",
+        ]
+        for path in targets:
+            body = path.read_text(encoding="utf-8")
+            self.assertIn("GitHub Issues are the canonical active work state", body)
+            self.assertIn("historical/contextual memory", body)
+            self.assertIn("historical/generated", body)
+            self.assertNotIn("canonical initiative/task cards", body)
+            self.assertNotIn("create a `needs-triage` card", body)
+
     def test_user_content_outside_markers_survives_reinstall(self) -> None:
         result = _run(["--home", str(self._tmp_home)], env=self.env)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
