@@ -4,9 +4,9 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-09-05
 
-Release version pending until the human maintainer tags it. This release ships
+This release ships
 the **Distribution & Lifecycle Manager** (Standard and Verified profiles,
 recorded file ownership, transactional install / update / uninstall) and the
 **Verified Work Plane V2**. The stack release version is 2.0.0; the Work Plane
