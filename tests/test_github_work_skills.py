@@ -381,6 +381,9 @@ class SkillContract(unittest.TestCase):
 
     SKILL = (REPO / "skills" / "issue-to-implementation" / "SKILL.md").read_text(encoding="utf-8")
     TRIAGE = (REPO / "skills" / "github-triage" / "SKILL.md").read_text(encoding="utf-8")
+    PHASE_D = SKILL.split('## Phase D')[1].split('## Phase E')[0]
+    AGENTS = (REPO / 'AGENTS.md').read_text(encoding='utf-8')
+    WORKFLOW = (REPO / 'docs' / 'GITHUB-WORKFLOW.md').read_text(encoding='utf-8')
 
     def test_open_linked_pr_is_a_claim_level_conflict(self) -> None:
         self.assertIn("ACTIVE_PR_CONFLICT", self.SKILL)
@@ -415,6 +418,48 @@ class SkillContract(unittest.TestCase):
     def test_triage_keeps_broad_actionable_work_actionable(self) -> None:
         self.assertIn("type:research", self.TRIAGE)
         self.assertRegex(self.TRIAGE, r"(?i)umbrella[\s\S]{0,600}(?:child Issues|decompos)")
+
+
+    def test_phase_d_invokes_implementation_economy_after_scope_binding(self) -> None:
+        phase_d = self.PHASE_D
+        scope = phase_d.index('canonical Issue scope')
+        economy = phase_d.index('implementation-economy')
+        self.assertLess(scope, economy)
+
+    def test_economy_does_not_replace_canonical_issue_scope(self) -> None:
+        phase_d = self.PHASE_D
+        self.assertIn('never widens scope', phase_d)
+        self.assertIn('never replaces architecture or policy', phase_d)
+
+    def test_cleanup_remains_scoped(self) -> None:
+        phase_d = self.PHASE_D
+        self.assertIn('Unrelated debt goes to', phase_d)
+        self.assertIn('/github-triage', phase_d)
+
+    def test_work_contract_reconciliation_precedes_validation_when_paths_change(self) -> None:
+        step_19d = self.SKILL.index('19d.')
+        validation = self.SKILL.index('20. **Run the required validation**')
+        self.assertLess(step_19d, validation)
+        self.assertIn('reconcile the Work Contract', self.SKILL)
+        self.assertIn('canonical Verified Work Plane', self.SKILL)
+
+    def test_agents_points_to_implementation_economy_without_copying_procedure(self) -> None:
+        self.assertIn('skills/implementation-economy/SKILL.md', self.AGENTS)
+        for signature in ('new ownership boundary', 'new source of truth',
+                          'new persistent state', 'Residual Novelty Gate',
+                          'applicability check'):
+            with self.subTest(signature=signature):
+                self.assertNotIn(signature, self.AGENTS)
+
+    def test_boy_scout_under_15_min_rule_is_gone(self) -> None:
+        self.assertNotIn('Boy Scout', self.AGENTS)
+        self.assertNotIn('<15 min', self.AGENTS)
+        self.assertNotIn('fix it in the same commit', self.AGENTS)
+        self.assertIn('Scoped cleanup', self.AGENTS)
+
+    def test_github_workflow_lists_implementation_economy(self) -> None:
+        self.assertIn('implementation-economy', self.WORKFLOW)
+        self.assertIn('it cannot alter Issue scope or Acceptance Criteria', self.WORKFLOW)
 
 
 if __name__ == "__main__":

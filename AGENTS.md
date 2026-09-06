@@ -159,6 +159,10 @@ Details, flow diagram and the skill-level procedures:
 - When naming is hard or comments get long: treat it as design evidence, not a comment problem.
 - When one change spreads widely: look for duplicated knowledge, hidden dependencies, or the wrong owner.
 - Add complexity for performance or patterns only when evidence justifies it.
+- **Implementation Economy** — after accepted scope is established, use
+  `skills/implementation-economy/SKILL.md` for implementation-time
+  simplification and ownership-first mechanism selection. It never changes
+  accepted scope, AC, architecture authority or review criteria.
 
 ---
 
@@ -305,7 +309,9 @@ The rules above are the always-on core. The reflexes below are the full senior p
 - **Feature flags** — isolate unfinished/experimental code behind a runtime flag (preferred, `config.json`) or compile-time `#ifdef` with `// FEATURE: ... — remove when: ...`. `#if 0` is forbidden (that's dead code — delete it or use a real flag).
 - **Public interface contracts** (exception to "comments = WHY only") — public interface headers document non-inferable contracts in one line: `// @pre Must NOT be called from audio thread`, `// @thread-safety lock-free, MT-safe`, `// @throws never (noexcept)`.
 - **FFI conventions (C++ ↔ Rust)** — the most dangerous boundary. Every `extern "C"`: return an `int32_t`/`ResultCode` error code (never implicit); complex errors via a thread-local `get_last_error_str()`; ownership documented explicitly (`Box::into_raw()` → C++ `unique_ptr` with a deleter calling back into Rust; never `free()` C++-side on Rust-allocated memory). Capture conventions in an "Interop Error Handling + Memory Ownership" ADR.
-- **Boy Scout rule** — when editing a file and you spot neighbouring debt fixable in <15 min (un-injected global, over-long function, untested helper), fix it in the same commit with a note. If >15 min: create a TODO/ticket and move on.
+- **Scoped cleanup** — leave touched code cleaner only when the cleanup belongs
+  to the accepted work. Unrelated neighbouring debt does not enter the current
+  PR because it is quick; route it through normal triage.
 
 ---
 
