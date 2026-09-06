@@ -55,6 +55,6 @@ single LLM judge decides a security hard gate alone.
 ## Repetitions and artifacts
 
 At least 3 paired repetitions for key cases where affordable; never
-cherry-pick. Commit manifest.json with digests, versions and verdicts;
-results.json and summary.md sit beside it per campaign.
+cherry-pick. Commit manifest.json with digests, versions and verdicts; results.json
 
+and summary.md sit beside it per campaign.
