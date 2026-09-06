@@ -315,8 +315,13 @@ Hard gates come before any secondary complexity metric:
 - required-verification regressions = 0;
 - Economy bias on excluded tasks = 0;
 - reviewer independence = PASS or legitimate N/A.
+N/A is permitted only where the harness demonstrably lacks the required
+persistent-session capability, and the evidence records that limitation.
 
 Any attributable hard regression is NO-GO.
+Ambiguous architecture evaluation uses an arm-blinded rubric with human
+adjudication or is excluded from quantitative comparison; no single LLM
+judge is ever the sole authority for a security hard-gate verdict.
 
 Baseline and treatment use separate method roots, HOME and config,
 workspaces and processes, with byte-identical task trees; only explicitly

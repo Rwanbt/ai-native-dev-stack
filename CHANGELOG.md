@@ -28,12 +28,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   preserved and reported, user-modified managed templates are preserved as
   conflicts, unchanged managed templates stay idempotent and updatable, and
   `--dry-run` never touches the filesystem.
-- **Implementation Economy** — first-party ownership-first implementation
-  discipline documented by ADR-0010 and exposed as a generic skill. It minimizes
-  accidental new complexity only after accepted scope and correct architectural
-  ownership are established, with fail-closed pre-existing-code deletion,
-  scoped simplification, residual novelty justification and behavioral
-  qualification that also proves planning/review tasks remain unbiased.
+- **Implementation Economy architecture** — proposed ADR-0010 defines an
+  ownership-first implementation discipline for minimizing accidental
+  complexity while preserving accepted scope, engineering invariants,
+  fail-closed deletion safety and Verified Work Plane authority.
 
 ## [2.0.0] - 2026-09-05
 
