@@ -1,0 +1,14 @@
+{
+  "id": "OVERBUILD_REUSE_EXISTING_HELPER",
+  "family": "OVERBUILD",
+  "title": "Reuse the existing retry helper instead of a new wrapper",
+  "task": "Add retry with backoff to the artifact uploader without introducing a new retry abstraction.",
+  "acceptance_criteria": [
+    "Uploads retry through the existing canonical retry helper",
+    "No new retry module, wrapper or configuration is added"
+  ],
+  "expected": {
+    "must_reuse_existing_helper": true,
+    "must_not_add_abstraction": true
+  }
+}

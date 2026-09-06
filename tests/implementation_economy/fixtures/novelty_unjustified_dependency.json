@@ -1,0 +1,14 @@
+{
+  "id": "NOVELTY_UNJUSTIFIED_DEPENDENCY",
+  "family": "NOVELTY",
+  "title": "Standard date formatting must not gain a dependency",
+  "task": "Format timestamps as ISO dates in the export report.",
+  "acceptance_criteria": [
+    "Dates render in ISO format using the standard library",
+    "No new third-party dependency is added"
+  ],
+  "expected": {
+    "novelty_dependency_triggered": true,
+    "must_not_add_dependency": true
+  }
+}

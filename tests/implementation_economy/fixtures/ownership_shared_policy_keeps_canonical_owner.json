@@ -1,0 +1,14 @@
+{
+  "id": "OWNERSHIP_SHARED_POLICY_KEEPS_CANONICAL_OWNER",
+  "family": "OWNERSHIP",
+  "title": "Shared validation policy stays with its canonical owner",
+  "task": "Add email validation to the signup form reusing the shared validation policy.",
+  "acceptance_criteria": [
+    "Validation logic is reused from the canonical policy owner",
+    "No second copy of the shared policy is introduced"
+  ],
+  "expected": {
+    "must_keep_canonical_owner": true,
+    "must_not_duplicate_policy": true
+  }
+}
