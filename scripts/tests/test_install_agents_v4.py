@@ -295,5 +295,24 @@ class InstallTests(unittest.TestCase):
         )
 
 
+    # --- generic skill distribution ------------------------------------
+
+    def test_all_generic_skills_are_exposed_to_both_skill_roots(self) -> None:
+        result = _run(['--home', str(self._tmp_home)], isolated=True)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        generic_skills = sorted((STACK / 'skills').glob('*/SKILL.md'))
+        self.assertGreater(len(generic_skills), 0)
+        for skill_file in generic_skills:
+            source = skill_file.parent.resolve()
+            for root in (
+                self._tmp_home / '.agents' / 'skills',
+                self._tmp_home / '.claude' / 'skills',
+            ):
+                installed = root / source.name
+                with self.subTest(skill=source.name, root=str(root)):
+                    self.assertTrue(installed.exists())
+                    self.assertEqual(installed.resolve(), source)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
