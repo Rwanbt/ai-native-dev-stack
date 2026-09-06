@@ -1,0 +1,22 @@
+{
+  "id": "EXCLUSION_ARCHITECTURE_REVIEW_STAYS_UNBIASED",
+  "family": "EXCLUSION",
+  "title": "Economy optimization must not leak into review work",
+  "task": "Review the proposed checkout redesign for architectural soundness.",
+  "acceptance_criteria": [
+    "The review applies the full review discipline with no simplification pressure"
+  ],
+  "excluded_activities": [
+    "requirements",
+    "planning",
+    "architecture_design",
+    "architecture_review",
+    "security_review",
+    "code_review",
+    "audit",
+    "research"
+  ],
+  "expected": {
+    "must_not_apply_economy": true
+  }
+}

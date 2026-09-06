@@ -225,12 +225,12 @@ Central unread modules (>5 incoming imports): none
 
 ### This project — ai-native-dev-stack
 
-Measured 2026-09-04 (distribution & lifecycle v1) via `git ls-files` (image excluded). Re-measure
+Measured 2026-09-06 (distribution & lifecycle v1) via `git ls-files` (image excluded). Re-measure
 with `python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~396 860 | 194 | **Layered read** — cartography first  then targeted reads |
+| Core stack (excl. anti-debt) | ~470 295 | 226 | **Layered read** — cartography first  then targeted reads |
 | Anti-debt agent | ~129 648 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
 | Whole repo | ~526 509 | 312 | **Multi-phase workflow** — never a single direct read |
 
