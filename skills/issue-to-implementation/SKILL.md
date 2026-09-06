@@ -105,6 +105,17 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 19. **Implement only the canonical Issue scope.** Unrelated findings are not
     yours to fix in this PR (P0/P1: separate Issue/escalation; P2/P3:
     backlog candidate).
+19a. After scope and AC are bound, apply `/implementation-economy` to
+     implementation choices only.
+19b. Economy never widens scope and never replaces architecture or policy
+     ownership; `POLICY_CONFLICT` or unresolved ownership ambiguity stays
+     fail-closed.
+19c. Cleanup remains inside the accepted Issue scope. Unrelated debt goes to
+     normal triage (`/github-triage`).
+19d. If implementation or the simplification pass changes bound
+     implementation paths, covered paths or verification coverage,
+     reconcile the Work Contract through the canonical Verified Work Plane
+     workflow before continuing (where repository policy requires a Work Contract).
 20. **Run the required validation** — the repository's own gates, plus the
     Issue's AC as executable checks wherever possible.
 

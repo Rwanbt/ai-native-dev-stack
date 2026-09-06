@@ -43,7 +43,10 @@ here rather than restating it.
 - **Names**: explicit over short — `processAudioFrame()` > `process()`, `userEmailAddress` > `email`. One term per concept across the codebase.
 - **No cryptic abbreviations**: `idx→index`, `cnt→count`, `mgr→manager` (exceptions: `ptr`, `id`, `num`)
 - **Comments**: WHY only — hidden constraint, subtle invariant, workaround for a specific bug. Never describe WHAT the code does, and never to explain confusing code: simplify the code instead. (One exception, in §Senior reflexes: public interface contracts.)
-- **Dead code**: delete immediately, never comment out. `git log -S "functionName"` recovers any deleted code.
+- **Dead code** — never comment it out. Remove pre-existing dead code only when
+  removal belongs to accepted scope; deletion safety follows
+  `skills/implementation-economy/SKILL.md`. `git log -S "functionName"`
+  recovers any deleted code.
 
 ---
 
@@ -159,6 +162,10 @@ Details, flow diagram and the skill-level procedures:
 - When naming is hard or comments get long: treat it as design evidence, not a comment problem.
 - When one change spreads widely: look for duplicated knowledge, hidden dependencies, or the wrong owner.
 - Add complexity for performance or patterns only when evidence justifies it.
+- **Implementation Economy** — after accepted scope is established, use
+  `skills/implementation-economy/SKILL.md` for implementation-time
+  simplification and ownership-first mechanism selection. It never changes
+  accepted scope, AC, architecture authority or review criteria.
 
 ---
 
@@ -302,10 +309,12 @@ The rules above are the always-on core. The reflexes below are the full senior p
 - **Code review checklist** (before approving any PR): Correctness · Security (secret/injection/missing validation) · Thread safety (shared data protected, atomics correct) · Resources (no leak) · Performance (no alloc in hot path, no avoidable O(n²)) · Readability (a senior understands it in 30s) · Tests (logic covered / no broken test).
 - **Performance budgets** — document per subsystem and check in CI: audio callback <2ms · UI frame <16.6ms (60fps) · undo/redo <50ms · project load <3s · heavy ops (scan, waveform) async non-blocking.
 - **Tech debt SLA** — build/clippy warning: immediate (don't commit) · race condition: 24h · architecture violation: 7 days · legacy TODO: next sprint. "Stop-the-line" on the first two.
-- **Feature flags** — isolate unfinished/experimental code behind a runtime flag (preferred, `config.json`) or compile-time `#ifdef` with `// FEATURE: ... — remove when: ...`. `#if 0` is forbidden (that's dead code — delete it or use a real flag).
+- **Feature flags** — isolate unfinished/experimental code behind a runtime flag (preferred, `config.json`) or compile-time `#ifdef` with `// FEATURE: ... — remove when: ...`. Do not introduce `#if 0`; use a real feature flag. Pre-existing `#if 0` cleanup follows accepted scope and Implementation Economy deletion safety.
 - **Public interface contracts** (exception to "comments = WHY only") — public interface headers document non-inferable contracts in one line: `// @pre Must NOT be called from audio thread`, `// @thread-safety lock-free, MT-safe`, `// @throws never (noexcept)`.
 - **FFI conventions (C++ ↔ Rust)** — the most dangerous boundary. Every `extern "C"`: return an `int32_t`/`ResultCode` error code (never implicit); complex errors via a thread-local `get_last_error_str()`; ownership documented explicitly (`Box::into_raw()` → C++ `unique_ptr` with a deleter calling back into Rust; never `free()` C++-side on Rust-allocated memory). Capture conventions in an "Interop Error Handling + Memory Ownership" ADR.
-- **Boy Scout rule** — when editing a file and you spot neighbouring debt fixable in <15 min (un-injected global, over-long function, untested helper), fix it in the same commit with a note. If >15 min: create a TODO/ticket and move on.
+- **Scoped cleanup** — leave touched code cleaner only when the cleanup belongs
+  to the accepted work. Unrelated neighbouring debt does not enter the current
+  PR because it is quick; route it through normal triage.
 
 ---
 

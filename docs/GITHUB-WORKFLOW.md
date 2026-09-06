@@ -13,7 +13,8 @@ Milestones         = delivery grouping
 ADRs               = accepted architecture
 Work Contracts     = deterministic verification when policy requires them
 Vault / Obsidian   = historical context only
-Skills             = procedures (github-triage, issue-to-implementation)
+Skills             = procedures (github-triage, issue-to-implementation,
+                     implementation-economy)
 ```
 
 AI Native never stores project-specific backlog state. There is no
@@ -126,6 +127,9 @@ One skill owns the path from a claimed Issue to a merged PR. Its invariants:
 5. **Refs while working, Closes when ready.** Open and update PRs with
    `Refs #N` during development. `Closes #N` appears only once MERGE_READY is
    satisfied, and only immediately before the merge.
+
+After canonical scope and AC are bound, implementation choices use
+`implementation-economy`; it cannot alter Issue scope or Acceptance Criteria.
 
 ### MERGE_READY
 
