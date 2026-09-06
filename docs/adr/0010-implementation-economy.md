@@ -1,6 +1,6 @@
 # ADR-0010 — Implementation Economy
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-09-06
 - Constrains: `AGENTS.md`, `skills/implementation-economy/SKILL.md`,
   `skills/issue-to-implementation/SKILL.md`, `docs/GITHUB-WORKFLOW.md`,
@@ -8,7 +8,7 @@
 - Does not modify: ADR-0001 through ADR-0008. The Verified Work Plane's
   authority architecture remains closed and is consumed through its existing
   workflow rather than changed here.
-- Related governance: GOV-ARCH-ENFORCEMENT conditions acceptance on verified enforcement reality.
+- Related governance: GOV-ARCH-ENFORCEMENT (#38) established Case A: both Mavis mechanisms are machine-local and optional; portable enforcement is the manual discipline.
 
 ## Context
 
@@ -122,13 +122,13 @@ that discipline, including the currently documented mandatory manual evidence:
 `graphify path <symbol>`, direct reading of at least three call sites, and an
 explicit statement of affected/unaffected scope.
 
-This ADR describes only enforcement verified in public distribution. At
-draft time, hooks/pretool-graphify-inject exists with manual per-harness
-installation, unlisted in hooks/README.md and unreferenced by the machine
-installer, while AGENTS.md names Mavis pretool-arch-change-detect and
-arch-change-gate with no corresponding public hook or skill.
-GOV-ARCH-ENFORCEMENT resolves their status before this ADR becomes
-accepted; Economy must not repair that pre-existing gap opportunistically.
+GOV-ARCH-ENFORCEMENT (#38) established Case A: `pretool-arch-change-detect`
+and `arch-change-gate` exist only in the maintainer's machine-local Mavis
+setup; they are harness-specific and optional, never public distribution.
+Portable enforcement is the manual discipline above, and
+`hooks/pretool-graphify-inject/` is public source-only with manual
+per-harness installation. Economy delegates to that portable discipline and
+repairs nothing opportunistically.
 
 ### 7. Minimal New Footprint
 
@@ -375,7 +375,7 @@ qualification also proves planning and review work stays unbiased.
 Costs: one more skill to learn; some suspected-dead code intentionally
 remains until removal is explicitly scoped or reachability is mechanically
 closed; behavioral qualification needs external paired harness/model runs;
-GOV-ARCH-ENFORCEMENT must conclude before this ADR can become accepted.
+GOV-ARCH-ENFORCEMENT (#38) concluded Case A at acceptance time.
 
 ## Rollback
 

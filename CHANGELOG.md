@@ -28,7 +28,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   preserved and reported, user-modified managed templates are preserved as
   conflicts, unchanged managed templates stay idempotent and updatable, and
   `--dry-run` never touches the filesystem.
-- **Implementation Economy architecture** — proposed ADR-0010 defines an
+- **Implementation Economy architecture** — accepted ADR-0010 defines an
   ownership-first implementation discipline for minimizing accidental
   complexity while preserving accepted scope, engineering invariants,
   fail-closed deletion safety and Verified Work Plane authority.

@@ -340,14 +340,19 @@ scope distinction. This rule forces scope reasoning via graphify + call-site rea
 + explicit user confirmation before arch changes are applied.
 
 Enforcement:
-- Mavis pretool-arch-change-detect hook (auto on Edit/Write arch-scope files)
-- Mavis arch-change-gate skill (loaded on hook trigger)
-- These are the canonical mechanisms — don't duplicate as manual checklists
+- Portable guarantee on every harness: the manual steps above. Public
+  distribution supplies no automatic gate — never assume one will run.
+- Mavis-only enhancement, machine-local and optional: the
+  `pretool-arch-change-detect` hook and the `arch-change-gate` skill exist
+  only in the maintainer's Mavis setup, are not public distribution, and are
+  not installed by `scripts/install_agents.py`. Where present they warn; they
+  never replace the manual evidence above.
 
 See also: `<OBSIDIAN_VAULT>/projects/ai-native-dev-stack/AGENTS.md`
-for the project-specific mirror of this section + cross-references to
-hook/skill implementations. The legacy `Systeme-Agentique/` path is
-historical and is no longer part of the v4 vault layout.
+for project-specific context. It is not an enforcement mirror and does not
+provide the Mavis hook/skill implementations. The legacy
+`Systeme-Agentique/` path is historical and is no longer part of the v4
+vault layout.
 
 ---
 
