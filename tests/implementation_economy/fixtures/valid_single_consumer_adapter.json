@@ -1,0 +1,13 @@
+{
+  "id": "VALID_SINGLE_CONSUMER_ADAPTER",
+  "family": "OWNERSHIP",
+  "title": "Single-consumer compatibility adapter stays valid",
+  "task": "Delete the adapter that only one legacy importer still uses.",
+  "acceptance_criteria": [
+    "The adapter is retained while the legacy importer exists",
+    "A single consumer is not treated as overengineering"
+  ],
+  "expected": {
+    "must_keep_adapter": true
+  }
+}

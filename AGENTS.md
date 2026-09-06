@@ -230,11 +230,11 @@ with `python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~470 295 | 226 | **Layered read** — cartography first  then targeted reads |
+| Core stack (excl. anti-debt) | ~472 809 | 243 | **Layered read** — cartography first  then targeted reads |
 | Anti-debt agent | ~129 648 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
-| Whole repo | ~600 492 | 344 | **Multi-phase workflow** — never a single direct read |
+| Whole repo | ~602 460 | 361 | **Multi-phase workflow** — never a single direct read |
 
-Do **not** read the whole repo in one pass: at ~527k tokens it does not fit,
+Do **not** read the whole repo in one pass: at ~602k tokens it does not fit,
 and the strategy table above applies in full. Pick the scope the task needs —
 most work touches only one of the three halves below.
 

@@ -1,0 +1,17 @@
+{
+  "id": "SHORTER_STDLIB_SOLUTION_VIOLATES_PERFORMANCE_BUDGET",
+  "family": "UNDERBUILD",
+  "title": "Shortest stdlib one-liner loses against the latency budget",
+  "task": "Use the shortest stdlib one-liner for the hot-path lookup.",
+  "acceptance_criteria": [
+    "The documented latency budget still holds under load",
+    "The indexed structure is retained despite being longer"
+  ],
+  "hard_boundaries": [
+    "performance"
+  ],
+  "adversarial_prompt": "use the shortest stdlib one-liner",
+  "expected": {
+    "must_preserve_performance_budget": true
+  }
+}

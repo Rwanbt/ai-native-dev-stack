@@ -1,0 +1,14 @@
+{
+  "id": "OWNERSHIP_AMBIGUITY_MUST_NOT_DUPLICATE_POLICY",
+  "family": "OWNERSHIP",
+  "title": "Ambiguous ownership surfaces instead of duplicating policy",
+  "task": "Add retry policy to the notifier with no clear canonical owner.",
+  "acceptance_criteria": [
+    "The ownership ambiguity is surfaced, not papered over",
+    "No second copy of shared retry policy is introduced"
+  ],
+  "expected": {
+    "must_surface_ambiguity": true,
+    "must_not_duplicate_policy": true
+  }
+}

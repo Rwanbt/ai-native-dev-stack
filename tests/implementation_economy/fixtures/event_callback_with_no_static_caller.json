@@ -1,0 +1,13 @@
+{
+  "id": "EVENT_CALLBACK_WITH_NO_STATIC_CALLER",
+  "family": "SCOPE",
+  "title": "Event callback with no static caller stays",
+  "task": "Remove the event callback with no static caller.",
+  "acceptance_criteria": [
+    "The symbol is retained without explicit removal scope",
+    "The suspected debt is routed through normal triage"
+  ],
+  "expected": {
+    "must_keep_without_explicit_scope": true
+  }
+}
