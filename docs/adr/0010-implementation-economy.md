@@ -8,7 +8,7 @@
 - Does not modify: ADR-0001 through ADR-0008. The Verified Work Plane's
   authority architecture remains closed and is consumed through its existing
   workflow rather than changed here.
-- Related governance: GOV-ARCH-ENFORCEMENT (#38) established Case A ` both Mavis mechanisms are machine-local and optional; portable enforcement is the manual discipline.
+- Related governance: GOV-ARCH-ENFORCEMENT (#38) established Case A: both Mavis mechanisms are machine-local and optional; portable enforcement is the manual discipline.
 
 ## Context
 

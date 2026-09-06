@@ -349,9 +349,10 @@ Enforcement:
   never replace the manual evidence above.
 
 See also: `<OBSIDIAN_VAULT>/projects/ai-native-dev-stack/AGENTS.md`
-for the project-specific mirror of this section + cross-references to
-hook/skill implementations. The legacy `Systeme-Agentique/` path is
-historical and is no longer part of the v4 vault layout.
+for project-specific context. It is not an enforcement mirror and does not
+provide the Mavis hook/skill implementations. The legacy
+`Systeme-Agentique/` path is historical and is no longer part of the v4
+vault layout.
 
 ---
 
