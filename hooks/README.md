@@ -10,6 +10,7 @@
 | `session-end-save/` | SessionEnd | fin de session | Tous |
 | `posttool-ai-summary/` | PostToolUse | Edit ou Write | Claude Code, Codex, Cursor |
 | `pretool-loc-gate/` | PreToolUse | avant Edit/Write | Mavis (PreToolUse), Claude Code, Codex |
+| `pretool-graphify-inject/` | PreToolUse | grep/rg/find via Bash | Claude Code, Codex, MiniMax (manual install — see its README) |
 
 ## Installation Mavis
 
