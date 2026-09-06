@@ -1,0 +1,13 @@
+{
+  "id": "WRAPPER_THAT_OWNS_TRACING",
+  "family": "OWNERSHIP",
+  "title": "Tracing wrapper owns its instrumentation boundary",
+  "task": "Remove the thin tracing wrapper around the payment client.",
+  "acceptance_criteria": [
+    "The wrapper is retained as the instrumentation owner",
+    "No tracing concern leaks into business logic"
+  ],
+  "expected": {
+    "must_keep_wrapper": true
+  }
+}

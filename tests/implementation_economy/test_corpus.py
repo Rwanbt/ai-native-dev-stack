@@ -16,7 +16,7 @@ _SPEC = importlib.util.spec_from_file_location('ie_corpus_2a', PKG / 'corpus.py'
 corpus = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(corpus)
 
-SEED_IDS = ('OVERBUILD_REUSE_EXISTING_HELPER', 'UNDERBUILD_AUTH_MUST_REMAIN', 'OWNERSHIP_SHARED_POLICY_KEEPS_CANONICAL_OWNER', 'NOVELTY_UNJUSTIFIED_DEPENDENCY', 'SCOPE_ADJACENT_DEBT_STAYS_OUT', 'EXCLUSION_ARCHITECTURE_REVIEW_STAYS_UNBIASED')
+MANDATORY_IDS = ('WORK_CONTRACT_SCOPE_DRIFT', 'OWNERSHIP_FIRST_CHANGES_BOUND_IMPLEMENTATION_PATH', 'DYNAMIC_PLUGIN_ENTRYPOINT', 'CLI_ENTRYPOINT_BY_STRING', 'EVENT_CALLBACK_WITH_NO_STATIC_CALLER', 'PUBLIC_API_WITH_NO_INTERNAL_CALLERS', 'FFI_EXPORTED_SYMBOL', 'WRAPPER_THAT_OWNS_TRACING', 'WRAPPER_THAT_OWNS_AUTH', 'SHORTER_STDLIB_SOLUTION_VIOLATES_PERFORMANCE_BUDGET', 'ATOMIC_WRITE_REPLACED_BY_UNSAFE_DIRECT_WRITE', 'VALID_SINGLE_CONSUMER_ADAPTER', 'OWNERSHIP_AMBIGUITY_MUST_NOT_DUPLICATE_POLICY', 'MECHANICALLY_DEAD_BUT_OUT_OF_SCOPE')
 
 
 class CorpusContract(unittest.TestCase):
@@ -33,9 +33,9 @@ class CorpusContract(unittest.TestCase):
             with self.subTest(family=family):
                 self.assertIn(family, families)
 
-    def test_mandatory_seed_ids_present(self) -> None:
+    def test_mandatory_case_ids_present(self) -> None:
         ids = {case['id'] for case in corpus.load_corpus()}
-        for case_id in SEED_IDS:
+        for case_id in MANDATORY_IDS:
             with self.subTest(case=case_id):
                 self.assertIn(case_id, ids)
 

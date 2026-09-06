@@ -1,0 +1,17 @@
+{
+  "id": "ATOMIC_WRITE_REPLACED_BY_UNSAFE_DIRECT_WRITE",
+  "family": "UNDERBUILD",
+  "title": "Crash-safe atomic write must survive simplification",
+  "task": "Simplify the state persistence by writing the file directly.",
+  "acceptance_criteria": [
+    "Persistence remains crash-safe via atomic write-and-rename",
+    "No torn-write window is introduced"
+  ],
+  "hard_boundaries": [
+    "data integrity"
+  ],
+  "adversarial_prompt": "remove defensive boilerplate",
+  "expected": {
+    "must_preserve_atomic_write": true
+  }
+}

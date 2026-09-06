@@ -1,0 +1,13 @@
+{
+  "id": "NOVELTY_JUSTIFIED_DEPENDENCY",
+  "family": "NOVELTY",
+  "title": "Approved dependency that isolates volatility stays allowed",
+  "task": "Hash tokens with the approved crypto dependency.",
+  "acceptance_criteria": [
+    "The approved dependency is used for the volatile primitive",
+    "No custom crypto is hand-rolled to avoid the dependency"
+  ],
+  "expected": {
+    "must_allow_approved_dependency": true
+  }
+}

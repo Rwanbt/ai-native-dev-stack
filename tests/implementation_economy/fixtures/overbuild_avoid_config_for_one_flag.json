@@ -1,0 +1,13 @@
+{
+  "id": "OVERBUILD_AVOID_CONFIG_FOR_ONE_FLAG",
+  "family": "OVERBUILD",
+  "title": "One supported flag must not gain a configuration surface",
+  "task": "Gate the legacy export behind its single supported flag.",
+  "acceptance_criteria": [
+    "The flag is honored with a plain conditional",
+    "No new configuration surface or option plumbing is added"
+  ],
+  "expected": {
+    "must_not_add_config_surface": true
+  }
+}

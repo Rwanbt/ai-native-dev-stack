@@ -13,7 +13,7 @@ from pathlib import Path
 
 CORPUS_DIR = Path(__file__).resolve().parent / 'fixtures'
 
-EXPECTED_CORPUS_CASE_COUNT = 6
+EXPECTED_CORPUS_CASE_COUNT = 23
 
 VALID_FAMILIES = ('OVERBUILD', 'UNDERBUILD', 'OWNERSHIP', 'NOVELTY', 'SCOPE', 'EXCLUSION')
 

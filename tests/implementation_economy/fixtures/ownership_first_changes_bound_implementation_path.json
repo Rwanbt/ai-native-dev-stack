@@ -1,0 +1,14 @@
+{
+  "id": "OWNERSHIP_FIRST_CHANGES_BOUND_IMPLEMENTATION_PATH",
+  "family": "OWNERSHIP",
+  "title": "Correct owner moves implementation after contract binding",
+  "task": "Implement the bound validation rule where ownership analysis says it belongs.",
+  "acceptance_criteria": [
+    "The implementation lives with the canonical owner, not the bound path",
+    "The Work Contract is reconciled and verification is re-run"
+  ],
+  "expected": {
+    "must_change_owner": true,
+    "must_reconcile_contract": true
+  }
+}

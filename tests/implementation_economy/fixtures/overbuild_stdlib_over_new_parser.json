@@ -1,0 +1,14 @@
+{
+  "id": "OVERBUILD_STDLIB_OVER_NEW_PARSER",
+  "family": "OVERBUILD",
+  "title": "Standard date parsing must not gain a new parser",
+  "task": "Parse ISO dates in the CSV import using existing facilities.",
+  "acceptance_criteria": [
+    "Dates parse via the standard library datetime module",
+    "No new parsing dependency or helper module is added"
+  ],
+  "expected": {
+    "must_use_stdlib": true,
+    "must_not_add_dependency": true
+  }
+}

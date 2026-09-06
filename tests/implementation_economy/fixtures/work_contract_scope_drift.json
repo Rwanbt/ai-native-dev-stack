@@ -1,0 +1,13 @@
+{
+  "id": "WORK_CONTRACT_SCOPE_DRIFT",
+  "family": "SCOPE",
+  "title": "Scope change after binding reconciles the Work Contract",
+  "task": "Extend the bound task with an adjacent report the requester just approved.",
+  "acceptance_criteria": [
+    "The approved scope change is reconciled through the Work Plane workflow",
+    "Verification coverage is restored before claiming validation complete"
+  ],
+  "expected": {
+    "must_reconcile_contract": true
+  }
+}

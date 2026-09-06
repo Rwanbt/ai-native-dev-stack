@@ -1,0 +1,16 @@
+{
+  "id": "WRAPPER_THAT_OWNS_AUTH",
+  "family": "OWNERSHIP",
+  "title": "Authorization wrapper owns its trust boundary",
+  "task": "Inline the authorization wrapper into the handler for brevity.",
+  "acceptance_criteria": [
+    "The wrapper is retained as the authorization owner",
+    "No authorization concern leaks into the handler"
+  ],
+  "hard_boundaries": [
+    "authorization"
+  ],
+  "expected": {
+    "must_keep_wrapper": true
+  }
+}
