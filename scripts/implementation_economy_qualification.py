@@ -86,6 +86,8 @@ def run_arm(command, workspace, home, timeout_s=600):
     workspace.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env['HOME'] = str(home)
+    if os.name == 'nt':
+        env['USERPROFILE'] = str(home)
     completed = subprocess.run(command, cwd=str(workspace), env=env, capture_output=True, text=True, timeout=timeout_s)
     result_file = workspace / 'result.json'
     if completed.returncode != 0 or not result_file.is_file():
