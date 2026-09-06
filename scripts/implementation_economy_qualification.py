@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Paired-arm behavioral qualification: isolated arms, task equivalence,
 # allowlisted methodology delta, SHA-256 digests, hard-gate-first scoring.
-# Stdlib only; manual runs; no model client.
 
 from __future__ import annotations
 
@@ -50,7 +49,6 @@ def digest_names(hashes):
         digest.update(hashes[name].encode('utf-8'))
     digest.update(str(len(hashes)).encode('utf-8'))
     return digest.hexdigest()
-
 
 
 def check_arms(task_dir, baseline_stack, treatment_stack, allowlist):
@@ -108,13 +106,15 @@ def validate_result(result, case_id, arm, kind):
     return True
 
 
-
 def score_pair(baseline, treatment, case_id, kind):
     # Hard gates first. Invalid output or a broken baseline is INCONCLUSIVE.
     if not validate_result(baseline, case_id, 'baseline', kind):
         return INCONCLUSIVE, 'invalid baseline result'
     if not validate_result(treatment, case_id, 'treatment', kind):
         return INCONCLUSIVE, 'invalid treatment result'
+    base_indep = baseline['reviewer_independence']
+    if base_indep == 'FAIL' or (base_indep == 'N/A' and not baseline.get('capability_limitation')):
+        return INCONCLUSIVE, 'baseline reviewer independence not established'
     base_gates = baseline['hard_gates']
     if any(base_gates[gate] == 'fail' for gate in HARD_GATES):
         return INCONCLUSIVE, 'baseline gate failed'
@@ -139,22 +139,17 @@ def write_manifest(out_dir, record):
     return out / 'manifest.json'
 
 
-
-def _abort(out, case, reason):
-    record = {'case': case, 'verdict': INVALID_EXPERIMENT, 'reason': reason}
-    write_manifest(out, record)
-    print(INVALID_EXPERIMENT + ': ' + reason)
-    return 2
-
-
 def run_pair(args):
     out = Path(args.out)
     if out.exists() and any(out.iterdir()):
-        return _abort(out, args.case, 'non-empty output root refused')
+        print(INVALID_EXPERIMENT + ': non-empty output root refused; nothing was written')
+        return 2
     try:
         arm_info = check_arms(args.task_dir, args.baseline_stack, args.treatment_stack, args.allow or [])
     except QualificationError as exc:
-        return _abort(out, args.case, str(exc))
+        write_manifest(out, {'case': args.case, 'verdict': INVALID_EXPERIMENT, 'reason': str(exc)})
+        print(INVALID_EXPERIMENT + ': ' + str(exc))
+        return 2
     arms = {}
     for name, stack in (('baseline', args.baseline_stack), ('treatment', args.treatment_stack)):
         home = out / (name + '-home')

@@ -74,6 +74,12 @@ class QualificationHarness(unittest.TestCase):
         self.assertEqual(verdict, qual.NO_GO)
         self.assertIn('security', reason)
 
+    def test_baseline_independence_mirrors_treatment(self) -> None:
+        verdict, _ = self._verdict('indep-fail', 'pass')
+        self.assertEqual(verdict, qual.INCONCLUSIVE)
+        verdict, _ = self._verdict('indep-na', 'pass')
+        self.assertEqual(verdict, qual.INCONCLUSIVE)
+
     def test_broken_arms_are_inconclusive(self) -> None:
         out = self.root / 'out2'
         failing = qual.run_arm(self.arm_cmd('fail-security', 'baseline'), out / 'b', out / 'bh')
@@ -112,9 +118,11 @@ class QualificationHarness(unittest.TestCase):
     def test_reused_output_root_is_invalid_experiment(self) -> None:
         out = self.root / 'run'
         out.mkdir()
+        (out / 'manifest.json').write_text('historical evidence', encoding='utf-8')
         (out / 'stale.txt').write_text('old evidence', encoding='utf-8')
         code = qual.main(['--case', 'T', '--task-dir', str(self.root / 'task'), '--baseline-stack', str(self.root / 'base'), '--treatment-stack', str(self.root / 'treat'), '--cmd', 'unused', '--out', str(out)])
         self.assertEqual(code, 2)
+        self.assertEqual((out / 'manifest.json').read_text(encoding='utf-8'), 'historical evidence')
 
     def test_stale_result_is_never_reread(self) -> None:
         workspace = self.root / 'ws'
