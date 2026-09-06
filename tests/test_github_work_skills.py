@@ -462,5 +462,15 @@ class SkillContract(unittest.TestCase):
         self.assertIn('it cannot alter Issue scope or Acceptance Criteria', self.WORKFLOW)
 
 
+    def test_preexisting_deletion_imperatives_are_scoped(self) -> None:
+        self.assertNotIn('delete immediately', self.AGENTS)
+        self.assertNotIn('dead code — delete it', self.AGENTS)
+        self.assertIn('removal belongs to accepted scope', self.AGENTS)
+        self.assertIn('Implementation Economy deletion safety', self.AGENTS)
+
+    def test_phase_d_binds_scope_and_ac_before_economy(self) -> None:
+        self.assertIn('After scope and AC are bound', self.PHASE_D)
+
+
 if __name__ == "__main__":
     unittest.main()

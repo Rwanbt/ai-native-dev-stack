@@ -115,7 +115,7 @@ pass.** That rule has no exception inside this skill; see "AC protection".
 19d. If implementation or the simplification pass changes bound
      implementation paths, covered paths or verification coverage,
      reconcile the Work Contract through the canonical Verified Work Plane
-     workflow before continuing.
+     workflow before continuing (where repository policy requires a Work Contract).
 20. **Run the required validation** — the repository's own gates, plus the
     Issue's AC as executable checks wherever possible.
 
