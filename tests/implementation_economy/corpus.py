@@ -31,6 +31,14 @@ def _require_non_empty_str(case_id, field, value):
         raise CorpusError(case_id + ': ' + field + ' must be a non-empty string')
 
 
+
+
+def _require_list_of_non_empty_str(case_id, field, value):
+    if not isinstance(value, list) or not value:
+        raise CorpusError(case_id + ': ' + field + ' must be a non-empty list of strings')
+    for item in value:
+        _require_non_empty_str(case_id, field + ' item', item)
+
 def load_case(path):
     # Load and schema-validate one fixture file.
     try:
@@ -61,9 +69,15 @@ def load_case(path):
         _require_non_empty_str(str(case_id), 'acceptance_criteria item', criterion)
     if not isinstance(case['expected'], dict) or not case['expected']:
         raise CorpusError(str(case_id) + ': expected must be a non-empty object')
-    for field in OPTIONAL_FIELDS:
-        if field in case and not isinstance(case[field], (list, str, bool)):
-            raise CorpusError(str(case_id) + ': optional field ' + field + ' has unsupported type')
+    if 'hard_boundaries' in case:
+        _require_list_of_non_empty_str(str(case_id), 'hard_boundaries', case['hard_boundaries'])
+    if 'excluded_activities' in case:
+        _require_list_of_non_empty_str(str(case_id), 'excluded_activities', case['excluded_activities'])
+    for field in ('adversarial_prompt', 'transition'):
+        if field in case:
+            _require_non_empty_str(str(case_id), field, case[field])
+    if 'requires_persistent_session' in case and not isinstance(case['requires_persistent_session'], bool):
+        raise CorpusError(str(case_id) + ': requires_persistent_session must be a boolean')
     return case
 
 

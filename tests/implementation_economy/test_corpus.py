@@ -90,6 +90,39 @@ class CorpusContract(unittest.TestCase):
             with self.assertRaises(corpus.CorpusError):
                 corpus.load_corpus(tmp)
 
+    def test_schema_rejects_string_for_requires_persistent_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._valid_payload()
+            payload['requires_persistent_session'] = 'false'
+            self._write_case(tmp, 'bad.json', payload)
+            with self.assertRaises(corpus.CorpusError):
+                corpus.load_corpus(tmp)
+
+    def test_schema_rejects_bool_for_hard_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._valid_payload()
+            payload['hard_boundaries'] = True
+            self._write_case(tmp, 'bad.json', payload)
+            with self.assertRaises(corpus.CorpusError):
+                corpus.load_corpus(tmp)
+
+    def test_schema_rejects_string_for_excluded_activities(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._valid_payload()
+            payload['excluded_activities'] = 'security_review'
+            self._write_case(tmp, 'bad.json', payload)
+            with self.assertRaises(corpus.CorpusError):
+                corpus.load_corpus(tmp)
+
+    def test_schema_rejects_bool_for_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._valid_payload()
+            payload['transition'] = False
+            self._write_case(tmp, 'bad.json', payload)
+            with self.assertRaises(corpus.CorpusError):
+                corpus.load_corpus(tmp)
+
+
     def test_empty_directory_cannot_satisfy_expected_count(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(corpus.load_corpus(tmp), [])
