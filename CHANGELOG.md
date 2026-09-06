@@ -32,6 +32,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   ownership-first implementation discipline for minimizing accidental
   complexity while preserving accepted scope, engineering invariants,
   fail-closed deletion safety and Verified Work Plane authority.
+- **Implementation Economy skill** `skills/implementation-economy` ships the
+  ownership-first procedure (STOP applicability barrier, ownership-first
+  selection, residual Novelty Gate, fail-closed deletion) with contract tests;
+  the existing generic installer mechanism exposes it with every other skill.
 
 ## [2.0.0] - 2026-09-05
 
