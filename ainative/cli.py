@@ -198,6 +198,22 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile_cmd.add_argument("candidate_id", help="kc_... identifier")
     _add_common(reconcile_cmd)
 
+    retrieve = knowledge_commands.add_parser(
+        "retrieve", help="Assemble a bounded deterministic context bundle.")
+    retrieve.add_argument("--focus", action="append", default=[],
+                          help="project-relative path to center on (repeatable)")
+    retrieve.add_argument("--task-type", dest="task_type", default="general")
+    retrieve.add_argument("--adr", action="append", default=[],
+                          help="ADR ref to include (repeatable)")
+    retrieve.add_argument("--recall", default=None,
+                          help="semantic recall query (needs a provider, K5b)")
+    retrieve.add_argument("--max-items", dest="max_items", type=int, default=20)
+    retrieve.add_argument("--max-bytes", dest="max_bytes", type=int, default=65536)
+    retrieve.add_argument("--max-excerpt", dest="max_excerpt", type=int, default=2000)
+    retrieve.add_argument("--max-candidates", dest="max_candidates", type=int,
+                          default=5)
+    _add_common(retrieve, dry_run=False)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -709,6 +725,18 @@ def _knowledge_reconcile(args: argparse.Namespace, project) -> int:
                        f"{decision['candidate_id']}  {decision['state']}")
     outcome = promotionlib.reconcile(project, args.candidate_id)
     return _report(args, outcome, f"{outcome['candidate_id']}  {outcome['state']}")
+def _knowledge_retrieve(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import retrieval as retrievallib
+
+    budgets = retrievallib.Budgets(max_items=args.max_items,
+                                   max_bytes=args.max_bytes,
+                                   max_excerpt_chars=args.max_excerpt,
+                                   max_candidates=args.max_candidates)
+    bundle = retrievallib.assemble(project, focus=args.focus or ["."],
+                                   task_type=args.task_type,
+                                   adr_refs=args.adr or [],
+                                   recall=args.recall, budgets=budgets)
+    return _report(args, bundle.to_record(), bundle.render())
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -728,6 +756,7 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "promote": _knowledge_promote,
         "reject": _knowledge_reject,
         "reconcile": _knowledge_reconcile,
+        "retrieve": _knowledge_retrieve,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))
