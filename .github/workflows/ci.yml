@@ -221,6 +221,9 @@ jobs:
       - name: Control paths, locked storage, bounds and crash safety
         run: python -m unittest tests.test_knowledge_store -v
 
+      - name: Secret quarantine fail-closed
+        run: python -m unittest tests.test_knowledge_quarantine -v
+
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

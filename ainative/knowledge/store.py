@@ -36,7 +36,8 @@ from .assertions import tombstone as make_tombstone
 from .bounds import Bounds
 from .envelope import unwrap, wrap
 from .errors import KnowledgeError
-from .identity import screen_secret
+from . import quarantine as quarantinelib
+from .assertions import normalize_value
 
 CANDIDATES_FILE = "candidates.jsonl"
 SUPPORTS_FILE = "supports.jsonl"
@@ -73,11 +74,6 @@ def _require_dict(name: str, value: Any) -> dict:
     return value
 
 
-def _scan(name: str, *texts: Any) -> None:
-    for text in texts:
-        if isinstance(text, str) and screen_secret(text) is not None:
-            raise KnowledgeError("KNOWLEDGE_MALFORMED",
-                                 f"{name} fails secret screening")
 
 
 def _locator(value: Any) -> str:
@@ -89,13 +85,18 @@ def _locator(value: Any) -> str:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "locator scheme refused")
     try:
         pathslib.validate_relative(value)
-    except Exception as error:
-        raise KnowledgeError("KNOWLEDGE_MALFORMED",
-                             f"locator refused: {error}") from error
+    except Exception:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "locator refused")
     return value
 
 
-def validate_candidate(raw: Any, *, bounds: Bounds) -> dict:
+def _screen_dict(name: str, mapping: Any, *, scanner: Any = None) -> None:
+    quarantinelib.check(
+        *[value for value in mapping.values() if isinstance(value, str)],
+        purpose=name, scanner=scanner)
+
+
+def validate_candidate(raw: Any, *, bounds: Bounds, scanner: Any = None) -> dict:
     """Structural validation (B1 S4). Identity depth is caller-side."""
 
     if not isinstance(raw, dict):
@@ -115,6 +116,11 @@ def validate_candidate(raw: Any, *, bounds: Bounds) -> dict:
     _require_dict("source", raw.get("source"))
     _require_dict("scope", raw.get("scope"))
     claim = _bounded("claim", raw.get("claim"), MAX_TEXT)
+    if "assertion_value" in raw:
+        normalized = normalize_value(raw["assertion_value"])
+        if normalized["type"] == "string":
+            quarantinelib.check(normalized["value"], purpose="assertion value",
+                                scanner=scanner)
     identity = _require_dict("identity", raw.get("identity"))
     _bounded("identity_key", identity.get("identity_key"), 253)
     if not isinstance(identity.get("identity_key_grammar_version"), int):
@@ -124,7 +130,10 @@ def validate_candidate(raw: Any, *, bounds: Bounds) -> dict:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "assertion version int")
     _bounded("hash_algorithm", raw.get("hash_algorithm"), 64)
     _require_dict("provenance", raw.get("provenance"))
-    _scan("claim", claim)
+    quarantinelib.check(claim, purpose="candidate claim", scanner=scanner)
+    _screen_dict("candidate source", raw.get("source"), scanner=scanner)
+    _screen_dict("candidate scope", raw.get("scope"), scanner=scanner)
+    _screen_dict("candidate provenance", raw.get("provenance"), scanner=scanner)
     payload = json.dumps(raw, sort_keys=True)
     if len(payload.encode("utf-8")) > bounds.max_candidate_payload:
         raise KnowledgeError("KNOWLEDGE_CANDIDATE_TOO_LARGE",
@@ -132,14 +141,15 @@ def validate_candidate(raw: Any, *, bounds: Bounds) -> dict:
     return raw
 
 
-def validate_support(raw: Any, *, bounds: Bounds) -> dict:
+def validate_support(raw: Any, *, bounds: Bounds, scanner: Any = None) -> dict:
     if not isinstance(raw, dict):
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "support is not an object")
     _bounded("support_id", raw.get("support_id"), 128)
     _bounded("candidate_id", raw.get("candidate_id"), 128)
     _kebab("kind", raw.get("kind"))
     locator = _locator(raw.get("locator", ""))
-    _scan("support", locator, raw.get("digest", ""), raw.get("note", ""))
+    quarantinelib.check(locator, raw.get("digest", ""), raw.get("note", ""),
+                        purpose="support content", scanner=scanner)
     payload = json.dumps(raw, sort_keys=True)
     if len(payload.encode("utf-8")) > bounds.max_support_payload:
         raise KnowledgeError("KNOWLEDGE_CANDIDATE_TOO_LARGE",
@@ -147,7 +157,7 @@ def validate_support(raw: Any, *, bounds: Bounds) -> dict:
     return raw
 
 
-def validate_audit_detail(detail: Any) -> dict:
+def validate_audit_detail(detail: Any, *, scanner: Any = None) -> dict:
     if not isinstance(detail, dict):
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "audit detail must be an object")
     for key, value in detail.items():
@@ -156,7 +166,7 @@ def validate_audit_detail(detail: Any) -> dict:
         if isinstance(value, str):
             if len(value) > MAX_DETAIL_STRING:
                 raise KnowledgeError("KNOWLEDGE_MALFORMED", "audit detail str too long")
-            _scan("audit detail", value)
+            quarantinelib.check(value, purpose="audit detail", scanner=scanner)
         elif not isinstance(value, (int, float, bool)) and value is not None:
             raise KnowledgeError("KNOWLEDGE_MALFORMED",
                                  "audit detail holds scalars only")
@@ -247,13 +257,16 @@ def _guarded(project: Path, fn):
 
 
 def append_candidate(project: Path, record: dict, *,
-                     bounds: Bounds | None = None) -> dict:
+                     bounds: Bounds | None = None,
+                     scanner: Any = None) -> dict:
     """Validate, bound-check and durably append one candidate."""
 
     limits = bounds or Bounds()
 
     def _run() -> dict:
-        stored = validate_candidate(record, bounds=limits)
+        quarantinelib.check(purpose="candidate gate", scanner=scanner)
+        stored = validate_candidate(record, bounds=limits,
+                                   scanner=scanner)
         paths = _paths(Path(project))
         existing = _read_lines(paths["candidates"], "candidate")
         if any(item.get("candidate_id") == stored["candidate_id"] for item in existing):
@@ -270,11 +283,14 @@ def append_candidate(project: Path, record: dict, *,
 
 
 def append_support(project: Path, record: dict, *,
-                   bounds: Bounds | None = None) -> dict:
+                   bounds: Bounds | None = None,
+                   scanner: Any = None) -> dict:
     limits = bounds or Bounds()
 
     def _run() -> dict:
-        stored = validate_support(record, bounds=limits)
+        quarantinelib.check(purpose="support gate", scanner=scanner)
+        stored = validate_support(record, bounds=limits,
+                                   scanner=scanner)
         paths = _paths(Path(project))
         envelopes = _read_envelopes(paths["supports"])
         supports = [envelope["payload"] for envelope in envelopes
@@ -301,11 +317,14 @@ def _rewrite_supports(path: Path, supports: list[dict], tombstones: list[dict]) 
 
 
 def append_tombstone(project: Path, assertion_hash_value: str, *, reason: str,
-                     actor: str, bounds: Bounds | None = None) -> dict:
+                     actor: str, bounds: Bounds | None = None,
+                     scanner: Any = None) -> dict:
     limits = bounds or Bounds()
 
     def _run() -> dict:
-        marker = make_tombstone(assertion_hash_value, reason=reason, actor=actor)
+        quarantinelib.check(purpose="tombstone gate", scanner=scanner)
+        marker = make_tombstone(assertion_hash_value, reason=reason,
+                                      actor=actor, scanner=scanner)
         paths = _paths(Path(project))
         envelopes = _read_envelopes(paths["audit"])
         tombstones = [envelope["payload"] for envelope in envelopes
@@ -332,15 +351,18 @@ def append_tombstone(project: Path, assertion_hash_value: str, *, reason: str,
 def record_audit(project: Path, *, operation: str, actor: str,
                  candidate_id: str | None = None,
                  detail: dict | None = None,
-                 bounds: Bounds | None = None) -> dict:
+                 bounds: Bounds | None = None,
+                 scanner: Any = None) -> dict:
     limits = bounds or Bounds()
 
     def _run() -> dict:
         _kebab("operation", operation)
         _bounded("actor", actor, 128)
+        quarantinelib.check(purpose="audit gate", scanner=scanner)
         event = {"event_id": statelib.new_identifier("evt"),
                  "candidate_id": candidate_id, "operation": operation,
-                 "detail": validate_audit_detail(detail or {}),
+                 "detail": validate_audit_detail(detail or {},
+                                                   scanner=scanner),
                  "actor": actor, "timestamp": now()}
         paths = _paths(Path(project))
         envelopes = _read_envelopes(paths["audit"])
@@ -370,7 +392,7 @@ def get_candidate(project: Path, candidate_id: str) -> dict:
     for item in list_candidates(project):
         if item.get("candidate_id") == candidate_id:
             return item
-    raise KnowledgeError("KNOWLEDGE_NOT_FOUND", f"unknown candidate {candidate_id!r}")
+    raise KnowledgeError("KNOWLEDGE_NOT_FOUND", "unknown candidate")
 
 
 def list_supports(project: Path, candidate_id: str) -> list[dict]:

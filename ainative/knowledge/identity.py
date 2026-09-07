@@ -45,29 +45,11 @@ _SEGMENT = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
 MAX_SEGMENTS = 6
 MAX_KEY_CHARS = 253
 
-# Quarantine v0 screen (B1 S7/S8/S11): free-text secret-bearing content
-# is refused before persistence. Case handling is explicit per pattern:
-# PEM headers are matched case-sensitively (spec casing), the rest
-# case-insensitively. The fail-closed quarantine with an
-# unavailable-scanner refusal is PR4; this builtin is always available
-# and is superseded, not bypassed, by it.
-_SECRET_PATTERNS = (
-    ("credential", re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|"
-                              r"secret[_-]?key|auth[_-]?token|access[_-]?token|"
-                              r"password|passwd|bearer)\b")),
-    ("private-key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY")),
-)
-
-
 def screen_secret(text: str) -> str | None:
-    """First matching secret class, or None. Pure function."""
+    """Builtin screen, single-owned by quarantine. Kept name for callers."""
 
-    if not isinstance(text, str):
-        return None
-    for label, pattern in _SECRET_PATTERNS:
-        if pattern.search(text):
-            return label
-    return None
+    from .quarantine import builtin_screen
+    return builtin_screen(text)
 
 
 @dataclass(frozen=True)
@@ -147,10 +129,14 @@ def parse_identity(key: Any, *, modules: frozenset[str] | set[str],
                                  f"engineering vocabulary "
                                  f"(v{ENGINE_VOCABULARY_VERSION}); hyphen-composed "
                                  "segments resolve atom-wise")
-    hit = screen_secret(key)
-    if hit is not None:
+    from . import quarantine as quarantinelib
+    try:
+        quarantinelib.check(key, purpose="identity key")
+    except KnowledgeError as error:
+        if error.code != "KNOWLEDGE_SECRET_REFUSED":
+            raise
         raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
-                             "identity key fails audit-safety screening")
+                             "identity key fails audit-safety screening") from error
     return Identity(key=key, root=root, segments=tuple(parts[1:]), scope=scope)
 
 
