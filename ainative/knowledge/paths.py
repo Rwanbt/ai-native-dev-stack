@@ -124,7 +124,11 @@ def _no_planted_link(root: Path, directory: Path) -> None:
 def ensure_contained(project: Path) -> None:
     """Refuse symlink/junction escape of the store trees. Fail closed."""
 
-    root = Path(project)
+    # Resolve once, like the lifecycle Applier: on macOS /var is a symlink
+    # to /private/var, so an unresolved temp root never matches its own
+    # resolved children (EMP-LC-011). A planted link still resolves outward
+    # and fails the checks below.
+    root = Path(project).resolve()
     for directory in (state_dir(root), audit_dir(root)):
         _no_planted_link(root, directory)
         directory.mkdir(parents=True, exist_ok=True)
