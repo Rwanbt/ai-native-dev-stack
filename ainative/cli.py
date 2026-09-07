@@ -112,6 +112,82 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--force", action="store_true",
                         help="apply even when the check reports no newer release")
 
+    knowledge = commands.add_parser(
+        "knowledge", help="Capture, review and track knowledge candidates.")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+
+    knowledge_status = knowledge_commands.add_parser(
+        "status", help="Store health and candidate counts.")
+    _add_common(knowledge_status, dry_run=False)
+
+    capture = knowledge_commands.add_parser(
+        "capture", help="Record one knowledge candidate.")
+    capture.add_argument("--kind", required=True,
+                         help="candidate class (e.g. PROJECT_RULE, FAILURE_PATTERN)")
+    capture.add_argument("--claim", required=True, help="the proposed durable fact")
+    capture.add_argument("--agent", default="unknown", help="originating harness")
+    capture.add_argument("--session", default=None, help="originating session id")
+    capture.add_argument("--origin", default="manual",
+                         help="origin type (e.g. user_correction, manual)")
+    capture.add_argument("--module", default=None, help="owning module, if any")
+    capture.add_argument("--path", dest="paths", action="append", default=[],
+                         help="source path the claim was observed in (repeatable)")
+    _add_common(capture)
+
+    candidates = knowledge_commands.add_parser(
+        "candidates", help="List stored candidates.")
+    candidates.add_argument("--status", default=None, help="filter by state")
+    candidates.add_argument("--kind", default=None, help="filter by class")
+    _add_common(candidates, dry_run=False)
+
+    inspect = knowledge_commands.add_parser("inspect", help="Show one candidate.")
+    inspect.add_argument("candidate_id", help="kc_... identifier")
+    _add_common(inspect, dry_run=False)
+
+    transition = knowledge_commands.add_parser(
+        "transition", help="Move a candidate to a new state.")
+    transition.add_argument("candidate_id", help="kc_... identifier")
+    transition.add_argument("to_status", help="target state")
+    transition.add_argument("--actor", default="cli", help="who decides")
+    _add_common(transition)
+
+    context = commands.add_parser(
+        "context", help="Working memory: save, checkpoint and restore operational state.")
+    context_commands = context.add_subparsers(dest="context_command", required=True)
+
+    context_status = context_commands.add_parser(
+        "status", help="Working state and checkpoint counts.")
+    _add_common(context_status, dry_run=False)
+
+    save = context_commands.add_parser("save", help="Create or merge working state.")
+    save.add_argument("--task", default=None, help="active task")
+    save.add_argument("--goal", default=None, help="session goal")
+    save.add_argument("--plan", default=None, help="current plan")
+    save.add_argument("--result", default=None, help="latest test results")
+    save.add_argument("--next-action", dest="next_action", default=None)
+    save.add_argument("--touch", dest="touches", action="append", default=[])
+    save.add_argument("--hypothesis", dest="hypotheses", action="append", default=[])
+    save.add_argument("--finding", dest="findings", action="append", default=[])
+    save.add_argument("--question", dest="questions", action="append", default=[])
+    save.add_argument("--test", dest="tests", action="append", default=[])
+    save.add_argument("--blocker", dest="blockers", action="append", default=[])
+    save.add_argument("--candidate", dest="candidates", action="append", default=[])
+    save.add_argument("--ttl", type=int, default=None,
+                      help="seconds until this state expires")
+    _add_common(save)
+
+    make_checkpoint = context_commands.add_parser(
+        "checkpoint", help="Freeze state for compaction.")
+    make_checkpoint.add_argument("--reason", default="manual")
+    _add_common(make_checkpoint)
+
+    restore = context_commands.add_parser("restore", help="Bring back a checkpoint.")
+    restore.add_argument("checkpoint_id")
+    _add_common(restore)
+
+    clear = context_commands.add_parser("clear", help="Discard transient state.")
+    _add_common(clear, yes=True)
+
     for name in VERIFIED_COMMANDS:
         commands.add_parser(name, add_help=False,
                             help=f"Verified Work Plane: `ainative {name} --help`.")
@@ -264,10 +340,18 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     from .lifecycle import recovery
+    from ainative.knowledge import health as knowledge_health
 
     diagnosis = recovery.diagnose(_project(args), check_updates=args.check_updates)
+    # Knowledge health is informational: the lifecycle is usable without any
+    # knowledge store (backward compatibility), so a missing or corrupt store
+    # is reported, never fatal to this command. K9 will decide whether a
+    # corrupt store should fail the exit code.
+    knowledge = knowledge_health.build(_project(args))
     if args.json:
-        _emit(diagnosis.to_record())
+        record = diagnosis.to_record()
+        record["knowledge"] = knowledge.to_record()
+        _emit(record)
     else:
         print(f"Project: {diagnosis.project}")
         print(f"Installed: {diagnosis.installed}   Profile: {diagnosis.active_profile}")
@@ -279,6 +363,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  INTERRUPTED    {item['id']} ({item['operation']}) — run `ainative repair`")
         for note in diagnosis.notes:
             print(f"  note: {note}")
+        print(f"  {knowledge.render()}")
     return EXIT_OK if diagnosis.healthy else EXIT_FAILED
 
 
@@ -355,8 +440,266 @@ def _cmd_update(args: argparse.Namespace) -> int:
     return _report(args, result.to_record(), text)
 
 
+def _knowledge_refuse(args: argparse.Namespace, error) -> int:
+    if getattr(args, "json", False):
+        _emit(error.to_record())
+    else:
+        print(f"refused: {error}", file=sys.stderr)
+        for key, value in error.detail.items():
+            print(f"  {key}: {value}", file=sys.stderr)
+    return error.exit_code
+
+
+def _knowledge_capture_fields(args: argparse.Namespace, project) -> dict:
+    from ainative.lifecycle import state as statelib
+
+    return {
+        "project": str(project),
+        "agent": args.agent,
+        "session": args.session or statelib.new_identifier("sess"),
+        "origin_type": args.origin,
+        "kind": args.kind.upper(),
+        "claim": args.claim,
+        "module": args.module,
+        "source_paths": tuple(args.paths or ()),
+        "repository": project,
+    }
+
+
+def _knowledge_status(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import health as healthlib
+
+    report = healthlib.build(project)
+    return _report(args, report.to_record(), report.render())
+
+
+def _knowledge_candidates(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import store as storelib
+
+    wanted_status = args.status.upper() if args.status else None
+    wanted_kind = args.kind.upper() if args.kind else None
+    records = storelib.list_candidates(project, status=wanted_status, kind=wanted_kind)
+    lines = [f"{item['candidate_id']}  {item['status']:<18} "
+             f"{item['kind']:<20} {item['claim'][:80]}" for item in records]
+    return _report(args, {"candidates": records}, "\n".join(lines) or "no candidates")
+
+
+def _knowledge_inspect(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import store as storelib
+
+    record = storelib.inspect_candidate(project, args.candidate_id)
+    return _report(args, record, "\n".join([
+        f"{record['candidate_id']}  {record['status']}  {record['kind']}",
+        f"  claim: {record['claim']}",
+        f"  target: {record['target_hint']}",
+        f"  evidence: {len(record['evidence'])} item(s)",
+    ]))
+
+
+def _knowledge_capture(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import candidate as candidatelib
+    from ainative.knowledge import store as storelib
+
+    if args.dry_run:
+        record = candidatelib.capture(**_knowledge_capture_fields(args, project))
+        return _report(
+            args, {"dry_run": True, "candidate": record},
+            f"(dry-run \u2014 nothing was written)\n"
+            f"{record['candidate_id']}  PENDING  {record['kind']}  "
+            f"{record['target_hint']}")
+    stored = storelib.append(project, candidatelib.capture(**_knowledge_capture_fields(args, project)))
+    return _report(args, stored,
+                   f"{stored['candidate_id']}  PENDING  {stored['kind']}  "
+                   f"{stored['target_hint']}")
+
+
+def _knowledge_transition(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import candidate as candidatelib
+    from ainative.knowledge import store as storelib
+
+    target = args.to_status.upper()
+    if args.dry_run:
+        current = storelib.inspect_candidate(project, args.candidate_id)
+        updated = candidatelib.transition(current, target)
+        return _report(
+            args, {"dry_run": True, "candidate_id": updated["candidate_id"],
+                   "from": current["status"], "to": updated["status"]},
+            f"(dry-run \u2014 nothing was written)\n"
+            f"{updated['candidate_id']}  {current['status']} -> {updated['status']}")
+    updated = storelib.set_status(project, args.candidate_id, target, actor=args.actor)
+    return _report(args, updated, f"{updated['candidate_id']}  {updated['status']}")
+
+
+def _cmd_knowledge(args: argparse.Namespace) -> int:
+    # Lazy imports live in the helpers above, like every other lifecycle
+    # command: importing this module must never pull in more than the command
+    # needs (ADR-0009 section 1), and knowledge must never touch
+    # `ainative_workplane` (ADR-0011).
+    from ainative.knowledge.errors import KnowledgeError
+
+    handlers = {
+        "status": _knowledge_status,
+        "candidates": _knowledge_candidates,
+        "inspect": _knowledge_inspect,
+        "capture": _knowledge_capture,
+        "transition": _knowledge_transition,
+    }
+    try:
+        return handlers[args.knowledge_command](args, _project(args))
+    except KnowledgeError as refusal:
+        return _knowledge_refuse(args, refusal)
+    except KeyError:
+        raise AssertionError(f"unknown knowledge command: {args.knowledge_command}")
+
+
+def _context_merge_list(current: list, additions) -> list:
+    merged = list(current)
+    for item in additions or ():
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _context_status(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import working as workinglib
+
+    state, outcome = workinglib.load(project)
+    checkpoints = workinglib.list_checkpoints(project)
+    pending = workinglib.pending_candidate_ids(project)
+    record = {"outcome": outcome,
+              "working": state.to_record() if state is not None else None,
+              "checkpoints": len(checkpoints),
+              "pending_candidates": len(pending)}
+    if state is None:
+        text = "working: empty — nothing saved"
+    elif outcome == workinglib.EXPIRED:
+        text = f"working: EXPIRED — task: {state.task or '-'} | next: {state.next_action or '-'}"
+    elif outcome == workinglib.RECOVERED:
+        text = (f"working: RECOVERED from backup — task: {state.task or '-'} | "
+                f"next: {state.next_action or '-'} (save to persist)")
+    else:
+        text = (f"working: current — task: {state.task or '-'} | "
+                f"next: {state.next_action or '-'} | checkpoints: {len(checkpoints)} | "
+                f"pending candidates: {len(pending)}")
+    return _report(args, record, text)
+
+
+def _context_save(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import working as workinglib
+
+    current, _ = workinglib.load(project)
+    state = current if current is not None else workinglib.WorkingState()
+    if args.task is not None:
+        state.task = args.task
+    if args.goal is not None:
+        state.goal = args.goal
+    if args.plan is not None:
+        state.plan = args.plan
+    if args.result is not None:
+        state.test_results = args.result
+    if args.next_action is not None:
+        state.next_action = args.next_action
+    state.files_touched = _context_merge_list(state.files_touched, args.touches)
+    state.current_hypotheses = _context_merge_list(state.current_hypotheses, args.hypotheses)
+    state.confirmed_findings = _context_merge_list(state.confirmed_findings, args.findings)
+    state.open_questions = _context_merge_list(state.open_questions, args.questions)
+    state.tests_run = _context_merge_list(state.tests_run, args.tests)
+    state.blockers = _context_merge_list(state.blockers, args.blockers)
+    state.candidate_ids = _context_merge_list(state.candidate_ids, args.candidates)
+    if args.ttl is not None:
+        if args.ttl < 0:
+            from ainative.knowledge.errors import KnowledgeError
+            raise KnowledgeError("KNOWLEDGE_MALFORMED", "ttl must be >= 0")
+        from datetime import datetime, timedelta, timezone
+        state.expires_at = (datetime.now(timezone.utc)
+                            + timedelta(seconds=args.ttl)).isoformat()
+    if args.dry_run:
+        validated = workinglib.WorkingState.from_record(state.to_record())
+        return _report(args, {"dry_run": True, "working": validated.to_record()},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"task: {validated.task or '-'} | next: {validated.next_action or '-'}")
+    from ainative.knowledge.provenance import observe_repository
+    state.repository_head = observe_repository(project).get("git_head")
+    saved = workinglib.save(project, state)
+    return _report(args, saved.to_record(),
+                   f"working saved — task: {saved.task or '-'} | next: {saved.next_action or '-'}")
+
+
+def _context_checkpoint(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import working as workinglib
+
+    if args.dry_run:
+        state, _ = workinglib.load(project)
+        if state is None:
+            from ainative.knowledge.errors import KnowledgeError
+            raise KnowledgeError("KNOWLEDGE_NOT_FOUND", "nothing to checkpoint")
+        pending = workinglib.pending_candidate_ids(project)
+        return _report(args, {"dry_run": True, "pending_candidates": len(pending)},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"would checkpoint task: {state.task or '-'} "
+                       f"({len(pending)} pending candidate(s))")
+    record = workinglib.checkpoint(project, reason=args.reason)
+    return _report(args, record,
+                   f"{record['checkpoint_id']}  {record['reason']}  "
+                   f"{len(record['pending_candidate_ids'])} pending candidate(s)")
+
+
+def _context_restore(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import working as workinglib
+
+    if args.dry_run:
+        record, status = workinglib.describe_restore(project, args.checkpoint_id)
+    else:
+        record, status = workinglib.restore(project, args.checkpoint_id)
+    prefix = "(dry-run \u2014 nothing was written)\n" if args.dry_run else ""
+    return _report(args, {"dry_run": bool(args.dry_run), "checkpoint_id": record["checkpoint_id"],
+                          "status": status},
+                   f"{prefix}{record['checkpoint_id']}  {status}")
+
+
+def _context_clear(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import working as workinglib
+    from ainative.knowledge.errors import KnowledgeError
+
+    if not args.yes and not args.dry_run:
+        raise KnowledgeError("KNOWLEDGE_CONFIRMATION_REQUIRED",
+                             "clear discards transient working state; "
+                             "use --yes or --dry-run")
+    if args.dry_run:
+        existing = [path.name for path in
+                    (workinglib.working_path(project), workinglib.backup_path(project))
+                    if path.is_file()]
+        existing += [f"checkpoints/{item['checkpoint_id']}.json"
+                     for item in workinglib.list_checkpoints(project)]
+        return _report(args, {"dry_run": True, "would_remove": sorted(existing)},
+                       "(dry-run \u2014 nothing was written)\n" +
+                       ("\n".join(f"  would remove {name}" for name in sorted(existing))
+                        or "  nothing to remove"))
+    removed = workinglib.clear(project)
+    return _report(args, {"removed": removed},
+                   "working cleared" if removed else "working already empty")
+
+
+def _cmd_context(args: argparse.Namespace) -> int:
+    from ainative.knowledge.errors import KnowledgeError
+
+    handlers = {
+        "status": _context_status,
+        "save": _context_save,
+        "checkpoint": _context_checkpoint,
+        "restore": _context_restore,
+        "clear": _context_clear,
+    }
+    try:
+        return handlers[args.context_command](args, _project(args))
+    except KnowledgeError as refusal:
+        return _knowledge_refuse(args, refusal)
+    except KeyError:
+        raise AssertionError(f"unknown context command: {args.context_command}")
 LIFECYCLE_COMMANDS = {
     "init": _cmd_init,
+    "knowledge": _cmd_knowledge,
+    "context": _cmd_context,
     "profile": _cmd_profile,
     "status": _cmd_status,
     "doctor": _cmd_doctor,
