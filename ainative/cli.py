@@ -223,6 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
     stale.add_argument("--actor", default="cli", help="who raises reviews")
     _add_common(stale)
 
+    consolidate = knowledge_commands.add_parser(
+        "consolidate", help="Advisory collect/cluster/verify/review cycle.")
+    _add_common(consolidate, dry_run=False)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -788,6 +792,22 @@ def _knowledge_stale(args: argparse.Namespace, project) -> int:
     elif findings:
         lines.append("  re-run with --apply to raise review candidates")
     return _report(args, record, "\n".join(lines))
+def _knowledge_consolidate(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import consolidation as consolidationlib
+
+    report = consolidationlib.consolidate(project)
+    collected = report["collected"]
+    lines = [f"consolidation (advisory \u2014 nothing was written): "
+             f"{collected['candidates']} live candidate(s), "
+             f"{len(report['clusters'])} cluster(s), "
+             f"{collected['conflicting']} conflicting, "
+             f"{len(report['stale_findings'])} stale finding(s)"]
+    for cluster in report["clusters"]:
+        lines.append(f"  cluster ({cluster['size']}): {', '.join(cluster['members'])}")
+    for proposal in report["recommendations"]:
+        lines.append(f"  {proposal['recommendation']:<10} {proposal['candidate_id']}: "
+                     f"{proposal['reason']}")
+    return _report(args, report, "\n".join(lines))
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -809,6 +829,7 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "reconcile": _knowledge_reconcile,
         "retrieve": _knowledge_retrieve,
         "stale": _knowledge_stale,
+        "consolidate": _knowledge_consolidate,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))
