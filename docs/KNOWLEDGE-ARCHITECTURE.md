@@ -99,6 +99,8 @@ never duplicates the candidate.
 
 ## 5. Promotion rules
 
+> QUARANTINE (external review, accepted): this path is STANDARD / UNVERIFIED until V3.3.1 trust integration. Human `--approve` is an audited declaration, not an unforgeable authority property. Do not merge as final.
+
 Operations: `ADD MERGE REFINE SUPERSEDE REJECT DEFER`. `CONFLICT` is a
 candidate state, not an operation. Pipeline: resolve target, load
 canonical current state, generate minimal patch, validate expected base

@@ -55,6 +55,8 @@ copy becomes the backup before the new bytes land.
 
 ## 4. Promoting a candidate (preview-first, human-approved)
 
+> QUARANTINE: same status as above. Preview-first and base digests make this a careful local patch tool, not production-trust-qualified promotion.
+
 ```text
 ainative knowledge transition <id> READY_FOR_PROMOTION --actor <triage-owner>
 ainative knowledge promote <id> --operation ADD --dry-run
