@@ -239,6 +239,18 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd.add_argument("--actor", default="cli", help="who imports")
     _add_common(import_cmd, dry_run=False)
 
+    export = knowledge_commands.add_parser(
+        "export", help="Dump candidates plus audit as JSON (read-only).")
+    _add_common(export, dry_run=False)
+
+    reset_derived = knowledge_commands.add_parser(
+        "reset-derived", help="Delete persisted derived state (none by design).")
+    _add_common(reset_derived)
+
+    rebuild = knowledge_commands.add_parser(
+        "rebuild", help="Recompute derived state from canonical sources.")
+    _add_common(rebuild, dry_run=False)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -844,6 +856,36 @@ def _knowledge_import(args: argparse.Namespace, project) -> int:
         lines.append(f"  refused: {entry['claim'][:70]} ({entry['reason']})")
     record = {"apply": bool(args.apply), **outcome}
     return _report(args, record, "\n".join(lines))
+def _knowledge_export(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import store as storelib
+
+    record = storelib.export(project)
+    return _report(args, record,
+                   f"export: {len(record['candidates'])} candidate(s), "
+                   f"{len(record['audit'])} audit event(s)")
+
+
+def _knowledge_reset_derived(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    if args.dry_run:
+        return _report(args, {"dry_run": True, "removed": [],
+                              "note": "no persisted derived state"},
+                       "(dry-run \u2014 nothing was written)\n"
+                       "reset-derived: nothing persisted, nothing to remove")
+    outcome = maintenancelib.reset_derived(project)
+    return _report(args, outcome,
+                   f"reset-derived: {len(outcome['removed'])} removed; "
+                   f"{outcome['note']}")
+
+
+def _knowledge_rebuild(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    outcome = maintenancelib.rebuild(project)
+    return _report(args, outcome,
+                   f"rebuild: {outcome['knowledge_items']} knowledge item(s), "
+                   f"{outcome['indexed_paths']} indexed path(s)")
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -867,6 +909,9 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "stale": _knowledge_stale,
         "consolidate": _knowledge_consolidate,
         "import": _knowledge_import,
+        "export": _knowledge_export,
+        "reset-derived": _knowledge_reset_derived,
+        "rebuild": _knowledge_rebuild,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))

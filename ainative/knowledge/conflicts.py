@@ -54,6 +54,12 @@ def detect(project: Path, candidate: dict) -> list[dict]:
         findings.append({"class": DUPLICATE_CONFLICT,
                          "with": hit["path"],
                          "explanation": hit["explanation"]})
+    for hit in dedupelib.scan_canonical_related(project, candidate):
+        findings.append({"class": SEMANTIC_AMBIGUITY,
+                         "with": hit["path"],
+                         "explanation": f"canonical line overlaps "
+                                        f"{hit['score']:.2f}: a human must separate "
+                                        "contradiction from refinement"})
     return findings
 
 

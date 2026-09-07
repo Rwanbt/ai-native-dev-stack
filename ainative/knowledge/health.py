@@ -20,12 +20,16 @@ class HealthReport:
     candidates: int = 0
     by_status: dict[str, int] = field(default_factory=dict)
     audit_events: int = 0
+    conflicting: int = 0
+    promoted: int = 0
     detail: str = "no knowledge store"
 
     def to_record(self) -> dict[str, Any]:
         return {"state": self.state, "candidates": self.candidates,
                 "by_status": dict(self.by_status),
-                "audit_events": self.audit_events, "detail": self.detail}
+                "audit_events": self.audit_events,
+                "conflicting": self.conflicting, "promoted": self.promoted,
+                "detail": self.detail}
 
     def render(self) -> str:
         if self.state == EMPTY:
@@ -34,7 +38,8 @@ class HealthReport:
             return f"knowledge: CORRUPTED — {self.detail}"
         parts = [f"{status} {count}" for status, count in sorted(self.by_status.items())]
         return (f"knowledge: {self.state} — {self.candidates} candidate(s) "
-                f"({', '.join(parts)}), {self.audit_events} audit event(s)")
+                f"({', '.join(parts)}), {self.audit_events} audit event(s), "
+                f"{self.conflicting} conflicting, {self.promoted} promoted")
 
 
 def build(project: Path) -> HealthReport:
@@ -55,6 +60,8 @@ def build(project: Path) -> HealthReport:
         by_status[record["status"]] = by_status.get(record["status"], 0) + 1
     return HealthReport(state=HEALTHY, candidates=len(records),
                         by_status=by_status, audit_events=len(events),
+                        conflicting=by_status.get("CONFLICTING", 0),
+                        promoted=by_status.get("PROMOTED", 0),
                         detail="store readable")
 
 

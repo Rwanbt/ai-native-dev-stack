@@ -167,6 +167,14 @@ def record_audit(project: Path, *, candidate_id: str, operation: str,
     return event
 
 
+def export(project: Path) -> dict:
+    """Full candidate plus audit dump for backup or rotation. Read-only."""
+
+    from .provenance import now
+    return {"exported_at": now(), "candidates": read_all(Path(project)),
+            "audit": read_audit(Path(project))}
+
+
 def read_audit(project: Path) -> list[dict]:
     events: list[dict] = []
     for number, line in enumerate(_read_lines(audit_path(project), "audit"), 1):
@@ -184,4 +192,4 @@ __all__ = ["KNOWLEDGE_DIRNAME", "CANDIDATES_FILE", "AUDIT_FILE",
            "MAX_CANDIDATES", "MAX_AUDIT_EVENTS", "knowledge_dir",
            "candidates_path", "audit_path", "read_all", "append",
            "list_candidates", "inspect_candidate", "update_record", "set_status",
-           "record_audit", "read_audit"]
+           "record_audit", "read_audit", "export"]

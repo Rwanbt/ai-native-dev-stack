@@ -88,6 +88,46 @@ def find_candidate_relations(candidate: dict, records: list[dict]) -> list[dict]
     return sorted(relations, key=lambda item: -item["score"])
 
 
+MIN_RELATED_TOKENS = 5
+
+
+def scan_canonical_related(project: Path, candidate: dict) -> list[dict]:
+    """High-overlap canonical lines that are NOT verbatim (E2E-03 class).
+
+    A verbatim hit is DUPLICATE (handled by `scan_canonical`). A close
+    line on the same target may contradict or refine the claim — only a
+    human can tell, so it returns SEMANTIC_AMBIGUITY material, never a
+    verdict. Threshold equals the candidate-level ambiguity bound.
+    """
+
+    wanted = normalize(candidate.get("claim", ""))
+    if not wanted:
+        return []
+    hits = []
+    for path in canonical_search_paths(project, candidate.get("target_hint", "")):
+        try:
+            if path.stat().st_size > MAX_SCAN_BYTES:
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            tokens = normalize(line).split()
+            if len(tokens) < MIN_RELATED_TOKENS:
+                continue
+            score = token_overlap(candidate["claim"], line)
+            if score >= OVERLAP_AMBIGUOUS:
+                try:
+                    locator = path.resolve().relative_to(
+                        Path(project).resolve()).as_posix()
+                except ValueError:
+                    locator = path.name
+                hits.append({"path": locator, "score": round(score, 3),
+                             "excerpt": line.strip()[:100]})
+                break
+    return hits
+
+
 def canonical_search_paths(project: Path, target_hint: str) -> list[Path]:
     """Repo files a target hint maps to. Bounded, read-only, no following."""
 
@@ -133,4 +173,5 @@ def scan_canonical(project: Path, candidate: dict) -> list[dict]:
 __all__ = ["NEW", "DUPLICATE", "REFINEMENT", "SUPERSEDES", "CONFLICTS", "UNRELATED",
            "OVERLAP_AMBIGUOUS", "MAX_SCAN_TARGETS", "MAX_SCAN_BYTES",
            "normalize", "token_overlap", "classify_pair",
-           "find_candidate_relations", "canonical_search_paths", "scan_canonical"]
+           "find_candidate_relations", "canonical_search_paths", "scan_canonical",
+           "scan_canonical_related", "MIN_RELATED_TOKENS"]

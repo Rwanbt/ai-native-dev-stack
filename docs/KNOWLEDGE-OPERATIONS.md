@@ -102,6 +102,35 @@ wrappers around these commands; no lifecycle logic in the wrapper.
 
 ## 7. Retention and TTL
 
+## 8. Observability (telemetry-free, local only)
+
+Knowledge health (all `--json` scriptable):
+
+```text
+ainative knowledge status        # store state, counts by status, conflicting/promoted
+ainative doctor --json           # .knowledge section: same report inside lifecycle diagnosis
+ainative knowledge export        # full candidates plus audit dump (backup/rotate remedy)
+```
+
+Agent effectiveness signals (derived locally, never phoned home): repeated
+corrections surface as DUPLICATE findings in `verify`/`consolidate`;
+promotion rate, conflict counts and stale findings come from
+`consolidate --json` plus `stale --json`; retrieval cost is reported per
+bundle (`total_bytes`, `estimated_tokens`, `dropped`). Performance
+guardrails live in `tests/test_knowledge_perf.py` — loose by design;
+tighten only from measured distributions.
+
+## 9. Migration and rollback
+
+Adoption is additive: existing Vault notes, `AGENTS.md`, `AI_CONTEXT.md`
+and session files are never reformatted or moved by any knowledge
+command. Canonical promotion is recovered with Git (every promotion is
+one minimal, attributed patch — `git log -S <candidate_id>` finds it).
+Derived state needs no backup (recomputed on demand; `reset-derived`
+plus `rebuild` prove it). Transient state is discarded with
+`context clear --yes`. A full store refuses with `KNOWLEDGE_CONFLICT`
+naming the remedy: `knowledge export` to a file, then rotate.
+
 | Store | Bound | Enforced by |
 |---|---|---|
 | working lists | 200 items, 1000 chars/item, 4000 chars/text | `WorkingState.from_record` |
