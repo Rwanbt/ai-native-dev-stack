@@ -236,6 +236,9 @@ jobs:
       - name: Working continuity checkpoints divergence recovery
         run: python -m unittest tests.test_knowledge_continuity -v
 
+      - name: Support conflict dedup normative order
+        run: python -m unittest tests.test_knowledge_resolution -v
+
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
