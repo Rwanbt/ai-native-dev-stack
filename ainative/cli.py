@@ -185,6 +185,14 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--target", default=None, help="explicit target file")
     promote.add_argument("--anchor", default=None, help="anchor text for edits")
     promote.add_argument("--actor", default="cli", help="who promotes")
+    promote.add_argument("--mode", default="TRUSTED_OPERATOR_CEREMONY",
+                         help="approval mode (V3.3.1 S1)")
+    promote.add_argument("--capability", default="UNKNOWN",
+                         help="QUAL-T result: SEPARATED, NOT_SEPARATED or UNKNOWN")
+    promote.add_argument("--authority-ref", dest="authority_ref", default=None,
+                         help="existing Work Plane authority reference")
+    promote.add_argument("--attestation-ref", dest="attestation_ref", default=None,
+                         help="external attestation reference")
     _add_common(promote)
 
     reject = knowledge_commands.add_parser(
@@ -729,11 +737,21 @@ def _knowledge_promote(args: argparse.Namespace, project) -> int:
                           operation="APPROVE",
                           detail={**approval, "base_digest": args.expect_base},
                           actor=args.actor)
+    approval = {"mode": args.mode, "capability_status": args.capability,
+                "evidence_status": ("VERIFIED_WORKPLANE_AUTHORITY"
+                                    if args.mode == "VERIFIED_WORKPLANE_AUTHORITY"
+                                    else ("EXTERNALLY_ATTESTED"
+                                          if args.mode == "EXTERNAL_ATTESTATION"
+                                          else "UNVERIFIED_CEREMONY")),
+                "authority_ref": args.authority_ref,
+                "attestation_ref": args.attestation_ref}
     outcome = promotionlib.apply_promotion(
         project, args.candidate_id, operation=operation, actor=args.actor,
-        target=args.target, anchor_text=args.anchor, expect_base=args.expect_base)
+        target=args.target, anchor_text=args.anchor, expect_base=args.expect_base,
+        approval=approval)
     return _report(args, outcome,
-                   f"{outcome['candidate_id']}  PROMOTED -> {outcome['target']}")
+                   f"{outcome['candidate_id']}  PROMOTED -> {outcome['target']} "
+                   f"[{outcome['trust_qualification']}]")
 
 
 def _knowledge_reject(args: argparse.Namespace, project) -> int:
@@ -761,7 +779,14 @@ def _knowledge_reconcile(args: argparse.Namespace, project) -> int:
                        f"(dry-run \u2014 nothing was written)\n"
                        f"{decision['candidate_id']}  {decision['state']}")
     outcome = promotionlib.reconcile(project, args.candidate_id)
-    return _report(args, outcome, f"{outcome['candidate_id']}  {outcome['state']}")
+    full = promotionlib.describe_full(project, args.candidate_id)
+    record = {**outcome, "lifecycle_state": full["lifecycle_state"],
+              "representation_health": full["representation_health"],
+              "trust_qualification": full["trust_qualification"]}
+    return _report(args, record,
+                   f"{outcome['candidate_id']}  {outcome['state']} | "
+                   f"{full['lifecycle_state']}/{full['representation_health']}/"
+                   f"{full['trust_qualification']}")
 def _knowledge_retrieve(args: argparse.Namespace, project) -> int:
     from ainative.knowledge import providers as providerslib
     from ainative.knowledge import retrieval as retrievallib
