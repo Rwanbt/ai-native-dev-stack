@@ -75,11 +75,32 @@ class StatesTest(unittest.TestCase):
                     self.assertEqual(caught.exception.code, code)
 
     def test_Terminal_HasNoExit(self):
-        for state in ("REJECTED", "RETRACTED", "PROMOTED"):
+        for state in ("REJECTED", "RETRACTED", "SUPERSEDED",
+                      "PROMOTION_FAILED"):
             with self.subTest(state=state):
                 self.assertTrue(stateslib.is_terminal(state))
                 with self.assertRaises(KnowledgeError):
                     stateslib.transition(state, "REVIEWABLE")
+
+    def test_Terminal_MatchesEdgelessStates(self):
+        for state in stateslib.STATES:
+            with self.subTest(state=state):
+                self.assertEqual(stateslib.is_terminal(state),
+                                 stateslib.EDGES[state] == set())
+
+    def test_Promoted_NotTerminal_SupersedeGated(self):
+        self.assertFalse(stateslib.is_terminal("PROMOTED"))
+        with self.assertRaises(KnowledgeError) as caught:
+            stateslib.transition("PROMOTED", "SUPERSEDED")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_GATE_CLOSED")
+
+    def test_GatedCurrent_CannotSelfExit(self):
+        with self.assertRaises(KnowledgeError) as caught:
+            stateslib.transition("APPLIED_PENDING_COMMIT", "REVIEWABLE")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_GATE_CLOSED")
+        with self.assertRaises(KnowledgeError) as caught:
+            stateslib.transition("APPROVED", "REJECTED")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_GATE_CLOSED")
 
     def test_NoSetterExists(self):
         exposed = [name for name in dir(stateslib)

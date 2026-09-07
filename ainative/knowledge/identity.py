@@ -25,7 +25,9 @@ ROOTS = frozenset({MODULE, PROJECT, REPO, GLOBAL})
 REPO_AREAS = frozenset({"build", "ci", "docs", "release", "security",
                         "testing", "tooling", "workflow", "dependencies"})
 
-ENGINE_VOCABULARY_VERSION = 1
+# Bumped to 2 when the composition atoms (max, min, default, per,
+# every, no, new) joined the seed: persisted keys depend on it.
+ENGINE_VOCABULARY_VERSION = 2
 IDENTITY_GRAMMAR_VERSION = 1
 ENGINE_VOCABULARY = frozenset({
     "retry", "timeout", "budget", "cache", "ttl", "limit", "policy",

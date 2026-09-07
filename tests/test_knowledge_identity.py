@@ -63,6 +63,9 @@ class IdentityTest(unittest.TestCase):
                 with self.assertRaises(KnowledgeError):
                     _parse(bad)
 
+    def test_Vocabulary_VersionedAtTwo(self):
+        self.assertEqual(identitylib.ENGINE_VOCABULARY_VERSION, 2)
+
     def test_MinimumShape_FourParts(self):
         with self.assertRaises(KnowledgeError) as caught:
             _parse("module/payment/retry")

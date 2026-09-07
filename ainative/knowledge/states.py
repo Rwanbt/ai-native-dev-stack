@@ -36,7 +36,10 @@ STATES = frozenset({PENDING, IDENTITY_UNCONFIRMED, NEEDS_SUPPORT,
                     PROMOTION_FAILED, PROMOTED, REJECTED, SUPERSEDED,
                     RETRACTED})
 
-TERMINAL = frozenset({PROMOTED, REJECTED, SUPERSEDED, RETRACTED,
+# TERMINAL mirrors the edge table: exactly the states with no
+# outgoing edge. PROMOTED is not terminal: B3 S29 maintenance may
+# supersede it. Tested by test_Terminal_MatchesEdgelessStates.
+TERMINAL = frozenset({REJECTED, SUPERSEDED, RETRACTED,
                       PROMOTION_FAILED})
 
 GATED = frozenset({APPROVED, PROMOTION_IN_PROGRESS, APPLIED_PENDING_COMMIT,
@@ -78,9 +81,9 @@ def transition(current: str, target: str) -> str:
         raise KnowledgeError("KNOWLEDGE_ILLEGAL_STATE_TRANSITION",
                              f"illegal transition {current} -> {target}",
                              current=current, target=target)
-    if target in GATED:
+    if target in GATED or current in GATED:
         raise KnowledgeError("KNOWLEDGE_GATE_CLOSED",
-                             f"{target} needs B3/K5 authorization")
+                             f"{current} -> {target} needs B3/K5 authorization")
     return target
 
 
