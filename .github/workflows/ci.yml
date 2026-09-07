@@ -233,6 +233,9 @@ jobs:
       - name: Semantic isolation cross-project leakage zero
         run: python -m unittest tests.test_knowledge_isolation -v
 
+      - name: Working continuity checkpoints divergence recovery
+        run: python -m unittest tests.test_knowledge_continuity -v
+
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
