@@ -1,6 +1,6 @@
 # ADR-0012 — Knowledge Lifecycle K0-B freeze adoption
 
-- Status: proposed (docs-only; no runtime change)
+- Status: accepted
 - Date: 2026-09-07
 - Constrains: `docs/K0-B1-*.md`, `docs/K0-B2-*.md`, `docs/K0-B3-*.md`,
   `docs/K0-B-FREEZE-INDEX.md`, all future Knowledge Lifecycle work.
@@ -76,3 +76,7 @@ already; the gate stays closed until K1–K4 measure.
 - Any future relaxation (target-class auto-promotion, threshold
   hardening, shared-scope defaults) needs its own ADR with evaluation
   evidence — never a silent flag flip.
+- The `ainative/knowledge/` package path is reclaimed by the
+  B1-conformant implementation (PR2+). The V1 prototype branch must be
+  renamed before any rebase onto main; a silent path collision on
+  rebase is a merge hazard.

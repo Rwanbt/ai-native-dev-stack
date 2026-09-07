@@ -158,6 +158,7 @@ APPROVED
 PROMOTION_IN_PROGRESS
 APPLIED_PENDING_COMMIT
 PROMOTION_FAILED
+PROMOTED
 REJECTED
 SUPERSEDED
 RETRACTED
@@ -173,6 +174,7 @@ PROMOTION_IN_PROGRESS
 APPLIED_PENDING_COMMIT
 PROMOTED
 PROMOTION_FAILED
+SUPERSEDED
 ```
 
 are implemented only under B3/K5.
@@ -200,6 +202,9 @@ ILLEGAL_STATE_TRANSITION
 ## 6. identity_key — root-specific grammar
 
 Generic `<root>/<scope>/<concept>` grammar is forbidden.
+
+Minimum shape: `<root>/<head>/<namespace>/<property>` — four parts.
+Shorter keys are refused.
 
 ### Module
 
@@ -269,6 +274,9 @@ secret-bearing identifiers
 raw user sentences
 unbounded model-generated taxonomy
 ```
+
+Hyphen-composed segments resolve atom-wise: every `-`-separated atom
+MUST itself be vocabulary (e.g. `max-attempts` = `max` + `attempts`).
 
 ---
 
