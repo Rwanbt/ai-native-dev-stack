@@ -151,6 +151,28 @@ def build_parser() -> argparse.ArgumentParser:
     transition.add_argument("--actor", default="cli", help="who decides")
     _add_common(transition)
 
+    classify = knowledge_commands.add_parser(
+        "classify", help="Set the kind and move PENDING to CLASSIFIED.")
+    classify.add_argument("candidate_id", help="kc_... identifier")
+    classify.add_argument("--kind", default=None, help="override the kind")
+    classify.add_argument("--actor", default="cli", help="who decides")
+    _add_common(classify)
+
+    evidence = knowledge_commands.add_parser(
+        "evidence", help="Append one evidence item to a candidate.")
+    evidence.add_argument("candidate_id", help="kc_... identifier")
+    evidence.add_argument("--type", required=True, help="evidence type")
+    evidence.add_argument("--locator", default="", help="where it was observed")
+    evidence.add_argument("--digest", default=None, help="content digest")
+    evidence.add_argument("--actor", default="cli", help="who observed")
+    _add_common(evidence)
+
+    verify = knowledge_commands.add_parser(
+        "verify", help="Replay dedupe, conflict and evidence checks.")
+    verify.add_argument("candidate_id", help="kc_... identifier")
+    verify.add_argument("--actor", default="cli", help="who reviews")
+    _add_common(verify)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -530,6 +552,62 @@ def _knowledge_transition(args: argparse.Namespace, project) -> int:
     return _report(args, updated, f"{updated['candidate_id']}  {updated['status']}")
 
 
+def _knowledge_classify(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    if args.dry_run:
+        from ainative.knowledge import store as storelib
+        from ainative.knowledge.classifier import suggest
+
+        current = storelib.inspect_candidate(project, args.candidate_id)
+        chosen = current["kind"] if args.kind is None else args.kind.upper()
+        suggestion = suggest(current["claim"], module=current["scope"].get("module"))
+        return _report(args, {"dry_run": True, "candidate_id": current["candidate_id"],
+                              "kind": chosen, "suggestion": suggestion},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"{current['candidate_id']}  PENDING -> CLASSIFIED as {chosen} "
+                       f"(suggested: {suggestion['kind']})")
+    updated = reviewlib.classify_candidate(project, args.candidate_id,
+                                           kind=args.kind, actor=args.actor)
+    return _report(args, updated, f"{updated['candidate_id']}  CLASSIFIED as {updated['kind']}")
+
+
+def _knowledge_evidence(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import evidence as evidencelib
+
+    item = {"type": args.type.upper(), "locator": args.locator or "",
+            "digest": args.digest}
+    if args.dry_run:
+        from ainative.knowledge.candidate import validate_evidence_item
+        validated = validate_evidence_item(item)
+        return _report(args, {"dry_run": True, "evidence": validated},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"would append {validated['type']} {validated['locator'] or '-'}")
+    stored, added = evidencelib.add_evidence(project, args.candidate_id, item,
+                                             actor=args.actor)
+    verb = "appended" if added else "already present"
+    return _report(args, stored,
+                   f"{stored['candidate_id']}  evidence {verb} "
+                   f"({len(stored['evidence'])} item(s))")
+
+
+def _render_verify(report: dict, prefix: str) -> str:
+    lines = [f"{prefix}{report['candidate_id']}  {report['from']} -> {report['to']}",
+             f"  evidence: {report['sufficiency_reason']}"]
+    for finding in report["findings"]:
+        lines.append(f"  {finding['class']} with {finding['with']}: {finding['explanation']}")
+    return "\n".join(lines)
+
+
+def _knowledge_verify(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    if args.dry_run:
+        preview = reviewlib.preview_verify(project, args.candidate_id)
+        return _report(args, {"dry_run": True, **preview},
+                       _render_verify(preview, "(dry-run \u2014 nothing was written)\n"))
+    report = reviewlib.verify_candidate(project, args.candidate_id, actor=args.actor)
+    return _report(args, report, _render_verify(report, ""))
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -543,6 +621,9 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "inspect": _knowledge_inspect,
         "capture": _knowledge_capture,
         "transition": _knowledge_transition,
+        "classify": _knowledge_classify,
+        "evidence": _knowledge_evidence,
+        "verify": _knowledge_verify,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))

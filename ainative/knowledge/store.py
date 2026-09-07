@@ -115,24 +115,37 @@ def inspect_candidate(project: Path, candidate_id: str) -> dict:
     raise KnowledgeError("KNOWLEDGE_NOT_FOUND", f"unknown candidate {candidate_id!r}")
 
 
+def update_record(project: Path, candidate_id: str, new_record: dict, *,
+                  operation: str, detail: dict | None = None,
+                  actor: str = "unknown") -> dict:
+    """Validate, swap and audit one candidate. Field edits go through here."""
+
+    validated = validate_candidate(new_record)
+    records = read_all(project)
+    for index, item in enumerate(records):
+        if item["candidate_id"] == candidate_id:
+            records[index] = validated
+            _write_all(project, records)
+            record_audit(project, candidate_id=candidate_id,
+                         operation=operation,
+                         detail=detail or {},
+                         actor=actor)
+            return validated
+    raise KnowledgeError("KNOWLEDGE_NOT_FOUND", f"unknown candidate {candidate_id!r}")
+
+
 def set_status(project: Path, candidate_id: str, to_status: str,
                *, actor: str) -> dict:
     """Apply a state-machine transition and audit it. Pure transition rules."""
 
     from .candidate import transition as apply_transition
 
-    records = read_all(project)
-    for index, item in enumerate(records):
-        if item["candidate_id"] == candidate_id:
-            updated = apply_transition(item, to_status)
-            records[index] = updated
-            _write_all(project, records)
-            record_audit(project, candidate_id=candidate_id,
+    current = inspect_candidate(project, candidate_id)
+    updated = apply_transition(current, to_status)
+    return update_record(project, candidate_id, updated,
                          operation="TRANSITION",
-                         detail={"from": item["status"], "to": to_status},
+                         detail={"from": current["status"], "to": to_status},
                          actor=actor)
-            return updated
-    raise KnowledgeError("KNOWLEDGE_NOT_FOUND", f"unknown candidate {candidate_id!r}")
 
 
 def record_audit(project: Path, *, candidate_id: str, operation: str,
@@ -170,5 +183,5 @@ def read_audit(project: Path) -> list[dict]:
 __all__ = ["KNOWLEDGE_DIRNAME", "CANDIDATES_FILE", "AUDIT_FILE",
            "MAX_CANDIDATES", "MAX_AUDIT_EVENTS", "knowledge_dir",
            "candidates_path", "audit_path", "read_all", "append",
-           "list_candidates", "inspect_candidate", "set_status",
+           "list_candidates", "inspect_candidate", "update_record", "set_status",
            "record_audit", "read_audit"]
