@@ -38,8 +38,12 @@ def unwrap(raw: Any) -> dict[str, Any]:
     if raw.get("record_type") not in RECORD_TYPES:
         raise KnowledgeError("KNOWLEDGE_MALFORMED",
                              f"unknown record type {raw.get('record_type')!r}")
+    if not isinstance(raw.get("record_id"), str) or not raw.get("record_id"):
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "record_id must be nonempty")
+    if not isinstance(raw.get("payload"), dict):
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "payload must be an object")
     return {"schema_version": version, "record_type": raw["record_type"],
-            "record_id": raw.get("record_id"), "payload": raw.get("payload", {})}
+            "record_id": raw["record_id"], "payload": raw["payload"]}
 
 
 __all__ = ["SCHEMA_VERSION", "RECORD_TYPES", "wrap", "unwrap"]

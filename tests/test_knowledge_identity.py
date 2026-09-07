@@ -63,14 +63,33 @@ class IdentityTest(unittest.TestCase):
                 with self.assertRaises(KnowledgeError):
                     _parse(bad)
 
-    def test_SecretBearing_Refused(self):
+    def test_MinimumShape_FourParts(self):
         with self.assertRaises(KnowledgeError) as caught:
-            identitylib.parse_identity("module/payment/api_key/x",
-                                       modules=frozenset({"payment"}),
-                                       project_slug=SLUG,
-                                       vocabulary=frozenset({"api_key", "x"}))
-        self.assertIn(caught.exception.code,
-                      ("KNOWLEDGE_IDENTITY_KEY_INVALID",))
+            _parse("module/payment/retry")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_IDENTITY_KEY_INVALID")
+
+    def test_ComposedSegment_ResolvesAtomWise(self):
+        identity = _parse("module/payment/retry/max-attempts")
+        self.assertEqual(identity.scope, "module/payment")
+        with self.assertRaises(KnowledgeError):
+            _parse("module/payment/retry/max-flibbertigibbet")
+
+    def test_Screen_DetectsCredentialClasses(self):
+        self.assertEqual(identitylib.screen_secret("api_key = abc"), "credential")
+        self.assertEqual(identitylib.screen_secret("use bearer token"), "credential")
+        self.assertEqual(
+            identitylib.screen_secret("-----BEGIN PRIVATE KEY-----"),
+            "private-key")
+        self.assertIsNone(identitylib.screen_secret("retry attempts"))
+        self.assertIsNone(identitylib.screen_secret(None))
+
+    def test_SecretShapedSegment_Refused(self):
+        # "bearer" fails vocabulary first: with a bounded taxonomy the
+        # screen is defense in depth here, proven directly above and on
+        # free-text fields (tombstone reason). Either refusal blocks it.
+        with self.assertRaises(KnowledgeError) as caught:
+            _parse("module/payment/rule/bearer")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_IDENTITY_KEY_INVALID")
 
     def test_Attest_ExplicitActor(self):
         identity = _parse("module/payment/retry/attempts")

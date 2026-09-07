@@ -30,14 +30,49 @@ class StatesTest(unittest.TestCase):
         with self.assertRaises(KnowledgeError):
             stateslib.transition("LIMBO", "PENDING")
 
-    def test_MutationTargets_GateClosed(self):
+    def test_IllegalBeatsGateClosed(self):
+        with self.assertRaises(KnowledgeError) as caught:
+            stateslib.transition("REJECTED", "APPROVED")
+        self.assertEqual(caught.exception.code,
+                         "KNOWLEDGE_ILLEGAL_STATE_TRANSITION")
+
+    def test_MutationChain_EdgesExistButGateClosed(self):
+        state = "REVIEWABLE"
         for target in ("APPROVED", "PROMOTION_IN_PROGRESS",
-                       "APPLIED_PENDING_COMMIT", "PROMOTED",
-                       "PROMOTION_FAILED", "SUPERSEDED"):
+                       "APPLIED_PENDING_COMMIT", "PROMOTED"):
             with self.subTest(target=target):
                 with self.assertRaises(KnowledgeError) as caught:
-                    stateslib.transition("REVIEWABLE", target)
+                    stateslib.transition(state, target)
                 self.assertEqual(caught.exception.code, "KNOWLEDGE_GATE_CLOSED")
+                state = target
+
+    def test_GateClosed_ExitsFailedNotInvalid(self):
+        from ainative.knowledge.errors import KnowledgeError as KError
+        try:
+            stateslib.transition("REVIEWABLE", "APPROVED")
+        except KError as error:
+            self.assertEqual(error.exit_code, 1)
+
+    def test_ReviewableRow_ExactLegality(self):
+        for target, code in (("APPROVED", "KNOWLEDGE_GATE_CLOSED"),
+                             ("PROMOTION_IN_PROGRESS",
+                              "KNOWLEDGE_ILLEGAL_STATE_TRANSITION"),
+                             ("APPLIED_PENDING_COMMIT",
+                              "KNOWLEDGE_ILLEGAL_STATE_TRANSITION"),
+                             ("PROMOTED", "KNOWLEDGE_ILLEGAL_STATE_TRANSITION"),
+                             ("PROMOTION_FAILED",
+                              "KNOWLEDGE_ILLEGAL_STATE_TRANSITION"),
+                             ("SUPERSEDED", "KNOWLEDGE_ILLEGAL_STATE_TRANSITION"),
+                             ("CONFLICTING", None),
+                             ("DUPLICATE", None)):
+            with self.subTest(target=target):
+                if code is None:
+                    self.assertEqual(stateslib.transition("REVIEWABLE", target),
+                                     target)
+                else:
+                    with self.assertRaises(KnowledgeError) as caught:
+                        stateslib.transition("REVIEWABLE", target)
+                    self.assertEqual(caught.exception.code, code)
 
     def test_Terminal_HasNoExit(self):
         for state in ("REJECTED", "RETRACTED", "PROMOTED"):

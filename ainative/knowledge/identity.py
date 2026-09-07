@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from .errors import KnowledgeError
@@ -25,6 +26,7 @@ REPO_AREAS = frozenset({"build", "ci", "docs", "release", "security",
                         "testing", "tooling", "workflow", "dependencies"})
 
 ENGINE_VOCABULARY_VERSION = 1
+IDENTITY_GRAMMAR_VERSION = 1
 ENGINE_VOCABULARY = frozenset({
     "retry", "timeout", "budget", "cache", "ttl", "limit", "policy",
     "rule", "format", "path", "scope", "target", "source", "index",
@@ -34,28 +36,35 @@ ENGINE_VOCABULARY = frozenset({
     "recovery", "lock", "digest", "claim", "support", "tombstone",
     "attempts", "delay", "backoff", "size", "count", "window",
     "retention", "expiry", "access", "visibility", "owner",
+    "max", "min", "default", "per", "every", "no", "new",
 })
 
 _SEGMENT = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
 MAX_SEGMENTS = 6
 MAX_KEY_CHARS = 253
 
-# Quarantine v0 screen (B1 S7/S8/S11): secret-bearing identifiers are
-# refused before anything else. The fail-closed quarantine with an
+# Quarantine v0 screen (B1 S7/S8/S11): free-text secret-bearing content
+# is refused before persistence. Case handling is explicit per pattern:
+# PEM headers are matched case-sensitively (spec casing), the rest
+# case-insensitively. The fail-closed quarantine with an
 # unavailable-scanner refusal is PR4; this builtin is always available
 # and is superseded, not bypassed, by it.
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)(api[_-]?key|client[_-]?secret|secret[_-]?key|auth[_-]?token|"
-               r"access[_-]?token|password|passwd|bearer)\s*[:=]"),
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY"),
+    ("credential", re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|"
+                              r"secret[_-]?key|auth[_-]?token|access[_-]?token|"
+                              r"password|passwd|bearer)\b")),
+    ("private-key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY")),
 )
 
 
-def _secret_hit(text: str) -> str | None:
-    lowered = text.lower()
-    for pattern in _SECRET_PATTERNS:
-        if pattern.search(lowered):
-            return pattern.pattern[:40]
+def screen_secret(text: str) -> str | None:
+    """First matching secret class, or None. Pure function."""
+
+    if not isinstance(text, str):
+        return None
+    for label, pattern in _SECRET_PATTERNS:
+        if pattern.search(text):
+            return label
     return None
 
 
@@ -71,7 +80,7 @@ class Identity:
     def to_record(self) -> dict[str, Any]:
         return {"identity_key": self.key, "root": self.root,
                 "segments": list(self.segments), "scope": self.scope,
-                "identity_key_grammar_version": 1}
+                "identity_key_grammar_version": IDENTITY_GRAMMAR_VERSION}
 
 
 def parse_identity(key: Any, *, modules: frozenset[str] | set[str],
@@ -89,9 +98,9 @@ def parse_identity(key: Any, *, modules: frozenset[str] | set[str],
         raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
                              f"identity key exceeds {MAX_KEY_CHARS} chars")
     parts = key.split("/")
-    if len(parts) < 3:
+    if len(parts) < 4:
         raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
-                             "identity key needs root plus at least two segments")
+                             "identity key needs root, head, namespace and property (minimum four parts)")
     if len(parts) > MAX_SEGMENTS + 1:
         raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
                              f"identity key exceeds {MAX_SEGMENTS} segments")
@@ -127,12 +136,16 @@ def parse_identity(key: Any, *, modules: frozenset[str] | set[str],
         scope = "global"
     vocab = set(vocabulary)
     for segment in rest:
-        if segment not in vocab:
+        if segment in vocab:
+            continue
+        atoms = segment.split("-")
+        if len(atoms) < 2 or not all(atom in vocab for atom in atoms):
             raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
                                  f"segment {segment!r} outside the versioned "
                                  f"engineering vocabulary "
-                                 f"(v{ENGINE_VOCABULARY_VERSION})")
-    hit = _secret_hit(key)
+                                 f"(v{ENGINE_VOCABULARY_VERSION}); hyphen-composed "
+                                 "segments resolve atom-wise")
+    hit = screen_secret(key)
     if hit is not None:
         raise KnowledgeError("KNOWLEDGE_IDENTITY_KEY_INVALID",
                              "identity key fails audit-safety screening")
@@ -144,12 +157,11 @@ def attest(identity: Identity, *, actor: str) -> dict[str, Any]:
 
     if not isinstance(actor, str) or not actor:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "confirmation needs an actor")
-    from datetime import datetime, timezone
     return {**identity.to_record(), "confirmed_by": actor,
             "confirmed_at": datetime.now(timezone.utc).isoformat()}
 
 
 __all__ = ["MODULE", "PROJECT", "REPO", "GLOBAL", "ROOTS", "REPO_AREAS",
            "ENGINE_VOCABULARY_VERSION", "ENGINE_VOCABULARY",
-           "MAX_SEGMENTS", "MAX_KEY_CHARS", "Identity", "parse_identity",
-           "attest"]
+           "MAX_SEGMENTS", "MAX_KEY_CHARS", "IDENTITY_GRAMMAR_VERSION",
+           "Identity", "parse_identity", "screen_secret", "attest"]

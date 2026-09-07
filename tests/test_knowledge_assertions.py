@@ -41,6 +41,14 @@ class AssertionsTest(unittest.TestCase):
         with self.assertRaises(KnowledgeError):
             assertionslib.assertion_hash(_identity(), "module/payment", 3.5)
 
+    def test_Tombstone_SecretReason_Refused(self):
+        digest = assertionslib.assertion_hash(_identity(), "module/payment", 3)
+        with self.assertRaises(KnowledgeError) as caught:
+            assertionslib.tombstone(digest["assertion_hash"],
+                                    reason="leaked api_key = abc",
+                                    actor="lead")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_MALFORMED")
+
     def test_Tombstone_HoldsNoRawText(self):
         digest = assertionslib.assertion_hash(_identity(), "module/payment", 3)
         marker = assertionslib.tombstone(digest["assertion_hash"],
@@ -67,6 +75,13 @@ class EnvelopeTest(unittest.TestCase):
     def test_UnknownType_Refused(self):
         with self.assertRaises(KnowledgeError):
             envelopelib.wrap("starship", "x", {})
+
+    def test_Unwrap_MirrorsWrapStrictness(self):
+        with self.assertRaises(KnowledgeError):
+            envelopelib.unwrap({"schema_version": 1, "record_type": "candidate"})
+        with self.assertRaises(KnowledgeError):
+            envelopelib.unwrap({"schema_version": 1, "record_type": "candidate",
+                                "record_id": "x", "payload": [1, 2]})
 
 
 if __name__ == "__main__":

@@ -13,8 +13,6 @@ write path in this module).
 
 from __future__ import annotations
 
-from typing import Any
-
 from .errors import KnowledgeError
 
 PENDING = "PENDING"
@@ -44,21 +42,26 @@ TERMINAL = frozenset({PROMOTED, REJECTED, SUPERSEDED, RETRACTED,
 GATED = frozenset({APPROVED, PROMOTION_IN_PROGRESS, APPLIED_PENDING_COMMIT,
                    PROMOTED, PROMOTION_FAILED, SUPERSEDED})
 
+# Mutation-half edges come from B3 S15 (promotion transaction) and S17
+# (APPLIED_PENDING_COMMIT outcomes) plus S29 maintenance (SUPERSEDED).
+# They are encoded so legality is total, but every one of them refuses
+# with KNOWLEDGE_GATE_CLOSED until B3/K5 authorizes execution.
 EDGES = {
     PENDING: {IDENTITY_UNCONFIRMED, REJECTED, RETRACTED},
     IDENTITY_UNCONFIRMED: {NEEDS_SUPPORT, REJECTED, RETRACTED},
     NEEDS_SUPPORT: {REVIEWABLE, REJECTED, RETRACTED},
-    REVIEWABLE: {CONFLICTING, DUPLICATE, REJECTED, RETRACTED},
+    REVIEWABLE: {CONFLICTING, DUPLICATE, APPROVED, REJECTED, RETRACTED},
     CONFLICTING: {REVIEWABLE, DUPLICATE, REJECTED, RETRACTED},
     DUPLICATE: {REJECTED, RETRACTED},
-    REJECTED: set(),
-    RETRACTED: set(),
-    PROMOTED: set(),
+    APPROVED: {PROMOTION_IN_PROGRESS, REJECTED, RETRACTED},
+    PROMOTION_IN_PROGRESS: {APPLIED_PENDING_COMMIT, PROMOTION_FAILED,
+                            REJECTED, RETRACTED},
+    APPLIED_PENDING_COMMIT: {PROMOTED, PROMOTION_FAILED, REVIEWABLE},
+    PROMOTED: {SUPERSEDED},
     SUPERSEDED: set(),
     PROMOTION_FAILED: set(),
-    APPROVED: set(),
-    PROMOTION_IN_PROGRESS: set(),
-    APPLIED_PENDING_COMMIT: set(),
+    REJECTED: set(),
+    RETRACTED: set(),
 }
 
 
@@ -71,13 +74,13 @@ def transition(current: str, target: str) -> str:
     if target not in STATES:
         raise KnowledgeError("KNOWLEDGE_MALFORMED",
                              f"unknown state {target!r}")
-    if target in GATED:
-        raise KnowledgeError("KNOWLEDGE_GATE_CLOSED",
-                             f"{target} needs B3/K5 authorization")
     if target not in EDGES[current]:
         raise KnowledgeError("KNOWLEDGE_ILLEGAL_STATE_TRANSITION",
                              f"illegal transition {current} -> {target}",
                              current=current, target=target)
+    if target in GATED:
+        raise KnowledgeError("KNOWLEDGE_GATE_CLOSED",
+                             f"{target} needs B3/K5 authorization")
     return target
 
 
