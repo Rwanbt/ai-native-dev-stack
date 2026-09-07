@@ -348,6 +348,24 @@ def append_tombstone(project: Path, assertion_hash_value: str, *, reason: str,
     return _guarded(project, _run)
 
 
+def _append_audit_event(paths: dict, event: dict, *, limits: Bounds) -> None:
+    """Append one validated event. Guard must be held. Never nests guards."""
+
+    envelopes = _read_envelopes(paths["audit"])
+    events = [envelope["payload"] for envelope in envelopes
+              if envelope["record_type"] == "audit"]
+    if len(events) >= limits.max_audit_count:
+        raise KnowledgeError("KNOWLEDGE_STORE_FULL", "audit store full")
+    tombstones = [envelope["payload"] for envelope in envelopes
+                  if envelope["record_type"] == "tombstone"]
+    events.append(event)
+    payload = "".join(json.dumps(wrap("audit", item["event_id"], item),
+                                 sort_keys=True) + "\n" for item in events)
+    payload += "".join(json.dumps(wrap("tombstone", item["assertion_hash"], item),
+                                  sort_keys=True) + "\n" for item in tombstones)
+    statelib.write_atomic(paths["audit"], payload)
+
+
 def record_audit(project: Path, *, operation: str, actor: str,
                  candidate_id: str | None = None,
                  detail: dict | None = None,
@@ -364,22 +382,49 @@ def record_audit(project: Path, *, operation: str, actor: str,
                  "detail": validate_audit_detail(detail or {},
                                                    scanner=scanner),
                  "actor": actor, "timestamp": now()}
-        paths = _paths(Path(project))
-        envelopes = _read_envelopes(paths["audit"])
-        events = [envelope["payload"] for envelope in envelopes
-                  if envelope["record_type"] == "audit"]
-        if len(events) >= limits.max_audit_count:
-            raise KnowledgeError("KNOWLEDGE_STORE_FULL", "audit store full")
-        tombstones = [envelope["payload"] for envelope in envelopes
-                      if envelope["record_type"] == "tombstone"]
-        events.append(event)
-        payload = "".join(json.dumps(wrap("audit", item["event_id"], item),
-                                     sort_keys=True) + "\n" for item in events)
-        payload += "".join(json.dumps(wrap("tombstone", item["assertion_hash"], item),
-                                      sort_keys=True) + "\n" for item in tombstones)
-        statelib.write_atomic(paths["audit"], payload)
+        _append_audit_event(_paths(Path(project)), event, limits=limits)
         return event
 
+    return _guarded(project, _run)
+
+
+def transition_state(project: Path, candidate_id: str, target: str, *,
+                     actor: str, reason: str = "",
+                     bounds: Bounds | None = None,
+                     scanner: Any = None) -> dict:
+    """Move one candidate through the deterministic machine, audited.
+
+    Legality (including B3/K5 gating) comes from states.transition; the
+    reason is screened like any free text. This is the only state-write
+    primitive; the CLI exposes a subset of its targets.
+    """
+
+    from . import states as transition_states
+    limits = bounds or Bounds()
+
+    def _run() -> dict:
+        quarantinelib.check(purpose="transition gate", scanner=scanner)
+        if reason:
+            quarantinelib.check(reason, purpose="transition reason",
+                                scanner=scanner)
+        paths = _paths(Path(project))
+        existing = _read_lines(paths["candidates"], "candidate")
+        for index, item in enumerate(existing):
+            if item.get("candidate_id") == candidate_id:
+                updated = dict(item)
+                updated["state"] = transition_states.transition(
+                    item.get("state", ""), target)
+                updated["updated_at"] = now()
+                existing[index] = updated
+                _rewrite(paths["candidates"], "candidate", existing)
+                event = {"event_id": statelib.new_identifier("evt"),
+                         "candidate_id": candidate_id, "operation": "transition",
+                         "detail": {"from": item.get("state"),
+                                    "to": updated["state"]},
+                         "actor": actor, "timestamp": now()}
+                _append_audit_event(paths, event, limits=limits)
+                return updated
+        raise KnowledgeError("KNOWLEDGE_NOT_FOUND", "unknown candidate")
     return _guarded(project, _run)
 
 
@@ -431,5 +476,5 @@ def storage_status(project: Path, *, bounds: Bounds | None = None) -> dict:
 __all__ = ["CANDIDATES_FILE", "SUPPORTS_FILE", "AUDIT_FILE",
            "validate_candidate", "validate_support", "validate_audit_detail",
            "append_candidate", "append_support", "append_tombstone",
-           "record_audit", "list_candidates", "get_candidate",
+           "record_audit", "transition_state", "list_candidates", "get_candidate",
            "list_supports", "list_audit", "storage_status"]
