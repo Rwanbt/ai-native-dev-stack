@@ -47,7 +47,7 @@ class AssertionsTest(unittest.TestCase):
             assertionslib.tombstone(digest["assertion_hash"],
                                     reason="leaked api_key = abc",
                                     actor="lead")
-        self.assertEqual(caught.exception.code, "KNOWLEDGE_MALFORMED")
+        self.assertEqual(caught.exception.code, "KNOWLEDGE_SECRET_REFUSED")
 
     def test_Tombstone_HoldsNoRawText(self):
         digest = assertionslib.assertion_hash(_identity(), "module/payment", 3)

@@ -64,7 +64,8 @@ def assertion_hash(identity: Identity, scope: str, value: Any) -> dict[str, Any]
             "hash_algorithm": HASH_ALGORITHM}
 
 
-def tombstone(assertion_hash_value: str, *, reason: str, actor: str) -> dict[str, Any]:
+def tombstone(assertion_hash_value: str, *, reason: str, actor: str,
+              scanner: Any = None) -> dict[str, Any]:
     """Rejection marker over a hash. Hashes only, never raw text."""
 
     if not isinstance(assertion_hash_value, str) or not assertion_hash_value:
@@ -75,9 +76,8 @@ def tombstone(assertion_hash_value: str, *, reason: str, actor: str) -> dict[str
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "tombstone needs an actor")
     if len(reason) > 500:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "tombstone reason too long")
-    if screen_secret(reason) is not None:
-        raise KnowledgeError("KNOWLEDGE_MALFORMED",
-                             "tombstone reason fails secret screening")
+    from . import quarantine as quarantinelib
+    quarantinelib.check(reason, purpose="tombstone reason", scanner=scanner)
     return {"assertion_hash": assertion_hash_value, "reason": reason,
             "actor": actor}
 
