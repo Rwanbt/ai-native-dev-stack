@@ -98,21 +98,58 @@ class PolicyTest(unittest.TestCase):
             stored = storelib.append_candidate(project, _candidate("c1"))
             self.assertEqual(stored["candidate_id"], "c1")
 
-    def test_GitMissing_ProceedsUnchecked(self):
+    def test_GitMissing_PersistenceRefused(self):
         with tempfile.TemporaryDirectory() as directory:
             project = _project(directory)
-            import subprocess as subprocesslib
-            original = subprocesslib.run
+            original = controlpaths._git
+            controlpaths._git = lambda *args, **kwargs: None
+            try:
+                with self.assertRaises(KnowledgeError) as caught:
+                    storelib.append_candidate(project, _candidate("c1"))
+            finally:
+                controlpaths._git = original
+            self.assertEqual(caught.exception.code,
+                             "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID")
 
-            def _missing(*args, **kwargs):
-                raise OSError("no git here")
+    def test_IndeterminateCheckIgnore_PersistenceRefused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = _project(directory)
+            from subprocess import CompletedProcess
+            original = controlpaths._git
 
-            subprocesslib.run = _missing
+            def _fatal(*args, **kwargs):
+                if "rev-parse" in args:
+                    return CompletedProcess(args, 0, str(project), "")
+                return CompletedProcess(args, 128, "", "fatal: bad config")
+
+            controlpaths._git = _fatal
+            try:
+                with self.assertRaises(KnowledgeError) as caught:
+                    storelib.append_candidate(project, _candidate("c1"))
+            finally:
+                controlpaths._git = original
+            self.assertEqual(caught.exception.code,
+                             "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID")
+
+    def test_NonGitRoot_PersistenceRefused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = _project(directory)
+            from subprocess import CompletedProcess
+            original = controlpaths._git
+
+            def _norepo(*args, **kwargs):
+                return CompletedProcess(args, 128, "", "not a git repository")
+
+            controlpaths._git = _norepo
             try:
                 report = controlpaths.ensure_policy(project)
+                self.assertFalse(report["enforced"])
+                with self.assertRaises(KnowledgeError) as caught:
+                    storelib.record_audit(project, operation="x", actor="t")
             finally:
-                subprocesslib.run = original
-            self.assertFalse(report["enforced"])
+                controlpaths._git = original
+            self.assertEqual(caught.exception.code,
+                             "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID")
 
     def test_PlantedSymlink_RefusedWithoutSideEffects(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -130,6 +167,7 @@ class PolicyTest(unittest.TestCase):
             self.assertFalse(outside.exists())
 
 
+@unittest.skipUnless(GIT, "git executable required")
 class ConcurrencyTest(unittest.TestCase):
     def test_ConcurrentWriters_ZeroLoss(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -154,6 +192,7 @@ class ConcurrencyTest(unittest.TestCase):
             self.assertEqual(len(audits), workers * per_worker)
 
 
+@unittest.skipUnless(GIT, "git executable required")
 class CrashTest(unittest.TestCase):
     def test_TempLeftover_Ignored(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -211,6 +250,7 @@ class CrashTest(unittest.TestCase):
             self.assertEqual(caught.exception.code, "KNOWLEDGE_STORE_CORRUPTED")
 
 
+@unittest.skipUnless(GIT, "git executable required")
 class BoundsTest(unittest.TestCase):
     def test_OversizeClaim_Refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -249,6 +289,7 @@ class BoundsTest(unittest.TestCase):
             self.assertEqual(report["counts"]["candidates"], 8)
 
 
+@unittest.skipUnless(GIT, "git executable required")
 class TraversalTest(unittest.TestCase):
     def test_LocatorTraversal_Refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -273,6 +314,7 @@ class TraversalTest(unittest.TestCase):
             self.assertEqual(caught.exception.code, "KNOWLEDGE_NOT_FOUND")
 
 
+@unittest.skipUnless(GIT, "git executable required")
 class QuarantineTest(unittest.TestCase):
     def test_SecretClaim_RefusedBeforeAnyWrite(self):
         with tempfile.TemporaryDirectory() as directory:

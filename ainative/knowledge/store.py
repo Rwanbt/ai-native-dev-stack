@@ -240,7 +240,7 @@ def _total_bytes(project: Path) -> int:
 
 def _guarded(project: Path, fn):
     root = Path(project)
-    controlpaths.ensure_policy(root)
+    controlpaths.require_policy(root)
     controlpaths.ensure_contained(root)
     with project_guard(root):
         return fn()

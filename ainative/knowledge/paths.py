@@ -56,31 +56,50 @@ def _is_ignored(work_tree: Path, path: Path) -> bool | None:
     except ValueError:
         return False
     result = _git("-C", str(work_tree), "check-ignore", "-q", relative)
-    if result is None:
+    if result is None or result.returncode not in (0, 1):
         return None
     return result.returncode == 0
 
 
 def ensure_policy(project: Path) -> dict[str, Any]:
-    """Enforce the bidirectional ignore policy. Refuses on violation."""
+    """Inspect the bidirectional ignore policy. Diagnostic only."""
 
     root = Path(project)
     work_tree = _work_tree(root)
     if work_tree is None:
-        return {"enforced": False, "reason": "no git work tree; nothing stageable"}
+        return {"enforced": False, "reason": "not inside a Git repository"}
     state_ignored = _is_ignored(work_tree, state_dir(root))
     audit_ignored = _is_ignored(work_tree, audit_dir(root))
     if state_ignored is None or audit_ignored is None:
         return {"enforced": False, "reason": "git check-ignore unavailable"}
-    if state_ignored is not True:
+    return {"enforced": True, "state_ignored": state_ignored,
+            "audit_ignored": audit_ignored}
+
+
+def require_policy(project: Path) -> dict[str, Any]:
+    """Gate every persistence on positively verified policy. Fail closed.
+
+    Three outcomes, no silent fallback: outside a Git repository, or an
+    unverifiable policy, refuses CONTROL_PATH_POLICY_INVALID; only a
+    positively verified configuration allows the write. A non-Git local
+    mode would be an explicitly separate mode, never this fallback.
+    """
+
+    root = Path(project)
+    report = ensure_policy(root)
+    if report["enforced"] is not True:
+        raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
+                             f"control path policy unverified ({report['reason']}); "
+                             "refusing write")
+    if report["state_ignored"] is not True:
         raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
                              f"{STATE_DIRNAME.as_posix()} MUST be Git-ignored; "
                              "refusing Local Control write")
-    if audit_ignored is not False:
+    if report["audit_ignored"] is not False:
         raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
                              f"{AUDIT_DIRNAME.as_posix()} MUST NOT be Git-ignored; "
                              "refusing audit write")
-    return {"enforced": True}
+    return report
 
 
 def _no_planted_link(root: Path, directory: Path) -> None:
@@ -115,4 +134,4 @@ def ensure_contained(project: Path) -> None:
 
 
 __all__ = ["STATE_DIRNAME", "AUDIT_DIRNAME", "state_dir", "audit_dir",
-           "ensure_policy", "ensure_contained"]
+           "ensure_policy", "require_policy", "ensure_contained"]
