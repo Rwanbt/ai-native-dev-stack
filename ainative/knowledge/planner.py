@@ -214,6 +214,13 @@ def _collect(sources: list[dict], focus_scopes: list[str],
             dropped.append({"locator": locator, "reason": "shared scope denied"})
             continue
         domain = _authority_of(str(raw.get("kind", "")))
+        claimed = raw.get("authority_domain")
+        if claimed is not None:
+            if claimed not in DOMAINS:
+                dropped.append({"locator": locator,
+                                "reason": "invalid authority domain"})
+                continue
+            domain = claimed
         tier = str(raw.get("tier") or _tier_of(domain, raw.get("knowledge_type")))
         if tier not in (TIER_A, TIER_B, TIER_C, TIER_D):
             dropped.append({"locator": locator, "reason": "unknown tier"})
