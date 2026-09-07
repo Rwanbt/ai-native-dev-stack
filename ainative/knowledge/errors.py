@@ -10,6 +10,11 @@ ERROR_EXIT_CODES = {
     "KNOWLEDGE_IDENTITY_KEY_INVALID": EXIT_INVALID_REQUEST,
     "KNOWLEDGE_ILLEGAL_STATE_TRANSITION": EXIT_INVALID_REQUEST,
     "KNOWLEDGE_GATE_CLOSED": EXIT_FAILED,
+    "KNOWLEDGE_NOT_FOUND": EXIT_FAILED,
+    "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_CANDIDATE_TOO_LARGE": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_STORE_FULL": EXIT_FAILED,
+    "KNOWLEDGE_STORE_CORRUPTED": EXIT_FAILED,
 }
 
 
@@ -30,6 +35,12 @@ class KnowledgeError(Exception):
 
     def to_record(self) -> dict:
         return {"error": self.code, "message": self.message, "detail": self.detail}
+
+    def __reduce__(self):
+        # Multiprocessing replays exceptions through (code, message):
+        # Exception.args holds (message,) alone, which cannot rebuild
+        # this two-argument refusal. Detail does not cross processes.
+        return (KnowledgeError, (self.code, self.message))
 
     def __str__(self) -> str:
         return f"{self.code}: {self.message}"
