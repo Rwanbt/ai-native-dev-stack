@@ -227,6 +227,18 @@ def build_parser() -> argparse.ArgumentParser:
         "consolidate", help="Advisory collect/cluster/verify/review cycle.")
     _add_common(consolidate, dry_run=False)
 
+    import_cmd = knowledge_commands.add_parser(
+        "import", help="Stage harness learnings as candidates (preview first).")
+    import_cmd.add_argument("--harness", required=True,
+                            help="claude, codex, opencode, gemini or cursor")
+    import_cmd.add_argument("--file", required=True, help="learnings file to read")
+    import_cmd.add_argument("--format", default="auto",
+                            help="auto, json or md")
+    import_cmd.add_argument("--apply", action="store_true",
+                            help="stage the previewed items (default: preview only)")
+    import_cmd.add_argument("--actor", default="cli", help="who imports")
+    _add_common(import_cmd, dry_run=False)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -808,6 +820,30 @@ def _knowledge_consolidate(args: argparse.Namespace, project) -> int:
         lines.append(f"  {proposal['recommendation']:<10} {proposal['candidate_id']}: "
                      f"{proposal['reason']}")
     return _report(args, report, "\n".join(lines))
+def _knowledge_import(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import imports as importslib
+
+    source = Path(args.file)
+    if args.apply:
+        outcome = importslib.apply(project, source, harness=args.harness,
+                                   actor=args.actor, format=args.format)
+        lines = [f"imported from {args.harness}: {len(outcome['created'])} staged, "
+                 f"{len(outcome['refused'])} refused"]
+    else:
+        outcome = importslib.preview(source, harness=args.harness,
+                                     format=args.format)
+        lines = [f"(preview \\u2014 nothing was written) {args.harness}: "
+                 f"{outcome['parsed']} parsed, {len(outcome['staged'])} stageable, "
+                 f"{len(outcome['refused'])} refused; re-run with --apply to stage"]
+    for entry in outcome.get("staged", [])[:10]:
+        label = entry["candidate_id"] if "candidate_id" in entry else entry["claim"][:70]
+        lines.append(f"  staged: {label}")
+    for entry in outcome.get("created", []):
+        lines.append(f"  staged: {entry}")
+    for entry in outcome.get("refused", []):
+        lines.append(f"  refused: {entry['claim'][:70]} ({entry['reason']})")
+    record = {"apply": bool(args.apply), **outcome}
+    return _report(args, record, "\n".join(lines))
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -830,6 +866,7 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "retrieve": _knowledge_retrieve,
         "stale": _knowledge_stale,
         "consolidate": _knowledge_consolidate,
+        "import": _knowledge_import,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))
