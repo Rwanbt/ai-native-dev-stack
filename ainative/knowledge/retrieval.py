@@ -22,12 +22,15 @@ from ainative.lifecycle.paths import resolve_within
 
 from . import store as storelib
 from .candidate import TERMINAL, validate_locator
+from .providers import RetrievalProviders
 from .errors import KnowledgeError
 from .provenance import now
 
 CANONICAL = "CANONICAL PROJECT KNOWLEDGE"
 UNVERIFIED = "UNVERIFIED CANDIDATE"
+RETRIEVED = "RETRIEVED NOTE"
 EXTERNAL = "EXTERNAL CONTENT"
+ALLOWED_PROVIDER_LABELS = frozenset({RETRIEVED, EXTERNAL})
 
 WEIGHTS = {"AGENTS.md": 100, "AI_CONTEXT.md": 80, "ADR": 70,
            "AI_SUMMARY.md": 60, "candidate": 20}
@@ -167,7 +170,8 @@ def _locator(root: Path, path: Path) -> str:
 
 
 def candidate_items(project: Path, focus_paths: list[str],
-                    excerpt_limit: int, max_candidates: int) -> list[BundleItem]:
+                    excerpt_limit: int, max_candidates: int,
+                    graph_distance: dict[str, int] | None = None) -> list[BundleItem]:
     """Non-terminal candidates as explicitly UNVERIFIED notes. Read-only."""
 
     try:
@@ -182,6 +186,10 @@ def candidate_items(project: Path, focus_paths: list[str],
             continue
         module = record["scope"].get("module") or ""
         bonus = SCOPE_BONUS if module and any(module in focus for focus in foci) else 0
+        if module and graph_distance:
+            structural = [25 - 5 * dist for path, dist in graph_distance.items()
+                          if module in path]
+            bonus += max([value for value in structural if value > 0] or [0])
         strong = 10 if record["status"] in ("SUPPORTED", "READY_FOR_PROMOTION") else 0
         excerpt = (f"[{record['status']}/{record['kind']}] {record['claim']}"
                    f" ({len(record['evidence'])} evidence)")
@@ -207,6 +215,7 @@ class ContextBundle:
     total_bytes: int = 0
     estimated_tokens: int = 0
     recall: dict[str, Any] = field(default_factory=dict)
+    structural: dict[str, Any] = field(default_factory=dict)
     generated_at: str = ""
 
     def to_record(self) -> dict[str, Any]:
@@ -215,7 +224,8 @@ class ContextBundle:
                 "items": [item.to_record() for item in self.items],
                 "dropped": self.dropped, "total_bytes": self.total_bytes,
                 "estimated_tokens": self.estimated_tokens,
-                "recall": self.recall, "generated_at": self.generated_at}
+                "recall": self.recall, "structural": self.structural,
+                "generated_at": self.generated_at}
 
     def render(self) -> str:
         lines = [f"context bundle: {len(self.items)} item(s), "
@@ -228,21 +238,90 @@ class ContextBundle:
             lines.append(f"         {first[:100]}")
         if self.recall.get("requested") and not self.recall.get("fulfilled"):
             lines.append(f"  recall unavailable: {self.recall.get('reason')}")
+        hints = (self.structural or {}).get("hints", [])
+        if hints:
+            lines.append(f"  structural hints: {', '.join(hints[:5])}")
+        elif (self.structural or {}).get("unavailable"):
+            lines.append(f"  structural unavailable: {self.structural['unavailable']}")
         return "\n".join(lines)
+
+
+def _structural_step(project: Path, focus_paths: list[str],
+                     providers: RetrievalProviders | None) -> tuple[dict, dict]:
+    """Neighbor distances plus bundle hints. Provider faults degrade, never raise."""
+
+    structural: dict[str, Any] = {"provider": None, "hints": [],
+                                  "unavailable": None}
+    distance: dict[str, int] = {}
+    graph = providers.graph if providers is not None else None
+    if graph is None:
+        return structural, distance
+    try:
+        structural["provider"] = graph.name
+        for focus in focus_paths:
+            for neighbor in graph.neighbors(focus, max_neighbors=10):
+                known = distance.get(neighbor.path)
+                if known is None or neighbor.distance < known:
+                    distance[neighbor.path] = neighbor.distance
+        structural["hints"] = sorted(distance, key=lambda path: distance[path])[:10]
+    except Exception as error:
+        structural["provider"] = graph.name
+        structural["unavailable"] = f"{type(error).__name__}: {error}"
+    return structural, distance
+
+
+def _semantic_step(project: Path, query: str | None,
+                   providers: RetrievalProviders | None,
+                   excerpt_limit: int, limit: int) -> tuple[list[BundleItem], dict]:
+    """Semantic recall on explicit intent only. Faults degrade, never raise."""
+
+    recall_record: dict[str, Any] = {"requested": query, "fulfilled": False,
+                                     "provider": None, "reason": None}
+    if not query:
+        return [], recall_record
+    semantic = providers.semantic if providers is not None else None
+    if semantic is None:
+        recall_record["reason"] = "no semantic provider registered"
+        return [], recall_record
+    try:
+        hits = semantic.search(query, limit=max(1, limit))
+    except Exception as error:
+        recall_record["reason"] = f"{semantic.name}: {type(error).__name__}: {error}"
+        return [], recall_record
+    items = []
+    for hit in hits:
+        label = EXTERNAL if hit.external else RETRIEVED
+        if label not in ALLOWED_PROVIDER_LABELS:
+            label = EXTERNAL
+        excerpt, truncated = hit.excerpt, False
+        if len(excerpt) > excerpt_limit:
+            excerpt, truncated = excerpt[:excerpt_limit], True
+        score = max(0, min(50, int(hit.score * 50)))
+        items.append(BundleItem(label=label, kind="semantic",
+                                locator=hit.locator, excerpt=excerpt,
+                                score=score, truncated=truncated))
+    recall_record.update(fulfilled=True, provider=semantic.name)
+    return items, recall_record
 
 
 def assemble(project: Path, *, focus: list[str] | None = None,
              task_type: str = "general", adr_refs: list[str] | None = None,
              recall: str | None = None,
-             budgets: Budgets | None = None) -> ContextBundle:
-    """Deterministic planner: collect, rank, bound. No semantic calls."""
+             budgets: Budgets | None = None,
+             providers: RetrievalProviders | None = None) -> ContextBundle:
+    """Deterministic planner: collect, rank, bound. Semantic only on intent."""
 
     limits = budgets or Budgets()
     focus_paths = focus or ["."]
+    structural, distance = _structural_step(Path(project), focus_paths, providers)
     items = deterministic_items(Path(project), focus_paths, adr_refs or [],
                                 limits.max_excerpt_chars)
     items += candidate_items(Path(project), focus_paths, limits.max_excerpt_chars,
-                             limits.max_candidates)
+                             limits.max_candidates, graph_distance=distance)
+    semantic_items, recall_record = _semantic_step(
+        Path(project), recall, providers, limits.max_excerpt_chars,
+        limits.max_candidates)
+    items += semantic_items
     items.sort(key=lambda item: -item.score)
     kept: list[BundleItem] = []
     used = 0
@@ -252,21 +331,16 @@ def assemble(project: Path, *, focus: list[str] | None = None,
             continue
         kept.append(item)
         used += size
-    recall_record: dict[str, Any] = {"requested": recall,
-                                     "fulfilled": False,
-                                     "provider": None,
-                                     "reason": None}
-    if recall:
-        recall_record["reason"] = "no semantic provider registered (K5b)"
     bundle = ContextBundle(project=str(project), focus=focus_paths,
                            task_type=task_type, items=kept,
                            dropped=len(items) - len(kept), total_bytes=used,
                            estimated_tokens=estimate_tokens(
                                "".join(item.excerpt for item in kept)),
-                           recall=recall_record, generated_at=now())
+                           recall=recall_record, structural=structural,
+                           generated_at=now())
     return bundle
 
 
-__all__ = ["CANONICAL", "UNVERIFIED", "EXTERNAL", "WEIGHTS", "SCOPE_BONUS",
+__all__ = ["CANONICAL", "UNVERIFIED", "RETRIEVED", "EXTERNAL", "WEIGHTS", "SCOPE_BONUS",
            "Budgets", "BundleItem", "estimate_tokens", "deterministic_items",
            "candidate_items", "ContextBundle", "assemble"]

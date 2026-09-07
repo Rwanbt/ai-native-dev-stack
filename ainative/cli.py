@@ -726,8 +726,14 @@ def _knowledge_reconcile(args: argparse.Namespace, project) -> int:
     outcome = promotionlib.reconcile(project, args.candidate_id)
     return _report(args, outcome, f"{outcome['candidate_id']}  {outcome['state']}")
 def _knowledge_retrieve(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import providers as providerslib
     from ainative.knowledge import retrieval as retrievallib
 
+    # Structural hints are free when the project ships graphify output;
+    # absence degrades silently inside the bundle, never here.
+    graph = providerslib.GraphFileProvider(project)
+    providers = providerslib.RetrievalProviders(
+        graph=graph if graph.available else None)
     budgets = retrievallib.Budgets(max_items=args.max_items,
                                    max_bytes=args.max_bytes,
                                    max_excerpt_chars=args.max_excerpt,
@@ -735,7 +741,8 @@ def _knowledge_retrieve(args: argparse.Namespace, project) -> int:
     bundle = retrievallib.assemble(project, focus=args.focus or ["."],
                                    task_type=args.task_type,
                                    adr_refs=args.adr or [],
-                                   recall=args.recall, budgets=budgets)
+                                   recall=args.recall, budgets=budgets,
+                                   providers=providers)
     return _report(args, bundle.to_record(), bundle.render())
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
