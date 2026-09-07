@@ -214,6 +214,15 @@ def build_parser() -> argparse.ArgumentParser:
                           default=5)
     _add_common(retrieve, dry_run=False)
 
+    stale = knowledge_commands.add_parser(
+        "stale", help="Report promoted knowledge a change may invalidate.")
+    stale.add_argument("--changed", action="append", default=[],
+                       help="project-relative changed path (repeatable)")
+    stale.add_argument("--apply", action="store_true",
+                       help="raise PENDING review candidates for the findings")
+    stale.add_argument("--actor", default="cli", help="who raises reviews")
+    _add_common(stale)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -744,6 +753,41 @@ def _knowledge_retrieve(args: argparse.Namespace, project) -> int:
                                    recall=args.recall, budgets=budgets,
                                    providers=providers)
     return _report(args, bundle.to_record(), bundle.render())
+def _knowledge_stale(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import providers as providerslib
+    from ainative.knowledge import staleness as stalenesslib
+
+    changed = list(args.changed or [])
+    note = None
+    if not changed:
+        changed, note = stalenesslib.git_changed(project)
+    graph = providerslib.GraphFileProvider(project)
+    providers = providerslib.RetrievalProviders(graph=graph if graph.available else None)
+    findings = stalenesslib.impacted(project, changed, graph=providers.graph)
+    record: dict = {"changed": changed, "findings": findings,
+                    "bridge": stalenesslib.bridge(project),
+                    "git_note": note, "applied": None}
+    lines = [f"stale scan: {len(changed)} changed path(s), "
+             f"{len(findings)} potentially stale promotion(s)"]
+    for finding in findings:
+        signals = ", ".join(f"{signal['signal']}:{signal['changed']}"
+                            for signal in finding["signals"])
+        lines.append(f"  {finding['candidate_id']}  {finding['state']}")
+        lines.append(f"    {finding['claim'][:90]}")
+        lines.append(f"    signals: {signals}")
+    if note and not changed:
+        lines.append(f"  note: {note} (pass --changed <path> explicitly)")
+    if args.dry_run and args.apply:
+        lines.append(f"  (dry-run \u2014 nothing was written) would raise up to "
+                     f"{len(findings)} review candidate(s), deduplicated at apply")
+    elif args.apply:
+        applied = stalenesslib.raise_reviews(project, findings, actor=args.actor)
+        record["applied"] = applied
+        lines.append(f"  review candidates: {len(applied['created'])} created, "
+                     f"{len(applied['skipped'])} skipped (already pending)")
+    elif findings:
+        lines.append("  re-run with --apply to raise review candidates")
+    return _report(args, record, "\n".join(lines))
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -764,6 +808,7 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "reject": _knowledge_reject,
         "reconcile": _knowledge_reconcile,
         "retrieve": _knowledge_retrieve,
+        "stale": _knowledge_stale,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))
