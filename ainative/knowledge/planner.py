@@ -111,13 +111,15 @@ class PlannedItem:
     byte_cost: int
     drift: bool = False
     reason_included: str = ""
+    provider: str = ""
 
     def to_record(self) -> dict[str, Any]:
         return {"source": self.source, "scope": self.scope,
                 "authority_domain": self.authority_domain, "tier": self.tier,
                 "freshness": self.freshness, "excerpt": self.excerpt,
                 "byte_cost": self.byte_cost, "drift": self.drift,
-                "reason_included": self.reason_included}
+                "reason_included": self.reason_included,
+                "provider": self.provider}
 
 
 @dataclass
@@ -233,6 +235,7 @@ def _collect(sources: list[dict], focus_scopes: list[str],
                        "excerpt": str(raw.get("excerpt", "")),
                        "identity_key": raw.get("identity_key"),
                        "assertion_hash": raw.get("assertion_hash"),
+                       "provider": str(raw.get("provider", "")),
                        "drift": False})
     return staged, dropped
 
@@ -297,7 +300,8 @@ def _enforce(staged: list, dropped: list, limits: Budgets,
             authority_domain=item["domain"], tier=item["tier"],
             freshness=item["freshness"], excerpt=item["excerpt"],
             byte_cost=cost, drift=item["drift"],
-            reason_included="applicable " + item["tier"]))
+            reason_included="applicable " + item["tier"],
+            provider=item.get("provider", "")))
     bundle.total_bytes = used
     for item in bundle.items:
         bundle.tokens_per_tier[item.tier] = \

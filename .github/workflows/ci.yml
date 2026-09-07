@@ -230,6 +230,9 @@ jobs:
       - name: GraphProvider probe bounds ceiling degradation
         run: python -m unittest tests.test_knowledge_graph -v
 
+      - name: Semantic isolation cross-project leakage zero
+        run: python -m unittest tests.test_knowledge_isolation -v
+
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
