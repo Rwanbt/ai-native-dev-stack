@@ -401,5 +401,84 @@ class TestFlatModuleConstraint(unittest.TestCase):
         self.assertNotIn("token()", out)
 
 
+# ---------------------------------------------------------------------------
+# assemble_context — ContextPlanner ownership (PR7)
+# ---------------------------------------------------------------------------
+class TestAssemblePlanner(unittest.TestCase):
+    def _fixture(self, root: Path, summary_lines: int = 3,
+                 kfp_lines: int = 3) -> Path:
+        (root / ".git").mkdir(parents=True, exist_ok=True)
+        mod = root / "src" / "auth"
+        _write(mod / "AI_CONTEXT.md", "## Purpose\nAuth module.\n")
+        _write(mod / "AI_SUMMARY.md", "".join(f"api {i}\n" for i in range(summary_lines)))
+        _write(root / "docs" / "adr" / "0007-retry.md", "# ADR-0007\n\nRetry.\n")
+        ctx = (mod / "AI_CONTEXT.md").read_text(encoding="utf-8")
+        (mod / "AI_CONTEXT.md").write_text(ctx + "## See also\n- ADR-0007\n",
+                                           encoding="utf-8")
+        _write(root / "docs" / "KNOWN_FAILURE_PATTERNS.md",
+               "".join(f"pattern {i}\n" for i in range(kfp_lines)))
+        return _write(mod / "deep" / "token.py", "x = 1\n")
+
+    def test_default_output_keeps_all_legacy_sections_in_order(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._fixture(Path(d))
+            out = asm.assemble(src, include_memory=False)
+            markers = ["MODULE CONTEXT", "PUBLIC API SNAPSHOT",
+                       "REFERENCED ADRs", "KNOWN FAILURE PATTERNS"]
+            positions = [out.index(marker) for marker in markers]
+            self.assertEqual(positions, sorted(positions))
+
+    def test_tight_budget_drops_lowest_tier_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = self._fixture(root, summary_lines=3000)
+            out = asm.assemble(src, include_memory=False, max_total_bytes=2000)
+            self.assertIn("MODULE CONTEXT", out)
+            self.assertNotIn("PUBLIC API SNAPSHOT", out)
+            self.assertIn("OMITTED OVER BUDGET", out)
+            self.assertIn("AI_SUMMARY.md", out)
+
+    def test_tier_a_retained_under_pressure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = self._fixture(root, summary_lines=3000, kfp_lines=100)
+            out = asm.assemble(src, include_memory=False, max_total_bytes=2000)
+            self.assertIn("KNOWN FAILURE PATTERNS", out)
+            self.assertNotIn("PUBLIC API SNAPSHOT", out)
+
+    def test_selection_goes_through_the_single_planner(self):
+        from ainative.knowledge import planner as planner_module
+        seen = []
+        original = planner_module.plan
+
+        def _spy(sources, **kwargs):
+            seen.append(([record["locator"] for record in sources], kwargs))
+            return original(sources, **kwargs)
+
+        planner_module.plan = _spy
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                src = self._fixture(Path(directory))
+                asm.assemble(src, include_memory=False)
+        finally:
+            planner_module.plan = original
+        self.assertEqual(len(seen), 1)
+        locators, kwargs = seen[0]
+        self.assertTrue(any(name.endswith("AI_CONTEXT.md") for name in locators))
+        self.assertIn("focus", kwargs)
+        self.assertIn("budgets", kwargs)
+
+    def test_tier_a_overflow_fails_visibly(self):
+        from ainative.knowledge.errors import KnowledgeError
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mod = root / "src" / "auth"
+            (root / ".git").mkdir(parents=True, exist_ok=True)
+            _write(mod / "AI_CONTEXT.md", "## Purpose\n" + "Big policy.\n" * 500)
+            src = _write(mod / "deep" / "token.py", "x = 1\n")
+            with self.assertRaises(KnowledgeError) as caught:
+                asm.assemble(src, include_memory=False, max_total_bytes=100)
+            self.assertEqual(caught.exception.code,
+                             "KNOWLEDGE_MANDATORY_CONTEXT_OVERFLOW")
 if __name__ == "__main__":
     unittest.main(verbosity=2)
