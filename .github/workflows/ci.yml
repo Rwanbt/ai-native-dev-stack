@@ -193,6 +193,31 @@ jobs:
         # guard in a scratch copy and asserts the matching test then fails.
         run: python scripts/lifecycle_non_vacuity.py
 
+  knowledge-b1:
+    name: Knowledge B1 schemas (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # B1 foundation runs everywhere the lifecycle does: identity grammar,
+      # hash determinism and state legality must not depend on platform.
+      - name: Identity grammar, registries and vocabulary
+        run: python -m unittest tests.test_knowledge_identity -v
+
+      - name: Assertion hash, tombstones and envelope fail-closed
+        run: python -m unittest tests.test_knowledge_assertions -v
+
+      - name: State vocabulary, legality and B3/K5 gating
+        run: python -m unittest tests.test_knowledge_states -v
+
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

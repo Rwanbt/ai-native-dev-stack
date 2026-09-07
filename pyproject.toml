@@ -28,7 +28,7 @@ version = { attr = "ainative.__version__" }
 ainative = "ainative.cli:main"
 
 [tool.setuptools]
-packages = ["ainative", "ainative.lifecycle", "ainative_workplane"]
+packages = ["ainative", "ainative.lifecycle", "ainative.knowledge", "ainative_workplane"]
 
 [tool.setuptools.package-data]
 "ainative.lifecycle" = ["data/*.json"]
