@@ -173,6 +173,31 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--actor", default="cli", help="who reviews")
     _add_common(verify)
 
+    promote = knowledge_commands.add_parser(
+        "promote", help="Apply an approved canonical patch.")
+    promote.add_argument("candidate_id", help="kc_... identifier")
+    promote.add_argument("--operation", required=True,
+                         help="ADD, MERGE, REFINE or SUPERSEDE")
+    promote.add_argument("--approve", default=None,
+                         help="human approval statement (required)")
+    promote.add_argument("--expect-base", dest="expect_base", default=None,
+                         help="base digest from the --dry-run preview (required)")
+    promote.add_argument("--target", default=None, help="explicit target file")
+    promote.add_argument("--anchor", default=None, help="anchor text for edits")
+    promote.add_argument("--actor", default="cli", help="who promotes")
+    _add_common(promote)
+
+    reject = knowledge_commands.add_parser(
+        "reject", help="Refuse a candidate (no canonical write).")
+    reject.add_argument("candidate_id", help="kc_... identifier")
+    reject.add_argument("--actor", default="cli", help="who decides")
+    _add_common(reject)
+
+    reconcile_cmd = knowledge_commands.add_parser(
+        "reconcile", help="Heal a crashed promotion.")
+    reconcile_cmd.add_argument("candidate_id", help="kc_... identifier")
+    _add_common(reconcile_cmd)
+
     context = commands.add_parser(
         "context", help="Working memory: save, checkpoint and restore operational state.")
     context_commands = context.add_subparsers(dest="context_command", required=True)
@@ -608,6 +633,82 @@ def _knowledge_verify(args: argparse.Namespace, project) -> int:
                        _render_verify(preview, "(dry-run \u2014 nothing was written)\n"))
     report = reviewlib.verify_candidate(project, args.candidate_id, actor=args.actor)
     return _report(args, report, _render_verify(report, ""))
+def _knowledge_promote(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import policy as policylib
+    from ainative.knowledge import promotion as promotionlib
+    from ainative.knowledge import store as storelib
+    from ainative.knowledge import targets as targetslib
+    from ainative.knowledge.errors import KnowledgeError
+
+    operation = args.operation.upper()
+    if args.dry_run:
+        candidate = storelib.inspect_candidate(project, args.candidate_id)
+        dest = targetslib.resolve(project, candidate, target=args.target)
+        target_class = policylib.classify_target(project, dest)
+        plan = promotionlib.plan_promotion(project, args.candidate_id,
+                                           operation=operation, actor=args.actor,
+                                           target=args.target, anchor_text=args.anchor)
+        lines = [f"(dry-run \u2014 nothing was written)",
+                 f"{plan['candidate_id']}  {operation} -> {plan['target']} "
+                 f"({target_class})",
+                 f"  base: {plan['base_digest']}",
+                 "  approval required: re-run with --approve \"<reason>\" "
+                 f"--expect-base {plan['base_digest']}"]
+        lines += [f"  {line}" for line in plan["diff_preview"]]
+        preview = {key: plan[key] for key in
+                   ("candidate_id", "operation", "target", "base_digest",
+                    "result_digest", "actor", "anchor_text", "diff_preview")}
+        return _report(args, {"dry_run": True, **preview,
+                              "target_class": target_class}, "\n".join(lines))
+    if not args.approve:
+        candidate = storelib.inspect_candidate(project, args.candidate_id)
+        dest = targetslib.resolve(project, candidate, target=args.target)
+        policylib.check(project, candidate, dest, actor=args.actor, approve=None)
+    if not args.expect_base:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                             "preview-first: run with --dry-run, then pass "
+                             "--expect-base <base_digest>")
+    candidate = storelib.inspect_candidate(project, args.candidate_id)
+    dest = targetslib.resolve(project, candidate, target=args.target)
+    approval = policylib.check(project, candidate, dest, actor=args.actor,
+                               approve=args.approve)
+    storelib.record_audit(project, candidate_id=args.candidate_id,
+                          operation="APPROVE",
+                          detail={**approval, "base_digest": args.expect_base},
+                          actor=args.actor)
+    outcome = promotionlib.apply_promotion(
+        project, args.candidate_id, operation=operation, actor=args.actor,
+        target=args.target, anchor_text=args.anchor, expect_base=args.expect_base)
+    return _report(args, outcome,
+                   f"{outcome['candidate_id']}  PROMOTED -> {outcome['target']}")
+
+
+def _knowledge_reject(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import candidate as candidatelib
+    from ainative.knowledge import store as storelib
+
+    if args.dry_run:
+        current = storelib.inspect_candidate(project, args.candidate_id)
+        candidatelib.transition(current, "REJECTED")
+        return _report(args, {"dry_run": True, "candidate_id": current["candidate_id"],
+                              "from": current["status"], "to": "REJECTED"},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"{current['candidate_id']}  {current['status']} -> REJECTED")
+    updated = storelib.set_status(project, args.candidate_id, "REJECTED",
+                                  actor=args.actor)
+    return _report(args, updated, f"{updated['candidate_id']}  REJECTED")
+
+
+def _knowledge_reconcile(args: argparse.Namespace, project) -> int:
+    from ainative.knowledge import promotion as promotionlib
+
+    if args.dry_run:
+        decision = promotionlib.describe_reconcile(project, args.candidate_id)
+        return _report(args, {"dry_run": True, **decision},
+                       f"(dry-run \u2014 nothing was written)\n"
+                       f"{decision['candidate_id']}  {decision['state']}")
+    outcome = promotionlib.reconcile(project, args.candidate_id)
+    return _report(args, outcome, f"{outcome['candidate_id']}  {outcome['state']}")
 def _cmd_knowledge(args: argparse.Namespace) -> int:
     # Lazy imports live in the helpers above, like every other lifecycle
     # command: importing this module must never pull in more than the command
@@ -624,6 +725,9 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
         "classify": _knowledge_classify,
         "evidence": _knowledge_evidence,
         "verify": _knowledge_verify,
+        "promote": _knowledge_promote,
+        "reject": _knowledge_reject,
+        "reconcile": _knowledge_reconcile,
     }
     try:
         return handlers[args.knowledge_command](args, _project(args))

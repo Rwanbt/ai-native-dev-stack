@@ -53,7 +53,27 @@ candidate ids — never raw chain-of-thought.
 `save`. Every write is temp-write plus atomic replace; the previous good
 copy becomes the backup before the new bytes land.
 
-## 4. Discarding state
+## 4. Promoting a candidate (preview-first, human-approved)
+
+```text
+ainative knowledge transition <id> READY_FOR_PROMOTION --actor <triage-owner>
+ainative knowledge promote <id> --operation ADD --dry-run
+# read the diff preview, then:
+ainative knowledge promote <id> --operation ADD \
+    --approve "<reason>" --expect-base <base_digest> --actor <name>
+```
+
+Rules: every canonical target needs `--approve` today (AGENTS.md, ADRs,
+failure patterns, AI_CONTEXT — see `policy.py`; relaxing one class takes
+a new ADR). `--expect-base` is mandatory: a target that moved since the
+preview aborts with `STALE_BASE` before a byte is written. `MERGE`,
+`REFINE` and `SUPERSEDE` additionally need `--anchor <exact-once-text>`;
+an explicit `--target` disambiguates multi-file hints. `reject <id>`
+refuses without writing. `reconcile <id>` heals a crash between the
+file write and the audit (`healed-status`, `healed-audit`, `diverged`
+needs a human, `consistent` otherwise).
+
+## 5. Discarding state
 
 ```text
 ainative context clear --dry-run    # preview
@@ -64,7 +84,7 @@ Safe by plane: canonical Markdown, Vault notes, Git history, candidates
 and audit events are untouched. Without `--yes` (and without `--dry-run`)
 the command refuses with `KNOWLEDGE_CONFIRMATION_REQUIRED`.
 
-## 5. Hook adapter contract (PreCompact, SessionStart, SessionEnd)
+## 6. Hook adapter contract (PreCompact, SessionStart, SessionEnd)
 
 Hooks shell out to the CLI; the CLI is authoritative. Recommended wiring:
 
@@ -80,7 +100,7 @@ command line (capture-time secret detection would refuse them anyway).
 Harness-specific scripts (`hooks/`, per-agent `hooks.json`) stay thin
 wrappers around these commands; no lifecycle logic in the wrapper.
 
-## 6. Retention and TTL
+## 7. Retention and TTL
 
 | Store | Bound | Enforced by |
 |---|---|---|

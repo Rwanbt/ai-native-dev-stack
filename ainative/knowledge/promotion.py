@@ -214,8 +214,8 @@ def apply_promotion(project: Path, candidate_id: str, *, operation: str,
             "diff_preview": plan["diff_preview"]}
 
 
-def reconcile(project: Path, candidate_id: str) -> dict[str, Any]:
-    """Heal a crash between the file write and the audit. Never rewrites files."""
+def describe_reconcile(project: Path, candidate_id: str) -> dict[str, Any]:
+    """Decide what a crash left behind. Reads only, never writes."""
 
     candidate = storelib.inspect_candidate(project, candidate_id)
     promotes = [event for event in storelib.read_audit(Path(project))
@@ -224,30 +224,41 @@ def reconcile(project: Path, candidate_id: str) -> dict[str, Any]:
     if candidate["status"] == "PROMOTED" and promotes:
         return {"candidate_id": candidate_id, "state": "consistent"}
     if candidate["status"] == "PROMOTED" and not promotes:
+        return {"candidate_id": candidate_id, "state": "needs-audit-heal"}
+    if promotes and candidate["status"] == "READY_FOR_PROMOTION":
+        last = promotes[-1]
+        dest = Path(project) / str(last["detail"].get("target", ""))
+        current = _digest(dest.read_bytes()) if dest.is_file() else None
+        if current == last["detail"].get("result_digest"):
+            return {"candidate_id": candidate_id, "state": "needs-status-heal"}
+        return {"candidate_id": candidate_id, "state": "diverged",
+                "detail": "target no longer holds the promoted bytes; human review"}
+    return {"candidate_id": candidate_id, "state": "nothing-to-heal"}
+
+
+def reconcile(project: Path, candidate_id: str) -> dict[str, Any]:
+    """Heal a crash between the file write and the audit. Never rewrites files."""
+
+    decision = describe_reconcile(project, candidate_id)
+    if decision["state"] == "needs-audit-heal":
         storelib.record_audit(Path(project), candidate_id=candidate_id,
                               operation="RECONCILE",
                               detail={"note": "PROMOTED without a PROMOTE event; "
                                               "no file was touched, human review"},
                               actor="reconcile")
         return {"candidate_id": candidate_id, "state": "healed-audit"}
-    if promotes and candidate["status"] == "READY_FOR_PROMOTION":
-        last = promotes[-1]
-        dest = Path(project) / str(last["detail"].get("target", ""))
-        current = _digest(dest.read_bytes()) if dest.is_file() else None
-        if current == last["detail"].get("result_digest"):
-            storelib.set_status(Path(project), candidate_id, "PROMOTED",
-                                actor="reconcile")
-            storelib.record_audit(Path(project), candidate_id=candidate_id,
-                                  operation="RECONCILE",
-                                  detail={"note": "status healed after a crash "
-                                                  "between write and audit"},
-                                  actor="reconcile")
-            return {"candidate_id": candidate_id, "state": "healed-status"}
-        return {"candidate_id": candidate_id, "state": "diverged",
-                "detail": "target no longer holds the promoted bytes; human review"}
-    return {"candidate_id": candidate_id, "state": "nothing-to-heal"}
+    if decision["state"] == "needs-status-heal":
+        storelib.set_status(Path(project), candidate_id, "PROMOTED",
+                            actor="reconcile")
+        storelib.record_audit(Path(project), candidate_id=candidate_id,
+                              operation="RECONCILE",
+                              detail={"note": "status healed after a crash "
+                                              "between write and audit"},
+                              actor="reconcile")
+        return {"candidate_id": candidate_id, "state": "healed-status"}
+    return decision
 
 
 __all__ = ["ADD", "MERGE", "REFINE", "SUPERSEDE", "WRITES",
            "MAX_DIFF_PREVIEW_LINES", "render_block", "render_adr",
-           "plan_promotion", "apply_promotion", "reconcile"]
+           "plan_promotion", "apply_promotion", "describe_reconcile", "reconcile"]
