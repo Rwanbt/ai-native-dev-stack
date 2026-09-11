@@ -55,3 +55,39 @@ class ClaudeManifestTests(unittest.TestCase):
             evidence_digest="evidence-digest",
         )
         self.assertTrue(manifest.sensitive_eligible())
+
+class AuthStoreIdentityTests(unittest.TestCase):
+    def test_identity_is_deterministic_and_content_sensitive(self):
+        import tempfile
+        from pathlib import Path
+
+        from ainative.multivault.harness_claude import auth_store_identity, binding_matches
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / "settings.json").write_text("{}", encoding="utf-8")
+            first = auth_store_identity(path)
+            self.assertIsNotNone(first)
+            self.assertEqual(first, auth_store_identity(path))
+            (path / "settings.json").write_text('{"x":1}', encoding="utf-8")
+            self.assertNotEqual(first, auth_store_identity(path))
+            self.assertIsNone(auth_store_identity(path / "missing"))
+        with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
+            from pathlib import Path as P
+            self.assertNotEqual(auth_store_identity(P(left)), auth_store_identity(P(right)))
+        self.assertTrue(binding_matches("a", "a"))
+        self.assertFalse(binding_matches("a", "b"))
+        self.assertFalse(binding_matches(None, "a"))
+
+    def test_parse_auth_status_exposes_only_the_principal_digest(self):
+        from ainative.multivault.harness_claude import parse_auth_status
+
+        parsed = parse_auth_status('{"loggedIn": true, "apiProvider": "firstParty", "email": "a@b.c", "orgId": "x"}')
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertTrue(parsed["logged_in"])
+        self.assertEqual(64, len(parsed["principal_digest"]))
+        anonymous = parse_auth_status('{"loggedIn": false}')
+        assert anonymous is not None
+        self.assertIsNone(anonymous["principal_digest"])
+        self.assertIsNone(parse_auth_status("nope"))
