@@ -30,3 +30,13 @@ ENFORCED: **NOT YET QUALIFIED** (requires physical account/container separation 
 Under GUARDED, canaries and drift detection detect leaks and operational errors; they do not resist a hostile same-OS-user. No unknown sensitive capability is ever promoted: absence of evidence denies.
 
 P0 = 0, P1 = 0. Known non-security flake tracked as issue #121.
+## Semantic qualification attempt - 2026-09-11 (real instance)
+
+Empirical run against the live Smart Connections instance (plugin 4.7.2, transformers/bge-micro-v2 local embeddings, both vaults open simultaneously).
+
+- Network: NO external connections observed (netstat, only loopback listeners).
+- Background indexing: ACTIVE (reimport cycles advance without user action).
+- Cross-vault isolation: VERIFIED (neither vault store references the other).
+- Controlled embed test: REPRODUCIBLE FAILURE - two probe notes were not embedded; embedding:error incremented on every attempt; the index is frozen.
+- Verdict: Profile C = NOT QUALIFIED (blocking property: runtime indexing/embedding integrity). Profile D inherits. Evidence: docs/spikes/multivault/SEMANTIC-RUNTIME-EVIDENCE-2026-09-11.json.
+- Minimum user action: repair the embedding model cache or reinstall the plugin in the live vault, then re-run the controlled embed test. Qualification resumes automatically when a probe note lands in smart_sources.ajson.

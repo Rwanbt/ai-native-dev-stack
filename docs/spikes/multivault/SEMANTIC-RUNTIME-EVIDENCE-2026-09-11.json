@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-11T23:55:00+00:00",
+  "runtime_identity": {
+    "plugin": "smart-connections",
+    "plugin_version": "4.7.2",
+    "vault": "D:\\Documents\\Obsidian\\IA_Dev_Brain",
+    "embedding_platform": "transformers",
+    "embedding_model": "TaylorAI/bge-micro-v2",
+    "embedding_dims": 384,
+    "api_key": "",
+    "chat_platform": "open_router",
+    "chat_adapter": "ollama",
+    "store_location": "D:\\Documents\\Obsidian\\IA_Dev_Brain\\.smart-env",
+    "store_vault_local": true,
+    "min_chars": 200,
+    "re_import_wait_time_seconds": 13
+  },
+  "network_observation": {
+    "method": "netstat -ano filtered on Obsidian pids 1240 and 11480",
+    "observed": ["127.0.0.1:27123 LISTENING (local REST API)", "127.0.0.1:27130 LISTENING"],
+    "external_connections": "NONE observed at steady state and during reimport cycles",
+    "verdict": "NO UNAPPROVED NETWORK OBSERVED (local embeddings)"
+  },
+  "background_indexing": {
+    "observation": "event_logs reimport cycles advance without user action (ct 4994 to 4997 during observation window)",
+    "verdict": "ACTIVE"
+  },
+  "cross_vault_isolation_test": {
+    "method": "both vaults open simultaneously (IA_Dev_Brain and Triforce_IA_Brain); full-text search of each smart_sources store for the other vault path",
+    "result": {"ia_store_references_triforce": false, "triforce_store_references_ia": false},
+    "verdict": "VERIFIED isolated stores per vault"
+  },
+  "controlled_embed_test": {
+    "method": "two probe notes written by filesystem (well above min_chars), wait 25s and 45s, then search smart_sources.ajson",
+    "attempt_1": {"indexed": false, "embedding_error_ct": "198 -> 200", "note": "each cycle +1/+2 errors, note absent"},
+    "attempt_2": {"indexed": false, "embedding_error_ct": "200 -> 201", "reimport_completed_last_at": 1789149138349, "embedding_error_last_at": 1789149138342},
+    "verdict": "REPRODUCIBLE FAILURE: new notes are not embedded; embedding:error increments every attempt; existing index frozen"
+  },
+  "observation_channel": {
+    "event_logs": "pollable, updates in real time",
+    "smart_env_json": "pollable",
+    "local_rest_api": "127.0.0.1:27123 listening"
+  },
+  "profile_c_verdict": "NOT QUALIFIED",
+  "blocking_property": "indexing/embedding integrity at runtime (background_behavior): the live instance errors on every new embedding and does not update the semantic index",
+  "user_action_required": "repair the Smart Connections embedding pipeline in the live vault (redownload/reinstall the local embedding model cache or reinstall plugin 4.7.2 via Obsidian UI), then re-run the controlled embed test",
+  "auto_resume_condition": "a probe note is found in smart_sources.ajson after a reimport cycle and embedding:error stops incrementing"
+}
