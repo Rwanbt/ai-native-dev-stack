@@ -57,3 +57,15 @@ The first semantic evidence overstated the defect: probes were imported correctl
 ## Final semantic qualification 2026-09-12 - Profiles C and D GUARDED QUALIFIED
 
 Second correction: the semantic pipeline was never broken. Vectors live in the in-memory vec/vecs structures and the model-fingerprint file, not in the serialized embedding.history field. Definitive proof via a temporary CDP session on the live app: 3/3 probe cycles embedded (384 dims, <15s each), retrieval cosine 0.5608 on a targeted query, 1301 indexed items, embeddings fully local. Config restored, probes deleted, app relaunched without the debug port. Profile C = GUARDED QUALIFIED. Profile D = GUARDED QUALIFIED (Git VERIFIED + C qualified; the capabilities share no authority - verified in the frozen owners). ENFORCED-AUTHENTICATED remains WAITING_FOR_EXTERNAL_PREREQUISITE (one elevated provisioning command).
+
+## Scope correction - 2026-09-12 (official)
+
+The Multi-Vault threat model is now explicit: MULTI-VAULT GUARDED provides strong isolation between vault/security domains inside AI Native's governed execution paths. It prevents wrong vault selection, wrong workspace-vault binding, cross-vault memory/semantic/MCP/Git reuse, wrong endpoints and instances, wrong namespaces and provider contexts, stale domain state, implicit fallback and cross-vault autoload.
+
+It does not claim protection against a malicious process running as the same OS user outside AI Native's governed execution paths. This limitation is documented, not hidden.
+
+ENFORCED (dedicated Windows account, OS-level ACL isolation, per-principal network boundary, external authenticator, ExecutionBoundaryDigest) is reclassified as OPTIONAL HIGH-ASSURANCE HARDENING - experimental/future, tracked separately, and not a condition for the main plan.
+
+FINAL VERDICT: MULTI-VAULT GUARDED - PRODUCTION READY.
+Profiles: A GUARDED QUALIFIED - B GUARDED QUALIFIED - C GUARDED QUALIFIED - D GUARDED QUALIFIED.
+Optional ENFORCED hardening: EXPERIMENTAL - NOT QUALIFIED (separate verdict, does not block).
