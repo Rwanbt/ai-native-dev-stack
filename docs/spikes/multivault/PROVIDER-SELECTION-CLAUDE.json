@@ -1,0 +1,56 @@
+{
+ "admission_note": "the capability tuple is now eligible; overall sensitive admission stays DENY until the CLAUDE.md repository surface policy is resolved (MV-12 admission, not this capability gate)",
+ "chain": {
+  "cli_selectors": "none found; help only documents that 3P providers use their own credentials",
+  "observation_mechanism": "claude auth status reports apiProvider, so any provider switch is observable at Phase A/B",
+  "positive_env_excludes_all_provider_surfaces": true,
+  "positive_env_returns_firstParty": true,
+  "settings_env_blocks_clean": true,
+  "surface_can_switch": "VERIFIED (bedrock/vertex observed via claude auth status without a model call)",
+  "switch_is_consumed": "bedrock probe failed without AWS credentials; vertex probe timed out reaching its endpoint"
+ },
+ "harness": "claude-code",
+ "harness_version": "2.1.220",
+ "recorded_at": "2026-09-11T18:35:00+00:00",
+ "schema_version": 1,
+ "sensitive_available": false,
+ "surfaces_probed": {
+  "ANTHROPIC_API_KEY": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "ANTHROPIC_AUTH_TOKEN": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "ANTHROPIC_BEDROCK_BASE_URL": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "ANTHROPIC_VERTEX_PROJECT_ID": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "AWS_ACCESS_KEY_ID": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "AWS_SECRET_ACCESS_KEY": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  },
+  "CLAUDE_CODE_USE_BEDROCK": {
+   "api_provider_observed": "bedrock",
+   "switches_provider": true
+  },
+  "CLAUDE_CODE_USE_VERTEX": {
+   "api_provider_observed": "vertex",
+   "switches_provider": true
+  },
+  "GOOGLE_APPLICATION_CREDENTIALS": {
+   "api_provider_observed": "firstParty",
+   "switches_provider": false
+  }
+ },
+ "verdict": "provider_selection_control = VERIFIED"
+}

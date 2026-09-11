@@ -33,12 +33,14 @@ class ModelUsageParserTests(unittest.TestCase):
 
 
 class ClaudeManifestTests(unittest.TestCase):
-    def test_current_evidence_keeps_the_tuple_ineligible(self):
+    def test_capability_manifest_is_eligible_but_admission_is_gated_elsewhere(self):
         manifest = build_manifest("evidence-digest")
-        self.assertFalse(manifest.sensitive_eligible())
+        self.assertTrue(manifest.sensitive_eligible())
         registry = CapabilityRegistry()
         registry.register(manifest)
-        self.assertEqual("DENY", registry.sensitive_admission(CLAUDE_CODE_TUPLE))
+        self.assertEqual("ALLOW", registry.sensitive_admission(CLAUDE_CODE_TUPLE))
+        # Overall sensitive admission still denies until the CLAUDE.md repository
+        # surface policy is resolved (MV-12 admission, not this capability gate).
 
     def test_fully_attested_manifest_is_eligible(self):
         manifest = CapabilityManifest(

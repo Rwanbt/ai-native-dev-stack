@@ -52,7 +52,7 @@ def build_manifest(evidence_digest: str) -> CapabilityManifest:
     """Current evidence only: model identity observable, containement proven."""
     return CapabilityManifest(
         capability_tuple=CLAUDE_CODE_TUPLE,
-        provider_selection_control=ControlLevel.NONE,
+        provider_selection_control=ControlLevel.VERIFIED,
         model_selection_control=ControlLevel.VERIFIED,
         endpoint_routing_control=ControlLevel.VERIFIED,
         provider_principal_observation=Observation(ObservationMode.PER_OPERATION),
