@@ -29,11 +29,15 @@ class ResultConfinement:
             return ConfinedResult("DENY", "result path is not canonical")
         if project_security_id != self.session_project_security_id:
             return ConfinedResult("DENY", "result belongs to another project security id")
-        if not any(_within(root, canonical_path) for root in self.envelope_roots):
+        if not within_roots(self.envelope_roots, canonical_path):
             return ConfinedResult("DENY", "result path is outside the allowed context envelope")
         if not self.vault_confine(canonical_path):
             return ConfinedResult("DENY", "result path is outside the VaultProtocol confinement")
         return ConfinedResult("ALLOW", "result confined to project, envelope and VaultProtocol")
+
+
+def within_roots(roots: tuple[str, ...], path: str) -> bool:
+    return any(_within(root, path) for root in roots)
 
 
 def _within(root: str, path: str) -> bool:
