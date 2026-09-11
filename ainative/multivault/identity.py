@@ -1,13 +1,26 @@
-"""Descriptive vault and checkout identities; trusted binding arrives in MV-04."""
+"""Descriptive vault and checkout identities; trusted binding arrives in MV-04.
+
+Device/volume and root file identity are captured so a mid-session mount or
+junction retarget is detectable, per ADR-0015 section 5.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
+
 @dataclass(frozen=True)
 class VaultIdentity:
     logical_id: str
     canonical_root: str
+    device_identity: str
+    root_file_identity: str
+
+
+def _device_identity(root: Path) -> tuple[str, str]:
+    stat = root.stat()
+    return str(stat.st_dev), str(stat.st_ino)
+
 
 def discover_vault(logical_id: str, root: Path) -> VaultIdentity:
     if not logical_id:
@@ -15,13 +28,17 @@ def discover_vault(logical_id: str, root: Path) -> VaultIdentity:
     resolved = root.resolve()
     if not resolved.is_dir():
         raise ValueError("vault root is unavailable")
-    return VaultIdentity(logical_id, str(resolved))
+    device_identity, root_file_identity = _device_identity(resolved)
+    return VaultIdentity(logical_id, str(resolved), device_identity, root_file_identity)
+
 
 @dataclass(frozen=True)
 class CheckoutIdentity:
     canonical_root: str
+    git_dir: str
     common_git_dir: str
     origin_url: str | None
+
 
 def _git(root: Path, *args: str) -> str:
     result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
@@ -29,8 +46,10 @@ def _git(root: Path, *args: str) -> str:
         raise ValueError("checkout identity is unavailable")
     return result.stdout.strip()
 
+
 def discover_checkout(root: Path) -> CheckoutIdentity:
     resolved = root.resolve()
+    git_dir = _git(resolved, "rev-parse", "--path-format=absolute", "--git-dir")
     common = _git(resolved, "rev-parse", "--path-format=absolute", "--git-common-dir")
     origin = subprocess.run(["git", "-C", str(resolved), "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
-    return CheckoutIdentity(str(resolved), common, origin.stdout.strip() or None)
+    return CheckoutIdentity(str(resolved), git_dir, common, origin.stdout.strip() or None)
