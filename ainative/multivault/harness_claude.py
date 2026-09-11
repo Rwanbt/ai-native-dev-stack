@@ -113,3 +113,52 @@ def parse_auth_status(payload: str) -> dict | None:
 
 def binding_matches(phase_a_identity: str | None, phase_b_identity: str | None) -> bool:
     return bool(phase_a_identity) and phase_a_identity == phase_b_identity
+
+
+def binary_identity(path) -> str | None:
+    """sha256 of the harness executable; None when unreadable."""
+    import hashlib
+    from pathlib import Path
+
+    item = Path(path)
+    if not item.is_file():
+        return None
+    digest = hashlib.sha256()
+    with item.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def plugin_inventory_digest(config_dir) -> str:
+    """Digest of plugin file names and sizes; stable text when none exist."""
+    import hashlib
+    from pathlib import Path
+
+    plugins = Path(config_dir) / "plugins"
+    if not plugins.is_dir():
+        return hashlib.sha256(b"no-plugins").hexdigest()
+    entries = [f"{item.relative_to(plugins).as_posix()}:{item.stat().st_size}" for item in sorted(plugins.rglob("*")) if item.is_file()]
+    return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
+
+
+_CONTRACT_FIELDS = (
+    "harness_binary_identity",
+    "harness_version",
+    "config_root_digest",
+    "provider_principal",
+    "effective_model_id",
+    "routing_class",
+    "endpoint_policy_digest",
+    "plugin_inventory_digest",
+    "adapter_version",
+    "probe_version",
+)
+
+
+def carried_state_mismatches(phase_a, phase_b) -> tuple[str, ...]:
+    """Required properties that differ between Phase A and Phase B."""
+    from dataclasses import asdict
+
+    first, second = asdict(phase_a), asdict(phase_b)
+    return tuple(name for name in _CONTRACT_FIELDS if first[name] != second[name])

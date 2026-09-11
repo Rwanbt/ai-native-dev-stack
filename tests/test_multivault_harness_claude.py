@@ -91,3 +91,41 @@ class AuthStoreIdentityTests(unittest.TestCase):
         assert anonymous is not None
         self.assertIsNone(anonymous["principal_digest"])
         self.assertIsNone(parse_auth_status("nope"))
+
+
+class CarriedStateTests(unittest.TestCase):
+    def test_binary_identity_is_stable_and_missing_paths_are_none(self):
+        from pathlib import Path
+
+        from ainative.multivault.harness_claude import binary_identity
+
+        target = Path("ainative/multivault/harness_claude.py")
+        first = binary_identity(target)
+        self.assertIsNotNone(first)
+        self.assertEqual(first, binary_identity(target))
+        self.assertIsNone(binary_identity(target / "missing"))
+
+    def test_plugin_inventory_is_stable_and_text_when_absent(self):
+        import tempfile
+        from pathlib import Path
+
+        from ainative.multivault.harness_claude import plugin_inventory_digest
+
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(plugin_inventory_digest(directory), plugin_inventory_digest(directory))
+            plugins = Path(directory) / "plugins"
+            plugins.mkdir()
+            (plugins / "a.txt").write_text("x", encoding="utf-8")
+            self.assertNotEqual(plugin_inventory_digest(directory), plugin_inventory_digest(directory + "/missing"))
+
+    def test_carried_state_comparator_detects_each_required_field(self):
+        from dataclasses import replace
+
+        from ainative.multivault.harness_claude import carried_state_mismatches
+        from ainative.multivault.schema import CarriedStateContract
+
+        base = CarriedStateContract("bin", "1.0", "config", "principal", "model", "direct", "endpoint", "plugins", "adapter", "probe")
+        self.assertEqual((), carried_state_mismatches(base, replace(base)))
+        self.assertEqual(("effective_model_id",), carried_state_mismatches(base, replace(base, effective_model_id="other")))
+        changed = replace(base, harness_version="2", auth_store_placeholder=None) if False else replace(base, harness_version="2")
+        self.assertIn("harness_version", carried_state_mismatches(base, changed))

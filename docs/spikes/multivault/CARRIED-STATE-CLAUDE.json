@@ -1,0 +1,31 @@
+{
+ "carried_state": "VERIFIED",
+ "contract_digest": "aca8142e05b0ca865430f294e9f933a4e7ddb24c15dea14cc51d5cc58e4be48f",
+ "harness": "claude-code",
+ "harness_version": "2.1.220 (Claude Code)",
+ "mismatches": [],
+ "phase_a": {
+  "logged_in": true,
+  "model": {
+   "canonical_model": "claude-haiku-4-5",
+   "model_id": "claude-haiku-4-5-20251001",
+   "provider": "firstParty"
+  }
+ },
+ "phase_b": {
+  "logged_in": true,
+  "model": {
+   "canonical_model": "claude-haiku-4-5",
+   "model_id": "claude-haiku-4-5-20251001",
+   "provider": "firstParty"
+  }
+ },
+ "provider_principal": "retained from Phase A per the approved protocol (not observable when the store is pinned)",
+ "recorded_at": "2026-09-11T18:10:00+00:00",
+ "schema_version": 1,
+ "sensitive_available": false,
+ "still_open": [
+  "provider_selection_control",
+  "CLAUDE.md policy"
+ ]
+}
