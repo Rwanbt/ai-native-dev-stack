@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ainative.multivault.confinement import ResultConfinement
+from ainative.multivault.confinement import ResultConfinement, within_roots
 
 
 def allow(_path: str) -> bool:
@@ -43,6 +43,12 @@ class ResultConfinementTests(unittest.TestCase):
         gate = ResultConfinement("project-a", (self.repository,), allow)
         self.assertEqual("ALLOW", gate.admit(self.repository, "project-a").decision)
         self.assertEqual("ALLOW", gate.admit(str(Path(self.repository) / "notes" / "file.md"), "project-a").decision)
+
+    def test_within_roots_matches_only_nested_paths(self):
+        self.assertTrue(within_roots((self.repository,), self.repository))
+        self.assertTrue(within_roots((self.repository,), str(Path(self.repository) / "a" / "b.md")))
+        self.assertFalse(within_roots((self.repository,), self.other))
+        self.assertFalse(within_roots((), str(Path(self.repository) / "a")))
 
     def test_parent_traversal_cannot_escape_the_envelope(self):
         gate = ResultConfinement("project-a", (self.repository,), allow)
