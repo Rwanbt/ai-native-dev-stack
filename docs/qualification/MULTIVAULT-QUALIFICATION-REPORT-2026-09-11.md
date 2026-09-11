@@ -40,3 +40,12 @@ Empirical run against the live Smart Connections instance (plugin 4.7.2, transfo
 - Controlled embed test: REPRODUCIBLE FAILURE - two probe notes were not embedded; embedding:error incremented on every attempt; the index is frozen.
 - Verdict: Profile C = NOT QUALIFIED (blocking property: runtime indexing/embedding integrity). Profile D inherits. Evidence: docs/spikes/multivault/SEMANTIC-RUNTIME-EVIDENCE-2026-09-11.json.
 - Minimum user action: repair the embedding model cache or reinstall the plugin in the live vault, then re-run the controlled embed test. Qualification resumes automatically when a probe note lands in smart_sources.ajson.
+
+## ENFORCED boundary evaluation - 2026-09-12
+
+- Machine: Windows Pro build 26100, session NOT elevated. Windows Sandbox absent, VirtualBox absent; Hyper-V/Docker present but require administrator rights.
+- Dedicated account, Sandbox and VM options: BLOCKED (admin required) - proven, not assumed.
+- WSL2: different platform tuple (Linux), forbidden as equivalence by the frozen architecture; also mounts fixed drives by default.
+- AppContainer desktop boundary: technically correct user-level path, but requires a new launcher subsystem with its own qualification - recommended V2, out of frozen V1 scope.
+- Proven partial boundary: Windows Job Object containment (VERIFIED) - sufficient for GUARDED, insufficient for ENFORCED-AUTHENTICATED.
+- Verdict: ENFORCED-AUTHENTICATED NOT YET QUALIFIED. Minimal external prerequisite: an elevated session or a pre-provisioned boundary (dedicated local account, enabled Windows Sandbox, or VM image). Evidence: docs/spikes/multivault/ENFORCED-BOUNDARY-EVALUATION-2026-09-12.json.

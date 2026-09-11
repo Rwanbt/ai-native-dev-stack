@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-12T00:20:00+00:00",
+  "machine": {
+    "edition": "Windows Pro (build 26100)",
+    "elevated": false,
+    "windows_sandbox_exe": false,
+    "wsl_present": true,
+    "docker_cli_present": true,
+    "virtualbox": false,
+    "hyperv_module_available": true
+  },
+  "boundary_options_evaluated": [
+    {"option": "dedicated OS account", "verdict": "BLOCKED", "reason": "requires administrator rights; session is not elevated"},
+    {"option": "Windows Sandbox", "verdict": "BLOCKED", "reason": "WindowsSandbox.exe absent; feature enablement requires admin"},
+    {"option": "Hyper-V VM", "verdict": "BLOCKED", "reason": "requires admin rights and VM image; none present"},
+    {"option": "VirtualBox VM", "verdict": "BLOCKED", "reason": "VirtualBox not installed"},
+    {"option": "WSL2 workload boundary", "verdict": "NOT APPLICABLE", "reason": "introduces a different platform tuple (Linux); the frozen architecture forbids treating another OS as equivalent without its own qualification chain; WSL also mounts all fixed drives by default"},
+    {"option": "AppContainer desktop boundary", "verdict": "OUT OF FROZEN SCOPE V1", "reason": "user-level and technically correct long-term path (unique SID, deny-by-default filesystem and network) but requires a new launcher subsystem and its own qualification; recommended V2"}
+  ],
+  "minimal_external_prerequisite": "an elevated session or a pre-provisioned boundary: local dedicated account, Windows Sandbox enabled, or a VM image",
+  "proven_partial_boundary": {
+    "containment": "Windows Job Object containment VERIFIED (supervisor loss kills descendants, PR #118)",
+    "sufficient_for": "GUARDED",
+    "insufficient_for": "ENFORCED-AUTHENTICATED (needs physical separation and an external authenticator)"
+  },
+  "verdict": "ENFORCED-AUTHENTICATED NOT YET QUALIFIED - irreducible external prerequisite"
+}
