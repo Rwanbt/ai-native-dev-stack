@@ -1,3 +1,4 @@
+<!-- SUPERSEDED FOR THE CURRENT VERDICT: this document records the pre-Multi-Vault GUARDED probe state (Status: NOT QUALIFIED at the time). The current source of truth is docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md - MULTI-VAULT GUARDED: PRODUCTION READY (A/B/C/D GUARDED QUALIFIED). -->
 # GUARDED qualification report — Multi-Vault V1
 
 Status: **NOT QUALIFIED** (implementation complete; qualification blocked on MV-00).

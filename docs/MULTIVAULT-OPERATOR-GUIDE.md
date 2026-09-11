@@ -1,3 +1,5 @@
+> Status note: the current qualification is MULTI-VAULT GUARDED - PRODUCTION READY (A/B/C/D GUARDED QUALIFIED). See docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md. ENFORCED is optional high-assurance hardening and is not required.
+
 # Multi-Vault Operator Guide
 
 Implementation status: cores are implemented and fail closed. No
