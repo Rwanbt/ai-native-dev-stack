@@ -1,49 +1,78 @@
 {
-  "schema_version": 1,
-  "recorded_at": "2026-09-11T23:55:00+00:00",
-  "runtime_identity": {
-    "plugin": "smart-connections",
-    "plugin_version": "4.7.2",
-    "vault": "D:\\Documents\\Obsidian\\IA_Dev_Brain",
-    "embedding_platform": "transformers",
-    "embedding_model": "TaylorAI/bge-micro-v2",
-    "embedding_dims": 384,
-    "api_key": "",
-    "chat_platform": "open_router",
-    "chat_adapter": "ollama",
-    "store_location": "D:\\Documents\\Obsidian\\IA_Dev_Brain\\.smart-env",
-    "store_vault_local": true,
-    "min_chars": 200,
-    "re_import_wait_time_seconds": 13
-  },
-  "network_observation": {
-    "method": "netstat -ano filtered on Obsidian pids 1240 and 11480",
-    "observed": ["127.0.0.1:27123 LISTENING (local REST API)", "127.0.0.1:27130 LISTENING"],
-    "external_connections": "NONE observed at steady state and during reimport cycles",
-    "verdict": "NO UNAPPROVED NETWORK OBSERVED (local embeddings)"
-  },
+  "auto_resume_condition": "a probe note is found in smart_sources.ajson after a reimport cycle and embedding:error stops incrementing",
   "background_indexing": {
     "observation": "event_logs reimport cycles advance without user action (ct 4994 to 4997 during observation window)",
     "verdict": "ACTIVE"
   },
+  "blocking_property": "indexing/embedding integrity at runtime (background_behavior): the live instance errors on every new embedding and does not update the semantic index",
+  "controlled_embed_test": {
+    "attempt_1": {
+      "embedding_error_ct": "198 -> 200",
+      "indexed": false,
+      "note": "each cycle +1/+2 errors, note absent"
+    },
+    "attempt_2": {
+      "embedding_error_ct": "200 -> 201",
+      "embedding_error_last_at": 1789149138342,
+      "indexed": false,
+      "reimport_completed_last_at": 1789149138349
+    },
+    "method": "two probe notes written by filesystem (well above min_chars), wait 25s and 45s, then search smart_sources.ajson",
+    "verdict": "REPRODUCIBLE FAILURE: new notes are not embedded; embedding:error increments every attempt; existing index frozen"
+  },
+  "correction_2026_09_12": {
+    "correct_observation": "import works and shards are per-model; the true defect is narrower: source-level embeddings of new items never complete (embedding.history stays empty after import), with paired +1 items:embedded / +1 embedding:error per cycle and an effectively stalled embed queue",
+    "minimal_user_action": "open Obsidian devtools console (Ctrl+Shift+I), read the [Transformers worker] error line, and toggle the embedding model in Smart Connections settings once to force a pipeline rebuild",
+    "model_proven_valid": "Node + @huggingface/transformers@4.2.0 + TaylorAI/bge-micro-v2 -> EMBED_OK dims=384 on the same machine",
+    "plugin_current": "4.7.2 is the latest release",
+    "precise_remaining_property": "worker-side embedding of new sources fails inside the Obsidian 1.13.7 Electron runtime; requires console-level error capture or a plugin-side fix",
+    "remediation_attempted": [
+      "app:reload via Local REST API (x3)",
+      "forced WASM via use_gpu=false in smart_env.json",
+      "model swap to Snowflake/snowflake-arctic-embed-xs"
+    ],
+    "remediation_result": "none resolved; counters unchanged; config restored from backup and probe notes deleted",
+    "what_was_wrong": "initial greps searched only smart_sources.ajson; the active store is sharded per model fingerprint (smart_sources_1.ajson). All probe notes WERE imported successfully."
+  },
   "cross_vault_isolation_test": {
     "method": "both vaults open simultaneously (IA_Dev_Brain and Triforce_IA_Brain); full-text search of each smart_sources store for the other vault path",
-    "result": {"ia_store_references_triforce": false, "triforce_store_references_ia": false},
+    "result": {
+      "ia_store_references_triforce": false,
+      "triforce_store_references_ia": false
+    },
     "verdict": "VERIFIED isolated stores per vault"
   },
-  "controlled_embed_test": {
-    "method": "two probe notes written by filesystem (well above min_chars), wait 25s and 45s, then search smart_sources.ajson",
-    "attempt_1": {"indexed": false, "embedding_error_ct": "198 -> 200", "note": "each cycle +1/+2 errors, note absent"},
-    "attempt_2": {"indexed": false, "embedding_error_ct": "200 -> 201", "reimport_completed_last_at": 1789149138349, "embedding_error_last_at": 1789149138342},
-    "verdict": "REPRODUCIBLE FAILURE: new notes are not embedded; embedding:error increments every attempt; existing index frozen"
+  "network_observation": {
+    "external_connections": "NONE observed at steady state and during reimport cycles",
+    "method": "netstat -ano filtered on Obsidian pids 1240 and 11480",
+    "observed": [
+      "127.0.0.1:27123 LISTENING (local REST API)",
+      "127.0.0.1:27130 LISTENING"
+    ],
+    "verdict": "NO UNAPPROVED NETWORK OBSERVED (local embeddings)"
   },
   "observation_channel": {
     "event_logs": "pollable, updates in real time",
-    "smart_env_json": "pollable",
-    "local_rest_api": "127.0.0.1:27123 listening"
+    "local_rest_api": "127.0.0.1:27123 listening",
+    "smart_env_json": "pollable"
   },
   "profile_c_verdict": "NOT QUALIFIED",
-  "blocking_property": "indexing/embedding integrity at runtime (background_behavior): the live instance errors on every new embedding and does not update the semantic index",
-  "user_action_required": "repair the Smart Connections embedding pipeline in the live vault (redownload/reinstall the local embedding model cache or reinstall plugin 4.7.2 via Obsidian UI), then re-run the controlled embed test",
-  "auto_resume_condition": "a probe note is found in smart_sources.ajson after a reimport cycle and embedding:error stops incrementing"
+  "recorded_at": "2026-09-11T23:55:00+00:00",
+  "runtime_identity": {
+    "api_key": "",
+    "chat_adapter": "ollama",
+    "chat_platform": "open_router",
+    "embedding_dims": 384,
+    "embedding_model": "TaylorAI/bge-micro-v2",
+    "embedding_platform": "transformers",
+    "min_chars": 200,
+    "plugin": "smart-connections",
+    "plugin_version": "4.7.2",
+    "re_import_wait_time_seconds": 13,
+    "store_location": "D:\\Documents\\Obsidian\\IA_Dev_Brain\\.smart-env",
+    "store_vault_local": true,
+    "vault": "D:\\Documents\\Obsidian\\IA_Dev_Brain"
+  },
+  "schema_version": 1,
+  "user_action_required": "repair the Smart Connections embedding pipeline in the live vault (redownload/reinstall the local embedding model cache or reinstall plugin 4.7.2 via Obsidian UI), then re-run the controlled embed test"
 }

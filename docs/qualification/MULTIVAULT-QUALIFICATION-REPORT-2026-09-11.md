@@ -49,3 +49,7 @@ Empirical run against the live Smart Connections instance (plugin 4.7.2, transfo
 - AppContainer desktop boundary: technically correct user-level path, but requires a new launcher subsystem with its own qualification - recommended V2, out of frozen V1 scope.
 - Proven partial boundary: Windows Job Object containment (VERIFIED) - sufficient for GUARDED, insufficient for ENFORCED-AUTHENTICATED.
 - Verdict: ENFORCED-AUTHENTICATED NOT YET QUALIFIED. Minimal external prerequisite: an elevated session or a pre-provisioned boundary (dedicated local account, enabled Windows Sandbox, or VM image). Evidence: docs/spikes/multivault/ENFORCED-BOUNDARY-EVALUATION-2026-09-12.json.
+
+## Correction 2026-09-12 (semantic evidence)
+
+The first semantic evidence overstated the defect: probes were imported correctly, but the store is sharded per model fingerprint and the initial greps read the wrong shard. The corrected blocking property is narrower and precise: source-level embeddings of new items never complete in the Electron runtime (embedding.history stays empty while import succeeds; paire
