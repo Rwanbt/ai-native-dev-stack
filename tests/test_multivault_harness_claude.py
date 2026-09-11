@@ -131,3 +131,37 @@ class CarriedStateTests(unittest.TestCase):
         self.assertEqual(("effective_model_id",), carried_state_mismatches(base, replace(base, effective_model_id="other")))
         changed = replace(base, harness_version="2", auth_store_placeholder=None) if False else replace(base, harness_version="2")
         self.assertIn("harness_version", carried_state_mismatches(base, changed))
+
+
+class ProjectInstructionAdmissionTests(unittest.TestCase):
+    def test_any_cwd_surface_denies_with_the_stable_code(self):
+        import tempfile
+        from pathlib import Path
+
+        from ainative.multivault.harness_claude import CLAUDE_INSTRUCTIONS_REASON_CODE, project_instruction_admission
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = project_instruction_admission(root)
+            self.assertEqual("ALLOW", result["decision"])
+            for relative in ("CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"):
+                candidate = root / relative
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text("rule", encoding="utf-8")
+                denied = project_instruction_admission(root)
+                self.assertEqual("DENY", denied["decision"])
+                self.assertEqual(CLAUDE_INSTRUCTIONS_REASON_CODE, denied["reason_code"])
+                candidate.unlink()
+
+    def test_ancestor_surface_denies_the_child_workspace(self):
+        import tempfile
+        from pathlib import Path
+
+        from ainative.multivault.harness_claude import project_instruction_admission
+
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            (parent / "CLAUDE.md").write_text("rule", encoding="utf-8")
+            child = parent / "nested" / "child"
+            child.mkdir(parents=True)
+            self.assertEqual("DENY", project_instruction_admission(child)["decision"])

@@ -162,3 +162,59 @@ def carried_state_mismatches(phase_a, phase_b) -> tuple[str, ...]:
 
     first, second = asdict(phase_a), asdict(phase_b)
     return tuple(name for name in _CONTRACT_FIELDS if first[name] != second[name])
+
+
+CLAUDE_INSTRUCTIONS_REASON_CODE = "AINATIVE_CLAUDE_PROJECT_INSTRUCTIONS_NOT_DISABLEABLE"
+_PROJECT_INSTRUCTION_SURFACES = ("CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md")
+PROJECT_INSTRUCTION_POLICY = {
+    "surface": "CLAUDE.md",
+    "autoload": "VERIFIED",
+    "disable_control": "NONE",
+    "required_state": "ABSENT",
+    "observation": "PER_OPERATION",
+}
+
+
+def project_instruction_admission(workspace) -> dict:
+    """Fail closed: DENY when any applicable project instruction surface exists.
+
+    Empirically recognized on claude-code 2.1.220: CLAUDE.md, CLAUDE.local.md
+    and .claude/CLAUDE.md in the workspace itself; CLAUDE.md or
+    CLAUDE.local.md in ancestors up to the git root, or in the immediate
+    parent when no git root exists.
+    """
+    from pathlib import Path
+
+    root = Path(workspace).resolve()
+    found = [str(root / relative) for relative in _PROJECT_INSTRUCTION_SURFACES if (root / relative).is_file()]
+    boundary = None
+    current = root
+    while True:
+        if (current / ".git").exists():
+            boundary = current
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    ancestors = []
+    if boundary is not None and boundary != root:
+        current = root.parent
+        while True:
+            ancestors.append(current)
+            if current == boundary:
+                break
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+    elif boundary is None and root.parent != root:
+        ancestors.append(root.parent)
+    for ancestor in ancestors:
+        for relative in ("CLAUDE.md", "CLAUDE.local.md"):
+            candidate = ancestor / relative
+            if candidate.is_file():
+                found.append(str(candidate))
+    if found:
+        return {"decision": "DENY", "reason_code": CLAUDE_INSTRUCTIONS_REASON_CODE, "surfaces": tuple(found), "policy": dict(PROJECT_INSTRUCTION_POLICY)}
+    return {"decision": "ALLOW", "reason_code": "OK", "surfaces": (), "policy": dict(PROJECT_INSTRUCTION_POLICY)}

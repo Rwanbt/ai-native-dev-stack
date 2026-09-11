@@ -1,0 +1,26 @@
+{
+ "decision": "no operator exception (ADR-0014 section 7 not used): a non-neutralizable project instruction surface is a known defect on a surface that directly influences model behavior",
+ "empirical_surfaces": {
+  "ancestors": "CLAUDE.md in the immediate parent was honored; a grandparent CLAUDE.md was not",
+  "implementation_scope": "workspace surfaces + ancestor CLAUDE.md/CLAUDE.local.md up to the git root, or the immediate parent when no git root exists",
+  "workspace": [
+   "CLAUDE.md",
+   "CLAUDE.local.md",
+   ".claude/CLAUDE.md"
+  ]
+ },
+ "harness": "claude-code",
+ "harness_version": "2.1.220",
+ "policy": {
+  "autoload": "VERIFIED",
+  "disable_control": "NONE",
+  "observation": "PER_OPERATION",
+  "required_state": "ABSENT",
+  "surface": "CLAUDE.md"
+ },
+ "reason_code": "AINATIVE_CLAUDE_PROJECT_INSTRUCTIONS_NOT_DISABLEABLE",
+ "recorded_at": "2026-09-11T18:55:00+00:00",
+ "rule": "same capability tuple; an applicable project instruction surface present -> DENY; absent -> the tuple may qualify (conditional on the other admission checks)",
+ "schema_version": 1,
+ "sensitive_available": false
+}
