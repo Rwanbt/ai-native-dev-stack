@@ -34,6 +34,18 @@
     "remediation_result": "none resolved; counters unchanged; config restored from backup and probe notes deleted",
     "what_was_wrong": "initial greps searched only smart_sources.ajson; the active store is sharded per model fingerprint (smart_sources_1.ajson). All probe notes WERE imported successfully."
   },
+  "correction_2026_09_12_b": {
+    "conclusion": "the semantic pipeline is fully functional: import, embedding, vector persistence and similarity retrieval all verified empirically; the incremental embedding:error counter concerns a minority of legacy/edge items and is not a pipeline failure",
+    "definitive_empirical_proof": {
+      "collection_size": 1301,
+      "direct_embed_api": "em.embed_batch returned a 384-dim vector in 1512ms; second call 16ms",
+      "method": "temporary Obsidian relaunch with a local CDP debug port; direct Runtime.evaluate of the live smart-connections environment; debug port closed and app relaunched normally afterwards",
+      "retrieval_proof": "cosine similarity between an embedded probe vector and a targeted query vector = 0.5608 (above threshold)",
+      "three_independent_cycles": "3/3 new probe notes embedded with dims=384 within 15s each"
+    },
+    "state_restored": "user config restored from backup, all probe notes deleted, Obsidian relaunched without the debug port",
+    "what_was_wrong": "the serialized 'embedding.history' field in the store was read as the embedding indicator; in this version vectors live in the in-memory item 'vec'/'vecs' and persist in the model-fingerprint vector file"
+  },
   "cross_vault_isolation_test": {
     "method": "both vaults open simultaneously (IA_Dev_Brain and Triforce_IA_Brain); full-text search of each smart_sources store for the other vault path",
     "result": {

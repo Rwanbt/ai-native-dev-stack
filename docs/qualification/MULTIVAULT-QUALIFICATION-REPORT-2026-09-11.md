@@ -53,3 +53,7 @@ Empirical run against the live Smart Connections instance (plugin 4.7.2, transfo
 ## Correction 2026-09-12 (semantic evidence)
 
 The first semantic evidence overstated the defect: probes were imported correctly, but the store is sharded per model fingerprint and the initial greps read the wrong shard. The corrected blocking property is narrower and precise: source-level embeddings of new items never complete in the Electron runtime (embedding.history stays empty while import succeeds; paire
+
+## Final semantic qualification 2026-09-12 - Profiles C and D GUARDED QUALIFIED
+
+Second correction: the semantic pipeline was never broken. Vectors live in the in-memory vec/vecs structures and the model-fingerprint file, not in the serialized embedding.history field. Definitive proof via a temporary CDP session on the live app: 3/3 probe cycles embedded (384 dims, <15s each), retrieval cosine 0.5608 on a targeted query, 1301 indexed items, embeddings fully local. Config restored, probes deleted, app relaunched without the debug port. Profile C = GUARDED QUALIFIED. Profile D = GUARDED QUALIFIED (Git VERIFIED + C qualified; the capabilities share no authority - verified in the frozen owners). ENFORCED-AUTHENTICATED remains WAITING_FOR_EXTERNAL_PREREQUISITE (one elevated provisioning command).
