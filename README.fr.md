@@ -156,6 +156,25 @@ semaines plus tard, même sur une autre machine.
 - Les décisions architecturales lient vers leur ADR : `[[ADR-0004 Extract Service Pattern]]`
 - Le champ `related:` du frontmatter est toujours renseigné
 
+#### Coffres-forts multiples : un port Local REST API par coffre
+
+Le plugin Obsidian Local REST API lie un port par coffre. Avec plusieurs
+coffres ouverts, tous utilisent par défaut `27124` (HTTPS) / `27123` (HTTP) :
+seul le premier coffre démarré possède le port, les autres perdent
+silencieusement leur API, et un client qui suppose l'endpoint par défaut peut
+atteindre le mauvais coffre (preuve MV-00.1 du 2026-09-11 : un second coffre
+possédait `27124` alors que le coffre voulu était injoignable).
+
+- Donner à chaque coffre sa propre paire de ports : Paramètres -> Modules
+  complémentaires -> Local REST API -> `Encrypted (HTTPS) Server Port` et
+  `Non-encrypted (HTTP) Server Port` (par ex. 27124/27123, 27130/27129,
+  27132/27131), puis désactiver/réactiver le plugin pour qu'il rebinde.
+- Pointer `OBSIDIAN_API_URL` vers le port de ce coffre.
+- Ne jamais partager une clé API entre coffres ou copies de coffre ;
+  régénérer la clé après clonage du dossier `.obsidian`.
+- Vérifier avec une sonde status-only : la clé du coffre répond `200` sur
+  `/vault/`, toute autre clé répond `401`.
+
 ### 6. Mémoire Claude Code
 
 Claude Code persiste une mémoire inter-sessions dans `~/.claude/projects/<clé-projet>/memory/`. Quatre types de mémoire :
