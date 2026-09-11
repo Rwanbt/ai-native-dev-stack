@@ -1,1 +1,23 @@
-{"harness": "claude-code", "harness_version": "2.1.220", "identity_schema": "H(schema_version | canonical_path | inventory_digest)", "protocol": "CLAUDE_CONFIG_DIR -> canonical path -> store identity digest -> auth status probe -> cross-store non-leak -> A/B binding", "real_store": "C:\\Users\\barat\\.claude", "recorded_at": "2026-09-11T16:50:00+00:00", "schema_version": 1, "sensitive_available": false, "verdicts": {"empty_store_not_logged_in": true, "foreign_store_distinct_identity": true, "no_fallback_to_global": true, "phase_a_b_same_identity": true, "qualified_store_expected_principal": false, "switch_mismatch_detected": true}}
+{
+ "correction": "commit 3617c2c message overstated the principal verdict; this file records the measured result",
+ "discrepancy": "a manual diagnostic read the raw auth-status JSON and saw email/orgId present, while the automated probe path returned logged_in=True with no principal digest; the parser path is not yet trusted for this field",
+ "harness": "claude-code",
+ "harness_version": "2.1.220",
+ "identity_schema": "H(schema_version | canonical_path | inventory_digest)",
+ "measured_verdicts": {
+  "empty_store_not_logged_in": true,
+  "foreign_store_distinct_identity": true,
+  "no_fallback_to_global": true,
+  "phase_a_b_same_identity": true,
+  "qualified_store_expected_principal": false,
+  "switch_mismatch_detected": true
+ },
+ "protocol": "CLAUDE_CONFIG_DIR -> canonical path -> store identity digest -> auth status probe -> cross-store non-leak -> A/B binding",
+ "recorded_at": "2026-09-11T17:05:00+00:00",
+ "remaining_before_auth_store_verified": [
+  "explain the principal-digest discrepancy",
+  "re-run the six verdicts green"
+ ],
+ "schema_version": 1,
+ "sensitive_available": false
+}
