@@ -71,3 +71,21 @@ def measure_root_identity(logical_id: str, root: Path) -> str | None:
         return vault_root_identity(discover_vault(logical_id, root))
     except (ValueError, OSError):
         return None
+
+
+def checkout_identity_digest(identity: CheckoutIdentity) -> str:
+    """Digest of the canonical checkout primitives for binding comparison."""
+    return canonical_digest({
+        "canonical_root": identity.canonical_root,
+        "git_dir": identity.git_dir,
+        "common_git_dir": identity.common_git_dir,
+        "origin_url": identity.origin_url,
+    })
+
+
+def measure_checkout_identity(root: Path) -> str | None:
+    """Best-effort checkout identity; absent or unreadable checkouts measure as None."""
+    try:
+        return checkout_identity_digest(discover_checkout(root))
+    except (ValueError, OSError):
+        return None

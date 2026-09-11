@@ -43,6 +43,11 @@ class MultiVaultCliTests(unittest.TestCase):
         self.assertEqual("vault-personal", binding["vault"])
         self.assertEqual("checkout-personal", binding["checkout"])
         self.assertTrue(binding["root_identity"])
+        from ainative.multivault.identity import checkout_identity_digest, discover_checkout
+        self.assertEqual(
+            checkout_identity_digest(discover_checkout(self.checkout)),
+            binding["checkout_identity"],
+        )
         self.assertTrue(admit(WorkspaceDeclaration("personal", "vault-personal", "checkout-personal"),
                               AuthorityStore(self.store)))
 
@@ -77,6 +82,6 @@ class MultiVaultCliTests(unittest.TestCase):
 
     def test_multivault_cli_does_not_reimplement_security_policies(self):
         source = Path("ainative/multivault/__main__.py").read_text(encoding="utf-8")
-        self.assertNotIn("AllowedContextEnvelope(", source)
-        self.assertNotIn("CRITICAL", source)
-        self.assertNotIn("CONFIDENTIAL", source)
+        for forbidden in ("AllowedContextEnvelope(", "RuntimeContextHandle(", "SensitiveQualification(",
+                          "GovernedPushCapability(", "classification >=", "CONFIDENTIAL", "CRITICAL"):
+            self.assertNotIn(forbidden, source)

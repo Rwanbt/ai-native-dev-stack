@@ -60,6 +60,7 @@ class RootFreshnessVerdict:
 def root_freshness(
     binding: dict[str, Any] | None,
     measured_root_identity: str | None,
+    field_name: str = ROOT_IDENTITY_FIELD,
 ) -> RootFreshnessVerdict:
     """Compare the operator-recorded vault root identity to the measured one.
 
@@ -68,7 +69,7 @@ def root_freshness(
     """
     if not binding:
         return RootFreshnessVerdict(DENY_BINDING_MISSING)
-    recorded = binding.get(ROOT_IDENTITY_FIELD)
+    recorded = binding.get(field_name)
     if not recorded:
         return RootFreshnessVerdict(DENY_ROOT_IDENTITY_UNRECORDED)
     if not measured_root_identity:

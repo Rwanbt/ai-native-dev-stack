@@ -80,7 +80,12 @@ def _context_report(store_path: Path, domain: str, harness: str, provider_class:
 
 def _bind(args) -> int:
     """The only CLI mutation: operator intent plus real measurements, never repository data."""
-    from .identity import discover_checkout, discover_vault, vault_root_identity
+    from .identity import (
+        checkout_identity_digest,
+        discover_checkout,
+        discover_vault,
+        vault_root_identity,
+    )
     from .schema import SecurityClassification
 
     if args.classification not in SecurityClassification.__members__:
@@ -88,7 +93,7 @@ def _bind(args) -> int:
         return 1
     try:
         measured = vault_root_identity(discover_vault(args.vault_id, args.vault.resolve()))
-        discover_checkout(args.checkout.resolve())
+        checkout_measured = checkout_identity_digest(discover_checkout(args.checkout.resolve()))
     except ValueError as error:
         print(f"bind: REFUSED {error}")
         return 1
@@ -104,6 +109,7 @@ def _bind(args) -> int:
         "classification": args.classification,
         "roots": list(args.roots),
         "root_identity": measured,
+        "checkout_identity": checkout_measured,
     }
     store.replace(bindings)
     print(f"bind: RECORDED domain={args.domain} vault={args.vault_id}")

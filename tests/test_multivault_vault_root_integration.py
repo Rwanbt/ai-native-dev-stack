@@ -43,11 +43,23 @@ class VaultRootIntegrationTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_binding(self, root_identity=None):
+    def write_binding(self, root_identity=None, checkout_identity=None):
         binding = {"vault": "vault-a", "checkout": "checkout-a", "classification": "PERSONAL", "roots": []}
         if root_identity is not None:
             binding["root_identity"] = root_identity
+        if checkout_identity is not None:
+            binding["checkout_identity"] = checkout_identity
         self.store.replace({"company-a": binding})
+
+    def git_repository(self, name):
+        import subprocess
+        root = Path(self.temp.name) / name
+        root.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "-C", str(root), "-c", "user.email=t@example.invalid", "-c", "user.name=t",
+             "commit", "--allow-empty", "-q", "-m", "init"], check=True)
+        return root
 
     def resolve(self, root):
         return resolve_with_vault_root(self.declaration, self.store, root)
@@ -125,6 +137,31 @@ class VaultRootIntegrationTests(unittest.TestCase):
         self.write_binding(root_identity=None)
         code, output = self.run_doctor("--vault-root", str(self.vault))
         self.assertIn("FAIL\troot_freshness", output)
+
+    def test_matching_checkout_identity_authorizes(self):
+        from ainative.multivault.identity import checkout_identity_digest, discover_checkout
+        checkout = self.git_repository("checkout-a")
+        self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout)))
+        result = resolve_with_vault_root(self.declaration, self.store, self.vault, checkout_root=checkout)
+        self.assertTrue(result.authorized)
+        self.assertEqual(ALLOW_ROOT_FRESH, result.checkout_freshness.decision)
+
+    def test_copied_or_moved_checkout_denies(self):
+        from ainative.multivault.identity import checkout_identity_digest, discover_checkout
+        checkout_a = self.git_repository("checkout-a")
+        checkout_b = self.git_repository("checkout-b")
+        self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout_a)))
+        result = resolve_with_vault_root(self.declaration, self.store, self.vault, checkout_root=checkout_b)
+        self.assertFalse(result.authorized)
+        self.assertEqual(DENY_ROOT_STALE, result.checkout_freshness.decision)
+
+    def test_recorded_checkout_identity_requires_a_live_measurement(self):
+        from ainative.multivault.identity import checkout_identity_digest, discover_checkout
+        checkout = self.git_repository("checkout-a")
+        self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout)))
+        result = resolve_with_vault_root(self.declaration, self.store, self.vault)
+        self.assertFalse(result.authorized)
+        self.assertEqual(DENY_ROOT_MEASUREMENT_INCOMPLETE, result.checkout_freshness.decision)
 
     def test_stale_after_identity_change_denies(self):
         self.write_binding(root_identity="sha256:changed")
