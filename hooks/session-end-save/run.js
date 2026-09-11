@@ -42,7 +42,10 @@
  */
 
 const path = require('path');
-const { appendVaultFile, writeVaultFile, configured } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { createObsidianClient } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { RuntimeAuthority } = require(path.join(__dirname, '..', 'lib', 'runtime_authority'));
+
+const CALLER_IDENTITY = 'session-end-save';
 
 const SESSION_ID = process.env.SESSION_ID || 'unknown';
 const PROJECT_NAME = process.env.PROJECT_NAME || '';
@@ -100,9 +103,37 @@ function buildLogEntry(stamp, slug, projectName, summary, sessionId) {
   return `\n## ${stamp}${projectLine}${summaryLine}\n\nSession: ${sessionId} | slug: ${slug || '(none)'}\n`;
 }
 
-async function main() {
-  if (!configured()) {
-    emit({ sessionSaveSkipped: 'OBSIDIAN_API_KEY not set' });
+/**
+ * Build the authority from process.env. This is the one place in this file
+ * allowed to read security-critical environment variables — everything
+ * below `main()` receives only a RuntimeContextHandle and must resolve it
+ * through `authority` as CALLER_IDENTITY to reach the actual credential.
+ */
+function buildAuthorityFromEnv() {
+  return new RuntimeAuthority(process.env.MULTIVAULT_SECURITY_DOMAIN_ID, {
+    apiKey: process.env.OBSIDIAN_API_KEY,
+    endpoints: process.env.OBSIDIAN_API_URL ? [process.env.OBSIDIAN_API_URL] : undefined,
+    timeoutMs: Number(process.env.OBSIDIAN_API_TIMEOUT_MS),
+  });
+}
+
+async function saveSession(authority, handle) {
+  // A denied resolution (foreign handle, wrong caller, revoked) degrades to
+  // the same "unconfigured" state createObsidianClient already treats as a
+  // clean skip — never a different code path, never a leak.
+  const state = authority.resolve(handle, CALLER_IDENTITY) || {};
+  const client = createObsidianClient({
+    securityDomainId: state.securityDomainId,
+    apiKey: state.apiKey,
+    endpoints: state.endpoints,
+    timeoutMs: state.timeoutMs,
+  });
+  if (!client.configured()) {
+    if (client.configurationError === 'OBSIDIAN_API_KEY not set') {
+      emit({ sessionSaveSkipped: client.configurationError });
+    } else {
+      emit({ sessionSaveError: client.configurationError, needsTriage: true });
+    }
     return;
   }
 
@@ -127,7 +158,7 @@ async function main() {
     }
     const notePath = `projects/${SLUG}/operations/sessions/${SESSION_ID}.md`;
     const note = buildNote(stamp, SLUG, PROJECT_NAME, SUMMARY, SESSION_ID);
-    noteResult = await writeVaultFile(notePath, note);
+    noteResult = await client.writeVaultFile(notePath, note);
     if (!noteResult.ok) {
       emit({
         sessionSaveError: noteResult.error,
@@ -139,7 +170,7 @@ async function main() {
   }
 
   const entry = buildLogEntry(stamp, SLUG, PROJECT_NAME, SUMMARY, SESSION_ID);
-  const logResult = await appendVaultFile(LOG_PATH, entry);
+  const logResult = await client.appendVaultFile(LOG_PATH, entry);
 
   if (!logResult.ok) {
     // Report the failure; never fall back to overwriting the log.
@@ -161,6 +192,12 @@ async function main() {
     notePath: SLUG ? `projects/${SLUG}/operations/sessions/${SESSION_ID}.md` : null,
     layout: SLUG ? 'v4' : 'legacy',
   });
+}
+
+async function main() {
+  const authority = buildAuthorityFromEnv();
+  const handle = authority.issueHandle(CALLER_IDENTITY);
+  await saveSession(authority, handle);
 }
 
 main().catch((err) => emit({ sessionSaveError: err.message }));

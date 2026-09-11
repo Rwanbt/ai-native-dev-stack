@@ -112,6 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--force", action="store_true",
                         help="apply even when the check reports no newer release")
 
+    from ainative.knowledge.cli import add_knowledge_parser
+    add_knowledge_parser(commands)
+
     for name in VERIFIED_COMMANDS:
         commands.add_parser(name, add_help=False,
                             help=f"Verified Work Plane: `ainative {name} --help`.")
@@ -355,8 +358,15 @@ def _cmd_update(args: argparse.Namespace) -> int:
     return _report(args, result.to_record(), text)
 
 
+def _cmd_knowledge(args: argparse.Namespace) -> int:
+    from ainative.knowledge.cli import cmd_knowledge
+
+    return cmd_knowledge(args)
+
+
 LIFECYCLE_COMMANDS = {
     "init": _cmd_init,
+    "knowledge": _cmd_knowledge,
     "profile": _cmd_profile,
     "status": _cmd_status,
     "doctor": _cmd_doctor,

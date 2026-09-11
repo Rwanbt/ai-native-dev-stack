@@ -1,0 +1,1 @@
+{"observation_mechanism": "none", "plugin_enabled": true, "plugin_present": true, "plugin_version": "4.7.2", "reason": "no qualified runtime network observation mechanism exists", "recorded_at": "2026-09-11T08:46:30+00:00", "schema_version": 1, "semantic_background_egress": "UNKNOWN", "sensitive_semantic_available": false, "setting_keys": ["installed_at", "last_version"]}

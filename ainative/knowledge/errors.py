@@ -1,0 +1,52 @@
+"""Knowledge error codes (B1 foundation). Lifecycle-side only."""
+
+from __future__ import annotations
+
+from ainative.lifecycle.errors import EXIT_FAILED, EXIT_INVALID_REQUEST
+
+ERROR_EXIT_CODES = {
+    "KNOWLEDGE_MALFORMED": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_SCHEMA_UNKNOWN": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_IDENTITY_KEY_INVALID": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_ILLEGAL_STATE_TRANSITION": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_GATE_CLOSED": EXIT_FAILED,
+    "KNOWLEDGE_NOT_FOUND": EXIT_FAILED,
+    "KNOWLEDGE_MANDATORY_CONTEXT_OVERFLOW": EXIT_FAILED,
+    "KNOWLEDGE_SECRET_REFUSED": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_SECRET_SCANNER_UNAVAILABLE": EXIT_FAILED,
+    "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_CANDIDATE_TOO_LARGE": EXIT_INVALID_REQUEST,
+    "KNOWLEDGE_STORE_FULL": EXIT_FAILED,
+    "KNOWLEDGE_STORE_CORRUPTED": EXIT_FAILED,
+}
+
+
+class KnowledgeError(Exception):
+    """A refusal carrying a stable code, a message, and optional detail."""
+
+    def __init__(self, code: str, message: str, **detail: object) -> None:
+        if code not in ERROR_EXIT_CODES:
+            raise KeyError(f"undeclared knowledge error code: {code}")
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.detail = dict(detail)
+
+    @property
+    def exit_code(self) -> int:
+        return ERROR_EXIT_CODES[self.code]
+
+    def to_record(self) -> dict:
+        return {"error": self.code, "message": self.message, "detail": self.detail}
+
+    def __reduce__(self):
+        # Multiprocessing replays exceptions through (code, message):
+        # Exception.args holds (message,) alone, which cannot rebuild
+        # this two-argument refusal. Detail does not cross processes.
+        return (KnowledgeError, (self.code, self.message))
+
+    def __str__(self) -> str:
+        return f"{self.code}: {self.message}"
+
+
+__all__ = ["ERROR_EXIT_CODES", "KnowledgeError"]

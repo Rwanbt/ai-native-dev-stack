@@ -74,20 +74,9 @@ def _mutation_guard_path(project: Path) -> Path:
 
 
 @contextmanager
-def _mutation_guard(project: Path) -> Iterator[None]:
-    """Serialize ownership-file mutations without extending the lifecycle lock.
+def _exclusive_fd(descriptor: int):
+    """Hold one open file descriptor exclusively (OS primitive, both platforms)."""
 
-    A claim comparison and an unlink are separate filesystem operations.  A
-    second lifecycle process could force-replace a claim in that interval, so
-    the old owner would still unlink the replacement despite distinct claim
-    IDs.  This short-lived OS lock covers every create, reclaim, force-remove,
-    and release decision; it is never held while an operation mutates project
-    files.  The operating system releases it if a process crashes.
-    """
-
-    path = _mutation_guard_path(project)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
     locked = False
     try:
         if os.fstat(descriptor).st_size == 0:
@@ -114,7 +103,45 @@ def _mutation_guard(project: Path) -> Iterator[None]:
                 import fcntl
 
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+@contextmanager
+def project_guard(project: Path):
+    """Serialize short read-modify-write sections for one project, any layer.
+
+    Same guard file and same crash semantics as `_mutation_guard` (the OS
+    releases the lock when the holder dies), exposed publicly so Knowledge
+    Control persistence reuses the proven primitive instead of inventing a
+    second lock implementation (B1 S7/S13). Hold briefly: open, reload,
+    mutate, atomic replace — never across slow I/O.
+    """
+
+    path = _mutation_guard_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        with _exclusive_fd(descriptor):
+            yield
+    finally:
         os.close(descriptor)
+
+
+@contextmanager
+def _mutation_guard(project: Path):
+    """Serialize ownership-file mutations without extending the lifecycle lock.
+
+    A claim comparison and an unlink are separate filesystem operations.  A
+    second lifecycle process could force-replace a claim in that interval, so
+    the old owner would still unlink the replacement despite distinct claim
+    IDs.  This short-lived OS lock covers every create, reclaim, force-remove,
+    and release decision; it is never held while an operation mutates project
+    files.  The operating system releases it if a process crashes.
+    """
+
+    with project_guard(project):
+        yield
+
+
 
 
 ERROR_INVALID_PARAMETER = 87
@@ -340,5 +367,6 @@ def acquire(project: Path, operation: str, *, force: bool = False) -> Iterator[L
             _release(project, info)
 
 
-__all__ = ["LockInfo", "lock_path", "read", "describe", "acquire", "LOCK_RELATIVE",
+__all__ = ["LockInfo", "lock_path", "read", "describe", "acquire",
+           "project_guard", "LOCK_RELATIVE",
            "STALE_AFTER_SECONDS"]

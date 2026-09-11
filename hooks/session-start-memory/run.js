@@ -29,7 +29,10 @@
  */
 
 const path = require('path');
-const { readVaultFile, configured, ENDPOINTS } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { createObsidianClient } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { RuntimeAuthority } = require(path.join(__dirname, '..', 'lib', 'runtime_authority'));
+
+const CALLER_IDENTITY = 'session-start-memory';
 
 const USER_MEMORY_PATH = process.env.OBSIDIAN_USER_MEMORY_PATH || 'memory/user.md';
 const HANDOFF_PATH = process.env.OBSIDIAN_HANDOFF_PATH || '_global/handoff.md';
@@ -62,14 +65,40 @@ function emit(sessionContext) {
   console.log(JSON.stringify({ metadata: { sessionContext } }));
 }
 
-async function main() {
-  if (!configured()) {
-    emit({ loaded: false, skipped: 'OBSIDIAN_API_KEY not set' });
-    return;
-  }
+/**
+ * Build the authority from process.env. This is the one place in this file
+ * allowed to read security-critical environment variables — everything
+ * below `main()` receives only a RuntimeContextHandle and must resolve it
+ * through `authority` as CALLER_IDENTITY to reach the actual credential.
+ */
+function buildAuthorityFromEnv() {
+  return new RuntimeAuthority(process.env.MULTIVAULT_SECURITY_DOMAIN_ID, {
+    apiKey: process.env.OBSIDIAN_API_KEY,
+    endpoints: process.env.OBSIDIAN_API_URL ? [process.env.OBSIDIAN_API_URL] : undefined,
+    timeoutMs: Number(process.env.OBSIDIAN_API_TIMEOUT_MS),
+  });
+}
 
+async function loadSessionContext(authority, handle) {
+  // A denied resolution (foreign handle, wrong caller, revoked) degrades to
+  // the same "unconfigured" state createObsidianClient already treats as a
+  // clean skip — never a different code path, never a leak.
+  const state = authority.resolve(handle, CALLER_IDENTITY) || {};
+  const client = createObsidianClient({
+    securityDomainId: state.securityDomainId,
+    apiKey: state.apiKey,
+    endpoints: state.endpoints,
+    timeoutMs: state.timeoutMs,
+  });
   const slug = resolveSlug();
   const wantV4 = Boolean(slug);
+  if (!client.configured()) {
+    const keyMissing = client.configurationError === 'OBSIDIAN_API_KEY not set';
+    emit(keyMissing
+      ? { loaded: false, skipped: client.configurationError }
+      : { loaded: false, error: client.configurationError, needsTriage: true, layout: wantV4 ? 'v4' : 'legacy' });
+    return;
+  }
 
   // v4 paths are tried first; the legacy ones stay as a safety net.
   const candidates = [];
@@ -83,7 +112,7 @@ async function main() {
   candidates.push({ name: 'handoff',    path: HANDOFF_PATH });
 
   const results = await Promise.all(candidates.map(async (c) => {
-    const r = await readVaultFile(c.path);
+    const r = await client.readVaultFile(c.path);
     return { ...c, ...r, body: normalize(r.body) };
   }));
 
@@ -96,7 +125,7 @@ async function main() {
     emit({
       loaded: false,
       error: results.map((r) => r.error).filter(Boolean)[0] || 'vault unreachable',
-      triedEndpoints: ENDPOINTS,
+      triedEndpoints: client.endpoints,
       layout: wantV4 ? 'v4' : 'legacy',
     });
     return;
@@ -140,6 +169,12 @@ async function main() {
     missing,
     empty,
   });
+}
+
+async function main() {
+  const authority = buildAuthorityFromEnv();
+  const handle = authority.issueHandle(CALLER_IDENTITY);
+  await loadSessionContext(authority, handle);
 }
 
 main().catch((err) => emit({ loaded: false, error: err.message }));

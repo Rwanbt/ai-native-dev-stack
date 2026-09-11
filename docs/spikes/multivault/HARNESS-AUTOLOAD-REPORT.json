@@ -1,0 +1,1 @@
+{"checkout": ".", "disable_control": "UNKNOWN", "observation": "none", "reason": "project autoload surfaces require a harness-specific neutral-launch probe", "recorded_at": "2026-09-11T09:15:50+00:00", "schema_version": 1, "sensitive_harness_available": false, "surfaces": ["AGENTS.md", "docs/qualification/opencode.json", "stack/agents/anti-debt/opencode/opencode.json"]}

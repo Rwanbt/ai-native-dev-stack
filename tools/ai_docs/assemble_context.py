@@ -15,6 +15,12 @@ Usage:
     python tools/ai_docs/assemble_context.py <source_file>
     python tools/ai_docs/assemble_context.py <source_file> --output context.md
     python tools/ai_docs/assemble_context.py <source_file> --no-memory
+    python tools/ai_docs/assemble_context.py <source_file> --max-bytes 65536
+
+Selection under the total budget goes exclusively through the unified
+ContextPlanner (ainative.knowledge.planner); this script gathers files
+and renders, it does not rank. Default output is byte-identical to the
+pre-planner assembler on the same inputs.
 
 Works for any project structure — no hardcoded paths.
 The AI_CONTEXT.md acts as the module marker (same as generate_ai_summary.py).
@@ -33,6 +39,17 @@ import sys
 from pathlib import Path
 
 from module_discovery import find_module  # noqa: E402
+
+# Repo root on sys.path so the unified ContextPlanner is importable whether
+# this file runs as `python tools/ai_docs/assemble_context.py` (script dir
+# only) or is imported by the test suite (tools dir only). Same precedent
+# as scripts/workplane_harness_matrix.py. Selection and ranking below go
+# through that planner and nothing else (B2 single-owner rule).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from ainative.knowledge import planner as planner_module  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -167,14 +184,32 @@ def section_header(title: str) -> str:
 # Assembler
 # ---------------------------------------------------------------------------
 
+def _section_source(key: str, title: str, text: str, kind: str,
+                    scope: str, locator: str, tier: str | None = None) -> dict:
+    """One gathered section as a planner source. Pure data mapping."""
+
+    record: dict = {"kind": kind, "locator": locator, "scope": scope,
+                    "excerpt": text}
+    if tier is not None:
+        record["tier"] = tier
+    return record
+
+
 def assemble(
     source_file: Path,
     include_memory: bool = True,
     max_adr_lines: int = 60,
     memory_lines: int = 50,
     max_kfp_lines: int = 200,
+    max_total_bytes: int = 262144,
 ) -> str:
-    """Assemble the context document for source_file."""
+    """Assemble the context document for source_file.
+
+    Gathering is unchanged (same files, same per-section caps, same
+    order). Selection under the total budget goes exclusively through
+    the unified ContextPlanner: sections it drops are omitted with a
+    note, Tier A is never silently evicted (overflow raises visibly).
+    """
 
     source_file = source_file.resolve()
     if not source_file.exists():
@@ -189,6 +224,7 @@ def assemble(
         )
 
     module_name = module_dir.name
+    module_scope = f"module/{module_name}"
     try:
         rel_source = source_file.relative_to(root)
         rel_module = module_dir.relative_to(root)
@@ -205,46 +241,47 @@ def assemble(
         "",
     ]
 
-    # ------------------------------------------------------------------ #
-    # AI_CONTEXT.md (always)
-    # ------------------------------------------------------------------ #
+    # Gather (legacy selection of files, unchanged) -------------------- #
+    sections: list[tuple[str, str, str]] = []
+    sources: list[dict] = []
+
+    def _add(key: str, title: str, text: str, kind: str, scope: str,
+             locator: str, tier: str | None = None) -> None:
+        sections.append((key, title, text))
+        sources.append(_section_source(key, title, text, kind, scope,
+                                       locator, tier))
+
     ctx_path = module_dir / "AI_CONTEXT.md"
     ctx_text = ctx_path.read_text(encoding="utf-8", errors="ignore")
-    parts.append(section_header(f"MODULE CONTEXT — {module_name}"))
-    parts.append(ctx_text.strip())
+    _add("context", f"MODULE CONTEXT — {module_name}", ctx_text.strip(),
+         "ai-context", module_scope, str(ctx_path.relative_to(root))
+         if _within(root, ctx_path) else ctx_path.name)
 
-    # ------------------------------------------------------------------ #
-    # AI_SUMMARY.md (if exists)
-    # ------------------------------------------------------------------ #
     summary_path = module_dir / "AI_SUMMARY.md"
     if summary_path.exists():
         summary_text = summary_path.read_text(encoding="utf-8", errors="ignore")
-        parts.append(section_header("PUBLIC API SNAPSHOT  (auto-generated)"))
-        parts.append(summary_text.strip())
+        _add("summary", "PUBLIC API SNAPSHOT  (auto-generated)",
+             summary_text.strip(), "summary", module_scope,
+             str(summary_path.relative_to(root))
+             if _within(root, summary_path) else summary_path.name)
 
-    # ------------------------------------------------------------------ #
-    # REALTIME_RULES.md (if RT constraints detected)
-    # ------------------------------------------------------------------ #
     if has_rt_constraints(ctx_text):
         rt_path = root / "docs" / "REALTIME_RULES.md"
         if rt_path.exists():
             rt_text = rt_path.read_text(encoding="utf-8", errors="ignore")
-            parts.append(section_header("REAL-TIME RULES  (injected — RT constraints detected)"))
-            parts.append(rt_text.strip())
+            _add("realtime",
+                 "REAL-TIME RULES  (injected — RT constraints detected)",
+                 rt_text.strip(), "policy", "repository", "docs/REALTIME_RULES.md")
         else:
-            parts.append(section_header("REAL-TIME RULES"))
-            parts.append(
-                "_`docs/REALTIME_RULES.md` not found._  \n"
-                "_Create it to capture zero-alloc / zero-blocking constraints._"
-            )
+            _add("realtime", "REAL-TIME RULES",
+                 "_`docs/REALTIME_RULES.md` not found._  \n"
+                 "_Create it to capture zero-alloc / zero-blocking constraints._",
+                 "policy", "repository", "docs/REALTIME_RULES.md")
 
-    # ------------------------------------------------------------------ #
-    # Referenced ADRs
-    # ------------------------------------------------------------------ #
     adr_refs = extract_adr_refs(ctx_text)
     adr_dir = root / "docs" / "adr"
     if adr_refs and adr_dir.exists():
-        parts.append(section_header("REFERENCED ADRs"))
+        blocks = []
         for adr_id in adr_refs:
             num = adr_id.replace("ADR-", "")
             matches = list(adr_dir.glob(f"{num}-*.md")) or list(adr_dir.glob(f"ADR-{num}-*.md"))
@@ -252,58 +289,83 @@ def assemble(
                 adr_text = matches[0].read_text(encoding="utf-8", errors="ignore")
                 adr_lines = adr_text.splitlines()
                 excerpt = "\n".join(adr_lines[:max_adr_lines])
-                parts.append(f"### {adr_id}")
-                parts.append(excerpt)
                 if len(adr_lines) > max_adr_lines:
-                    parts.append(
+                    excerpt += (
                         f"\n_... ({len(adr_lines) - max_adr_lines} more lines "
                         f"— see `{matches[0].relative_to(root)}`)_"
                     )
-                parts.append("")
+                blocks.append(f"### {adr_id}\n{excerpt}")
             else:
-                parts.append(f"### {adr_id} — _not found in `docs/adr/`_\n")
+                blocks.append(f"### {adr_id} — _not found in `docs/adr/`_")
+        _add("adrs", "REFERENCED ADRs", "\n\n".join(blocks) + "\n",
+             "adr", "project", "docs/adr")
 
-    # ------------------------------------------------------------------ #
-    # KNOWN_FAILURE_PATTERNS.md (if exists)
-    # ------------------------------------------------------------------ #
     kfp_path = root / "docs" / "KNOWN_FAILURE_PATTERNS.md"
     if kfp_path.exists():
         kfp_lines = kfp_path.read_text(encoding="utf-8", errors="ignore").splitlines()
         excerpt = "\n".join(kfp_lines[:max_kfp_lines])
-        parts.append(section_header("KNOWN FAILURE PATTERNS"))
-        parts.append(excerpt)
         if len(kfp_lines) > max_kfp_lines:
-            parts.append(
+            excerpt += (
                 f"\n_... ({len(kfp_lines) - max_kfp_lines} more lines "
                 f"— see `docs/KNOWN_FAILURE_PATTERNS.md`)_"
             )
+        _add("kfp", "KNOWN FAILURE PATTERNS", excerpt,
+             "kfp", "project", "docs/KNOWN_FAILURE_PATTERNS.md")
 
-    # ------------------------------------------------------------------ #
-    # graphify dependency context (node + neighbors)
-    # ------------------------------------------------------------------ #
     graphify_bin = find_graphify_bin()
     if graphify_bin:
         gfx_result = run_graphify_explain(graphify_bin, root, source_file)
         if gfx_result:
-            parts.append(section_header("DEPENDENCY CONTEXT  (graphify explain)"))
-            parts.append(f"```\n{gfx_result}\n```")
+            _add("graphify", "DEPENDENCY CONTEXT  (graphify explain)",
+                 f"```\n{gfx_result}\n```", "code", module_scope,
+                 "graphify", tier="C")
 
-    # ------------------------------------------------------------------ #
-    # Claude Code memory excerpt
-    # ------------------------------------------------------------------ #
     if include_memory:
         mem_path = find_claude_memory(root)
         if mem_path and mem_path.exists():
             mem_lines = mem_path.read_text(encoding="utf-8", errors="ignore").splitlines()
             excerpt = "\n".join(mem_lines[:memory_lines])
-            parts.append(section_header(f"PROJECT MEMORY  (first {memory_lines} lines)"))
-            parts.append(excerpt)
             if len(mem_lines) > memory_lines:
-                parts.append(
+                excerpt += (
                     f"\n_... ({len(mem_lines) - memory_lines} more lines — see `{mem_path}`)_"
                 )
+            _add("memory", f"PROJECT MEMORY  (first {memory_lines} lines)",
+                 excerpt, "session", "project", str(mem_path))
+
+    # Select (single owner: the unified ContextPlanner) ---------------- #
+    bundle = planner_module.plan(
+        sources,
+        focus=[module_scope],
+        budgets=planner_module.Budgets(max_bytes=max_total_bytes,
+                                       max_items=64),
+    )
+    kept = {item.source for item in bundle.items}
+
+    # Render (legacy order and bytes for kept sections) ---------------- #
+    # Only ADR blocks historically carried a trailing blank line; every
+    # other section renders header plus text, exactly as before.
+    for (key, title, text), record in zip(sections, sources):
+        if record["locator"] not in kept:
+            continue
+        parts.append(section_header(title))
+        parts.append(text)
+
+    omitted = sorted({record["locator"] for record in sources
+                      if record["locator"] not in kept})
+    if omitted:
+        parts.append(section_header("OMITTED OVER BUDGET  (planner)"))
+        for locator in omitted:
+            parts.append(f"_— `{locator}` (over total budget)_")
 
     return "\n".join(parts) + "\n"
+
+
+def _within(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +384,8 @@ def main() -> int:
                         help="Max lines per ADR to include (default: 60)")
     parser.add_argument("--memory-lines", type=int, default=50,
                         help="Lines of MEMORY.md to include (default: 50)")
+    parser.add_argument("--max-bytes", type=int, default=262144,
+                        help="Total budget enforced by the ContextPlanner")
     args = parser.parse_args()
 
     try:
@@ -330,10 +394,17 @@ def main() -> int:
             include_memory=not args.no_memory,
             max_adr_lines=args.max_adr_lines,
             memory_lines=args.memory_lines,
+            max_total_bytes=args.max_bytes,
         )
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    except Exception as e:
+        from ainative.knowledge.errors import KnowledgeError
+        if isinstance(e, KnowledgeError):
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        raise
 
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
