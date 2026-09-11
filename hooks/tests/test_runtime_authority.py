@@ -112,6 +112,50 @@ class RuntimeAuthorityTests(unittest.TestCase):
         """)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
+    def test_handle_carries_at_least_128_bits_of_csprng_entropy(self) -> None:
+        # ADR-0013 section 3 requires the handle to carry >=128 bits of CSPRNG
+        # entropy. This module uses a 256-bit secret; two independently issued
+        # handles must not collide and must not be derivable from each other.
+        result = _run("""
+            const assert = require('assert');
+            const { RuntimeAuthority } = require('./hooks/lib/runtime_authority');
+            const authority = new RuntimeAuthority('domain-a', { apiKey: 'secret-key' });
+            const a = authority.issueHandle('session-start-memory');
+            const b = authority.issueHandle('session-start-memory');
+            assert.notStrictEqual(a._secret, b._secret);
+            // base64url of 32 bytes is 43 chars (no padding) -> >=256 bits of material.
+            assert.ok(a._secret.length >= 40, `secret too short: ${a._secret.length} chars`);
+        """)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+    def test_secret_is_not_enumerable_or_own_property_visible(self) -> None:
+        result = _run("""
+            const assert = require('assert');
+            const { RuntimeAuthority } = require('./hooks/lib/runtime_authority');
+            const authority = new RuntimeAuthority('domain-a', { apiKey: 'secret-key' });
+            const handle = authority.issueHandle('session-start-memory');
+            assert.ok(!Object.keys(handle).includes('_secret'));
+            assert.ok(!Object.prototype.propertyIsEnumerable.call(handle, '_secret'));
+        """)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+    def test_forged_handle_with_guessed_field_name_is_denied(self) -> None:
+        # A plain object that copies the two visible fields but cannot know
+        # the CSPRNG secret must still be denied.
+        result = _run("""
+            const assert = require('assert');
+            const { RuntimeAuthority } = require('./hooks/lib/runtime_authority');
+            const authority = new RuntimeAuthority('domain-a', { apiKey: 'secret-key' });
+            const real = authority.issueHandle('session-start-memory');
+            const forged = {
+                authorityInstanceId: real.authorityInstanceId,
+                securityDomainId: real.securityDomainId,
+                _secret: 'guessed-value',
+            };
+            assert.strictEqual(authority.resolve(forged, 'session-start-memory'), null);
+        """)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
