@@ -218,3 +218,109 @@ def project_instruction_admission(workspace) -> dict:
     if found:
         return {"decision": "DENY", "reason_code": CLAUDE_INSTRUCTIONS_REASON_CODE, "surfaces": tuple(found), "policy": dict(PROJECT_INSTRUCTION_POLICY)}
     return {"decision": "ALLOW", "reason_code": "OK", "surfaces": (), "policy": dict(PROJECT_INSTRUCTION_POLICY)}
+
+
+from dataclasses import dataclass as _dataclass, replace as _replace
+
+PROJECT_INSTRUCTION_SCAN_INCOMPLETE_CODE = "AINATIVE_CLAUDE_INSTRUCTION_SCAN_INCOMPLETE"
+
+
+@_dataclass(frozen=True)
+class ProjectInstructionAdmission:
+    harness_id: str
+    harness_version: str
+    workspace_root: str
+    git_root: str
+    applicable_surfaces: tuple
+    observed_state: tuple
+    policy_digest: str
+    verified_at: str
+    decision: str
+    reason_code: str
+
+
+def _git_root(root):
+    current = root
+    while True:
+        if (current / ".git").exists():
+            return str(current)
+        parent = current.parent
+        if parent == current:
+            return ""
+        current = parent
+
+
+def instruction_admission_record(workspace) -> ProjectInstructionAdmission:
+    """PER_OPERATION admission record; fail closed on any uncertainty."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from .schema import digest as canonical_digest
+
+    root = Path(workspace).resolve()
+    policy_digest = canonical_digest(dict(PROJECT_INSTRUCTION_POLICY))
+    base = {
+        "harness_id": "claude-code",
+        "harness_version": "2.1.220",
+        "workspace_root": str(root),
+        "git_root": "",
+        "policy_digest": policy_digest,
+        "verified_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    if not root.is_dir():
+        return ProjectInstructionAdmission(**base, applicable_surfaces=(), observed_state=(), decision="DENY_OBSERVATION_INCOMPLETE", reason_code=PROJECT_INSTRUCTION_SCAN_INCOMPLETE_CODE)
+    base["git_root"] = _git_root(root)
+    try:
+        found = []
+        for relative in _PROJECT_INSTRUCTION_SURFACES:
+            if (root / relative).is_file():
+                found.append(str(root / relative))
+        boundary = base["git_root"]
+        ancestors = []
+        if boundary and Path(boundary) != root:
+            current = root.parent
+            while True:
+                ancestors.append(current)
+                if str(current) == boundary:
+                    break
+                parent = current.parent
+                if parent == current:
+                    break
+                current = parent
+        elif not boundary and root.parent != root:
+            ancestors.append(root.parent)
+        for ancestor in ancestors:
+            for relative in ("CLAUDE.md", "CLAUDE.local.md"):
+                candidate = ancestor / relative
+                if candidate.is_file():
+                    found.append(str(candidate))
+    except OSError:
+        return ProjectInstructionAdmission(**base, applicable_surfaces=(), observed_state=(), decision="DENY_OBSERVATION_INCOMPLETE", reason_code=PROJECT_INSTRUCTION_SCAN_INCOMPLETE_CODE)
+    observed = tuple(f"{path}:present" for path in found)
+    decision = "DENY_NOT_DISABLEABLE" if found else "ALLOW"
+    reason_code = CLAUDE_INSTRUCTIONS_REASON_CODE if found else "OK"
+    return ProjectInstructionAdmission(**base, applicable_surfaces=tuple(found), observed_state=observed, decision=decision, reason_code=reason_code)
+
+
+class SensitivePhaseGate:
+    """Phase A admission plus a mandatory re-check before Phase B release."""
+
+    def __init__(self, workspace):
+        from pathlib import Path
+
+        self._workspace = Path(workspace)
+        self._phase_a = None
+
+    def phase_a(self) -> ProjectInstructionAdmission:
+        self._phase_a = instruction_admission_record(self._workspace)
+        return self._phase_a
+
+    def phase_b(self) -> ProjectInstructionAdmission:
+        current = instruction_admission_record(self._workspace)
+        if self._phase_a is None:
+            return _replace(current, decision="DENY_OBSERVATION_INCOMPLETE", reason_code=PROJECT_INSTRUCTION_SCAN_INCOMPLETE_CODE)
+        if self._phase_a.decision != "ALLOW" or current.decision != "ALLOW":
+            return current
+        if current.policy_digest != self._phase_a.policy_digest or current.applicable_surfaces != self._phase_a.applicable_surfaces:
+            return _replace(current, decision="DENY_NOT_DISABLEABLE", reason_code=CLAUDE_INSTRUCTIONS_REASON_CODE)
+        return current
