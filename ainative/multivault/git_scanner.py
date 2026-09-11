@@ -17,6 +17,8 @@ import shutil
 import subprocess
 from typing import Mapping
 
+from .schema import digest as canonical_digest
+
 
 DEFAULT_SECRET_PATTERNS: tuple[bytes, ...] = (
     b"-----BEGIN RSA PRIVATE KEY",
@@ -56,6 +58,8 @@ class CandidateScanResult:
     objects_examined: int
     blobs_scanned: int
     reason: str
+    candidate_set_digest: str
+    scan_result_digest: str
 
 
 def default_git_environment(git_executable: str) -> dict[str, str]:
@@ -107,21 +111,26 @@ class CandidateObjectScanner:
     def scan(self, source_oid: str, remote_base_oid: str | None, refspec: str) -> CandidateScanResult:
         reason = self._preflight(source_oid, refspec)
         if reason:
-            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), 0, 0, reason)
+            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), 0, 0, reason, "", "")
         entries = self._candidate_objects(source_oid, remote_base_oid)
         if entries is None:
-            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), 0, 0, "candidate object enumeration failed")
+            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), 0, 0, "candidate object enumeration failed", "", "")
+        candidate_set_digest = canonical_digest(sorted(oid for oid, _path in entries))
         metadata = self._object_metadata([oid for oid, _path in entries])
         if metadata is None:
-            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), len(entries), 0, "missing or unreadable objects in the candidate set")
+            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), len(entries), 0, "missing or unreadable objects in the candidate set", candidate_set_digest, "")
         blobs = [(oid, path) for oid, path in entries if metadata[oid][0] == "blob"]
         contents = self._blob_contents([oid for oid, _path in blobs])
         if contents is None:
-            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), len(entries), len(blobs), "blob content is unreadable")
+            return CandidateScanResult(ScanVerdict.INCOMPLETE, (), len(entries), len(blobs), "blob content is unreadable", candidate_set_digest, "")
         findings = self._scan_blobs(blobs, contents)
+        scan_result_digest = canonical_digest([
+            {"category": finding.category, "object": finding.object_id, "path": finding.path, "detail": finding.detail}
+            for finding in findings
+        ])
         if findings:
-            return CandidateScanResult(ScanVerdict.LEAK, tuple(findings), len(entries), len(blobs), f"{len(findings)} policy finding(s) in the candidate object set")
-        return CandidateScanResult(ScanVerdict.PASS, (), len(entries), len(blobs), "candidate object set is clean")
+            return CandidateScanResult(ScanVerdict.LEAK, tuple(findings), len(entries), len(blobs), f"{len(findings)} policy finding(s) in the candidate object set", candidate_set_digest, scan_result_digest)
+        return CandidateScanResult(ScanVerdict.PASS, (), len(entries), len(blobs), "candidate object set is clean", candidate_set_digest, scan_result_digest)
 
     def _preflight(self, source_oid: str, refspec: str) -> str | None:
         if not source_oid or not refspec:
