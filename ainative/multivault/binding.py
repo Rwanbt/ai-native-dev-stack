@@ -41,3 +41,49 @@ def admit(declaration: WorkspaceDeclaration, store: AuthorityStore) -> bool:
     if not set(declaration.requested_roots) <= allowed_roots:
         return False
     return True
+ALLOW_ROOT_FRESH = "ALLOW_ROOT_FRESH"
+DENY_BINDING_MISSING = "DENY_BINDING_MISSING"
+DENY_ROOT_IDENTITY_UNRECORDED = "DENY_ROOT_IDENTITY_UNRECORDED"
+DENY_ROOT_MEASUREMENT_INCOMPLETE = "DENY_ROOT_MEASUREMENT_INCOMPLETE"
+DENY_ROOT_STALE = "DENY_ROOT_STALE"
+
+ROOT_IDENTITY_FIELD = "root_identity"
+
+
+@dataclass(frozen=True)
+class RootFreshnessVerdict:
+    decision: str
+    recorded_root_identity: str | None = None
+    measured_root_identity: str | None = None
+
+
+def root_freshness(
+    binding: dict[str, Any] | None,
+    measured_root_identity: str | None,
+) -> RootFreshnessVerdict:
+    """Compare the operator-recorded vault root identity to the measured one.
+
+    Fail closed: an unrecorded identity or an absent measurement is never
+    freshness. The measurement is injected - this module performs no I/O.
+    """
+    if not binding:
+        return RootFreshnessVerdict(DENY_BINDING_MISSING)
+    recorded = binding.get(ROOT_IDENTITY_FIELD)
+    if not recorded:
+        return RootFreshnessVerdict(DENY_ROOT_IDENTITY_UNRECORDED)
+    if not measured_root_identity:
+        return RootFreshnessVerdict(
+            DENY_ROOT_MEASUREMENT_INCOMPLETE,
+            recorded_root_identity=recorded,
+        )
+    if measured_root_identity != recorded:
+        return RootFreshnessVerdict(
+            DENY_ROOT_STALE,
+            recorded_root_identity=recorded,
+            measured_root_identity=measured_root_identity,
+        )
+    return RootFreshnessVerdict(
+        ALLOW_ROOT_FRESH,
+        recorded_root_identity=recorded,
+        measured_root_identity=measured_root_identity,
+    )
