@@ -196,7 +196,9 @@ def check_multivault_wheel(ainative: Path, project: Path, cwd: Path, env: dict) 
          "import ainative.multivault; import ainative.multivault.harness_claude; "
          "import ainative.multivault.exec_wrapper; import ainative.multivault.enforced_boundary"],
         cwd=cwd, env=env)
-    run([python, "-m", "ainative.multivault", "--help"], cwd=cwd, env=env)
+    run([ainative, "multivault", "--help"], cwd=cwd, env=env)
+    run([ainative, "multivault", "context", "--store", str(cwd / "no-authority.json"),
+         "--domain", "smoke"], cwd=cwd, env=env, expect=1)
 
 
 def main() -> int:

@@ -78,6 +78,38 @@ def _context_report(store_path: Path, domain: str, harness: str, provider_class:
     )
 
 
+def _bind(args) -> int:
+    """The only CLI mutation: operator intent plus real measurements, never repository data."""
+    from .identity import discover_checkout, discover_vault, vault_root_identity
+    from .schema import SecurityClassification
+
+    if args.classification not in SecurityClassification.__members__:
+        print("bind: REFUSED unknown classification")
+        return 1
+    try:
+        measured = vault_root_identity(discover_vault(args.vault_id, args.vault.resolve()))
+        discover_checkout(args.checkout.resolve())
+    except ValueError as error:
+        print(f"bind: REFUSED {error}")
+        return 1
+    store = AuthorityStore(args.store)
+    try:
+        bindings = store.bindings()
+    except AuthorityStoreCorruptError:
+        print("bind: REFUSED authority store is corrupt")
+        return 1
+    bindings[args.domain] = {
+        "vault": args.vault_id,
+        "checkout": args.checkout_id,
+        "classification": args.classification,
+        "roots": list(args.roots),
+        "root_identity": measured,
+    }
+    store.replace(bindings)
+    print(f"bind: RECORDED domain={args.domain} vault={args.vault_id}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ainative.multivault")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -87,6 +119,16 @@ def main(argv: list[str] | None = None) -> int:
     query.add_argument("--domain")
     query.add_argument("--decision")
     query.add_argument("--reason-code")
+
+    bind = subparsers.add_parser("bind", help="record an operator binding from real measurements")
+    bind.add_argument("--store", type=Path, required=True)
+    bind.add_argument("--domain", required=True)
+    bind.add_argument("--vault-id", required=True)
+    bind.add_argument("--checkout-id", required=True)
+    bind.add_argument("--vault", type=Path, required=True)
+    bind.add_argument("--checkout", type=Path, required=True)
+    bind.add_argument("--classification", default="PERSONAL")
+    bind.add_argument("--roots", nargs="*", default=[])
 
     doctor = subparsers.add_parser("doctor", help="fail-closed readiness checks")
     doctor.add_argument("--store", type=Path, required=True)
@@ -112,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
         ):
             print(json.dumps(asdict(record), sort_keys=True))
         return 0
+
+    if args.command == "bind":
+        return _bind(args)
 
     if args.command == "doctor":
         report = doctor_report(_doctor_checks(args.store, args.domain, args.repo, args.vault_root))

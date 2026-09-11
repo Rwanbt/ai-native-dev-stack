@@ -400,6 +400,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # Verified commands are handed over verbatim, before argparse sees them: the
     # Work Plane owns its own grammar, its own output and its own exit codes.
+    # The Multi-Vault space owns its own grammar and exit codes as well; a thin
+    # facade over the existing owners, never a second security implementation.
+    if arguments and arguments[0] == "multivault":
+        from ainative.multivault.__main__ import main as multivault_main
+
+        return multivault_main(arguments[1:])
+
     if arguments and arguments[0] in VERIFIED_COMMANDS:
         from ainative_workplane.cli import main as workplane_main
 
