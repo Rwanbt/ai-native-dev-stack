@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+import json
 from ainative.multivault.schema import AllowedContextEnvelope, SecurityDomain, SecurityEpoch, persistence_namespace, policy_digest
 
 class MultiVaultSchemaTests(unittest.TestCase):
@@ -15,3 +17,6 @@ class MultiVaultSchemaTests(unittest.TestCase):
         self.assertEqual(first.exposure_digest(), second.exposure_digest())
         domain = SecurityDomain("a", "v", "p", "o")
         self.assertNotEqual(persistence_namespace(domain, first.exposure_digest(), "m", "x"), persistence_namespace(domain, first.exposure_digest(), "m", "y"))
+    def test_canonical_fixture_has_stable_domain_digest(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures" / "multivault-canonical.json").read_text(encoding="utf-8"))
+        self.assertEqual("79d62a0120258c862119202ce2942e7358ef4f0873a6f96e278ab4e5135535f6", policy_digest(fixture))
