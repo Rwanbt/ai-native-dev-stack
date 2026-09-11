@@ -128,8 +128,8 @@ class UrlNormalizationTests(unittest.TestCase):
 
     def test_invalid_or_unsupported_urls_normalize_to_none(self):
         self.assertIsNone(normalize_remote_url(""))
-        self.assertIsNone(normalize_remote_url("file:///d:/repo"))
         self.assertIsNone(normalize_remote_url("github.com/company/repo"))
+        self.assertEqual("file:///d:/repo", normalize_remote_url("file:///d:/repo.git/"))
 
 
 class TransportValidationTests(unittest.TestCase):

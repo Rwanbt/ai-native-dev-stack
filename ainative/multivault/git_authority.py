@@ -107,6 +107,13 @@ def normalize_remote_url(url: str) -> str | None:
         value = f"ssh://{scp.group('user')}@{scp.group('host')}/{scp.group('path')}"
     parsed = urlsplit(value)
     scheme = parsed.scheme.lower()
+    if scheme == "file":
+        path = parsed.path.rstrip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        if not path:
+            return None
+        return f"file://{path}"
     if scheme not in {"https", "http", "ssh", "git"} or not parsed.hostname:
         return None
     try:
