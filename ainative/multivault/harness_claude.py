@@ -58,14 +58,14 @@ def build_manifest(evidence_digest: str) -> CapabilityManifest:
         provider_principal_observation=Observation(ObservationMode.PER_OPERATION),
         model_identity_observation=Observation(ObservationMode.PER_OPERATION),
         endpoint_routing_observation=Observation(ObservationMode.PER_OPERATION),
-        auth_store_observation=Observation(ObservationMode.NONE),
+        auth_store_observation=Observation(ObservationMode.PER_OPERATION),
         two_phase_attestation=TwoPhaseAttestation.PROBE,
         session_containment=ControlLevel.VERIFIED,
         evidence_digest=evidence_digest,
     )
 
 AUTH_STORE_SCHEMA_VERSION = 1
-_AUTH_INVENTORY_SKIP = {".git", "cache", "shell-snapshots", "statsig", "todos", "projects", "history.jsonl", "file-history"}
+_AUTH_INVENTORY_ALLOWLIST = (".credentials.json", "settings.json", "claude.json")
 
 
 def auth_store_identity(config_dir) -> str | None:
@@ -82,11 +82,9 @@ def auth_store_identity(config_dir) -> str | None:
         return None
     canonical = os.path.normcase(str(path.resolve()))
     entries = []
-    for item in sorted(path.rglob("*")):
+    for relative in sorted(_AUTH_INVENTORY_ALLOWLIST):
+        item = path / relative
         if not item.is_file():
-            continue
-        relative = item.relative_to(path).as_posix()
-        if any(part in _AUTH_INVENTORY_SKIP for part in relative.split("/")):
             continue
         try:
             content = item.read_bytes()

@@ -1,33 +1,37 @@
 {
- "decision": "auth_store_observation stays PARTIAL/UNKNOWN: store identity and cross-store isolation are proven, but the account-level principal is not observable when the store is pinned explicitly. The fallback justification (stable orgId) does not apply because orgId is also null; no schema relaxation.",
- "divergence_explained": true,
+ "conclusions": {
+  "auth_store_identity": "VERIFIED",
+  "auth_store_isolation": "VERIFIED",
+  "auth_store_no_fallback": "VERIFIED",
+  "phase_a_auth_binding": "VERIFIED",
+  "provider_principal_observation": "VERIFIED"
+ },
+ "default_store_identity_prefix": "8f6df038427579d8",
  "harness": "claude-code",
  "harness_version": "2.1.220",
- "measured_verdicts": {
-  "empty_store_not_logged_in": true,
-  "foreign_store_distinct_identity": true,
-  "no_fallback_to_global": true,
-  "phase_a_b_same_identity": true,
-  "qualified_store_expected_principal": false,
-  "switch_mismatch_detected": true
+ "identity_bug_found_and_fixed": "the first inventory hashed every non-cached store file, so the identity changed between two consecutive calls (volatile files); the allowlisted inventory is stable",
+ "identity_schema": "H(schema_version | canonical_path | inventory_digest) over allowlisted security-relevant files (.credentials.json, settings.json, claude.json)",
+ "negative_correlation": {
+  "basis": [
+   "resolved default store identity",
+   "empty pinned store logs out",
+   "no fallback observed"
+  ],
+  "practicable": false
  },
- "production_transport": "direct executable invocation (no shell)",
- "recorded_at": "2026-09-11T17:20:00+00:00",
- "root_cause": "with CLAUDE_CONFIG_DIR set explicitly, claude auth status returns loggedIn=true with email=null, orgId=null and orgName=null on the same binary/argv/env; the earlier manual check tested key presence only, not values. The difference is field values, not transport or parsing.",
+ "principal_prefix": "d8ebf549c680528f",
+ "protocol": "PHASE A: resolve default store -> identity -> self-consistency; auth status WITHOUT CLAUDE_CONFIG_DIR -> principal; empty pinned store -> logged out. PHASE B: pin the canonical default store -> identity(B) == identity(A); retain principal digest(A).",
+ "recorded_at": "2026-09-11T17:45:00+00:00",
  "schema_version": 1,
  "sensitive_available": false,
- "transports": {
-  "cmd_d_s_c": {
-   "exit": 1,
-   "stderr_first_80": "quoting error; transport unusable",
-   "usable": false
-  },
-  "direct_exe": {
-   "bom": false,
-   "exit": 0,
-   "json_objects": 1,
-   "stderr_bytes": 0,
-   "stdout_bytes": 165
-  }
+ "verdicts": {
+  "A1_default_store_resolved": true,
+  "A2_expected_identity_selfconsistent": true,
+  "A3_default_probe_ok": true,
+  "A4_principal_observable": true,
+  "A4b_expected_principal": true,
+  "A5_principal_digest_shape": true,
+  "A6_no_fallback": true,
+  "B_pin_same_identity": true
  }
 }
