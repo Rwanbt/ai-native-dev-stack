@@ -189,6 +189,16 @@ def check_uninstall(ainative: Path, project: Path, cwd: Path, env: dict) -> None
     require((project / "src" / "app.py").is_file(), "purge removed user source")
 
 
+def check_multivault_wheel(ainative: Path, project: Path, cwd: Path, env: dict) -> None:
+    print("[3b] the wheel ships ainative.multivault and its CLI answers")
+    python = ainative.parent / ("python.exe" if sys.platform.startswith("win") else "python")
+    run([python, "-c",
+         "import ainative.multivault; import ainative.multivault.harness_claude; "
+         "import ainative.multivault.exec_wrapper; import ainative.multivault.enforced_boundary"],
+        cwd=cwd, env=env)
+    run([python, "-m", "ainative.multivault", "--help"], cwd=cwd, env=env)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -206,6 +216,7 @@ def main() -> int:
         env = clean_environment()
         check_versions(ainative, root, env)
         check_install(ainative, project, root, env)
+        check_multivault_wheel(ainative, project, root, env)
         check_payload_matches_checkout(ainative, project, root, root, env)
         check_round_trip(ainative, project, root, env)
         check_reporting(ainative, project, root, env)
