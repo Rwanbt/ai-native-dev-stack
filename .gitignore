@@ -40,3 +40,4 @@ ainative/_payload/
 # agent session state (personal, never commit)
 state.md
 .ai-native/
+.wheel-check/
