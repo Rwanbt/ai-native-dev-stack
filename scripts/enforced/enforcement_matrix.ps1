@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# OPTIONAL HIGH-ASSURANCE HARDENING (EXPERIMENTAL) - not part of the normal installation.
 # Runs UNDER the dedicated workload principal (scheduled task). Writes results only.
 param(
     [string]$OutputPath = "D:\App\ainative-enforced-runtime\results.json",

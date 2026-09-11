@@ -1,5 +1,7 @@
 """ENFORCED execution-boundary evidence: canonical SID identity and ACL policy checks.
 
+OPTIONAL HIGH-ASSURANCE HARDENING (EXPERIMENTAL): not part of the normal installation, not required by any A/B/C/D gate.
+
 This module is read-only observation. It never grants capability: it records
 whether the physical boundary properties hold for a workload principal and
 produces the ExecutionBoundaryDigest the external authenticator reports.
