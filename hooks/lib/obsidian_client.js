@@ -69,8 +69,14 @@ function request(base, apiKey, timeoutMs, { method, path, body }) {
       let data = '';
       response.on('data', (chunk) => { data += chunk; });
       response.on('end', () => {
-        const ok = response.statusCode >= 200 && response.statusCode < 300;
-        resolve(ok ? result(true, data) : result(false, data, `HTTP ${response.statusCode}`));
+        const status = response.statusCode;
+        if (status >= 300 && status < 400) {
+          // Redirects are refused outright: no Location is ever followed.
+          resolve(result(false, '', `HTTP_REDIRECT_REJECTED ${status}`));
+          return;
+        }
+        const ok = status >= 200 && status < 300;
+        resolve(ok ? result(true, data) : result(false, data, `HTTP ${status}`));
       });
     });
     requestHandle.on('timeout', () => {

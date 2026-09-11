@@ -172,3 +172,21 @@ class GovernedObsidianConfigurationTests(unittest.TestCase):
         )
         completed = subprocess.run(["node", "-e", script], cwd=STACK, capture_output=True, text=True)
         self.assertEqual(0, completed.returncode, completed.stderr)
+
+
+class ObsidianRedirectRefusalTests(unittest.TestCase):
+    def test_runtime_client_refuses_redirects_without_following(self):
+        script = (
+            "const http=require('http');"
+            "const {createObsidianClient}=require('./hooks/lib/obsidian_client');"
+            "const server=http.createServer((req,res)=>{res.statusCode=302;res.setHeader('Location','http://127.0.0.1:1/');res.end('');});"
+            "server.listen(0,'127.0.0.1',async()=>{"
+            "const port=server.address().port;"
+            "const client=createObsidianClient({securityDomainId:'company-a',apiKey:'k',endpoints:[`http://127.0.0.1:${port}`]});"
+            "const response=await client.readVaultFile('note.md');"
+            "server.close();"
+            "if(response.ok||!String(response.error).includes('HTTP_REDIRECT_REJECTED')){process.exit(1);}"
+            "});"
+        )
+        completed = subprocess.run(["node", "-e", script], cwd=STACK, capture_output=True, text=True)
+        self.assertEqual(0, completed.returncode, completed.stderr)

@@ -79,3 +79,28 @@ class RestFeasibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstanceIdentityWiringTests(unittest.TestCase):
+    def test_unverified_probe_never_carries_an_instance_identity(self):
+        with patch("scripts.mv00.rest_feasibility.request_endpoint") as request:
+            request.side_effect = lambda endpoint, timeout: EndpointObservation(endpoint, True, 200, None, None)
+            report = run(None, "vault-a", 0.5)
+        self.assertEqual(RestIdentityBinding.UNKNOWN, report.identity_binding)
+        self.assertIsNone(report.instance_identity)
+
+    def test_unverified_probe_report_cannot_form_an_eligible_correlation(self):
+        from ainative.multivault.rest_broker import EndpointCorrelation, RestEndpoint
+
+        with patch("scripts.mv00.rest_feasibility.request_endpoint") as request:
+            request.side_effect = lambda endpoint, timeout: EndpointObservation(endpoint, True, 200, None, None)
+            report = run(None, "vault-a", 0.5)
+        correlation = EndpointCorrelation(
+            "company-a",
+            str(report.expected_vault_identity),
+            RestEndpoint("http://127.0.0.1:27123/"),
+            "probe-digest",
+            report.identity_binding is not None,
+            report.instance_identity or "",
+        )
+        self.assertFalse(correlation.eligible())

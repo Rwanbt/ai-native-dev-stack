@@ -53,6 +53,31 @@ class RuntimeAuthorityTests(unittest.TestCase):
         runtime_authority.revoke_all("LAUNCHER_LOST")
         self.assertIsNone(runtime_authority.resolve(handle, "launcher-a"))
 
+    def test_epoch_rollover_invalidates_older_handles(self):
+        runtime_authority = authority()
+        handle = runtime_authority.issue_phase_b_handle(
+            "launcher-a", SensitiveQualification(True, True, True)
+        )
+        assert handle is not None
+        rolled = RuntimeAuthority(
+            ImmutableAuthoritativeSecurityState(
+                security_domain_id="company-a",
+                security_epoch=SecurityEpoch("company-a", "2", "authority-1"),
+                vault_identity="vault-a",
+                checkout_identity="checkout-a",
+                project_security_id="project-a",
+                classification="CONFIDENTIAL",
+                allowed_context_envelope=AllowedContextEnvelope(("repo-a",), ("vault-a",)),
+                approved_model_egress_digest="egress",
+                memory_policy_digest="memory",
+                persistence_assurance_digest="persistence",
+                execution_profile="GUARDED",
+                runtime_observation_policy_digest="observation",
+                authority_instance_id="authority-1",
+            )
+        )
+        self.assertIsNone(rolled.resolve(handle, "launcher-a"))
+
     def test_forged_handle_does_not_resolve(self):
         runtime_authority = authority()
         forged = RuntimeContextHandle(

@@ -47,6 +47,7 @@ class RestFeasibilityReport:
     sensitive_rest_available: bool
     observations: tuple[EndpointObservation, ...]
     reason: str
+    instance_identity: str | None = None
 
 
 class NoRedirectHandler(HTTPRedirectHandler):
@@ -120,6 +121,7 @@ def run(endpoint_override: str | None, expected_vault_identity: str | None, time
         sensitive_rest_available=identity_binding is RestIdentityBinding.VERIFIED,
         observations=observations,
         reason=reason,
+        instance_identity=None,  # set only by a qualifying authenticated probe; never inferred here
     )
 
 
