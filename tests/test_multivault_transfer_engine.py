@@ -22,6 +22,9 @@ from ainative.multivault.transfer_engine import (
     PUSH_SCAN_LEAK,
     REF_DELETION_DENIED,
     SECONDARY_NETWORK_DENIED,
+    SUBMODULE_NETWORK_DENIED,
+    TRANSFER_ENVIRONMENT_DRIFT,
+    UNAPPROVED_REMOTES_DENIED,
     GovernedTransferEngine,
     PushPreparation,
 )
@@ -180,6 +183,7 @@ class TransferEngineTests(unittest.TestCase):
 
     def test_fetch_failure_is_reported(self):
         missing = (self.tmp / "missing.git").as_uri()
+        run_git(self.work, "remote", "set-url", "origin", missing)
         outcome = self.fetch(self.engine(url=missing), url=missing)
         self.assertEqual("DENY", outcome.decision)
         self.assertEqual(FETCH_FAILED, outcome.code)
@@ -242,6 +246,48 @@ class TransferEngineTests(unittest.TestCase):
         self.assertFalse((self.work / ".git" / "ainative-push.lock").exists())
         origin_head = run_git(self.origin, "rev-parse", "refs/heads/main").stdout.strip().decode()
         self.assertNotEqual(run_git(self.work, "rev-parse", "HEAD").stdout.strip().decode(), origin_head)
+
+    def test_sensitive_push_denies_submodule_configuration(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        run_git(self.work, "config", "submodule.extra.url", "https://example.invalid/extra.git")
+        outcome = self.begin_push(self.engine())
+        self.assertEqual(SUBMODULE_NETWORK_DENIED, outcome.code)
+
+    def test_sensitive_fetch_denies_unapproved_secondary_remote(self):
+        run_git(self.work, "remote", "add", "backup", "https://example.invalid/backup.git")
+        outcome = self.fetch(self.engine())
+        self.assertEqual("DENY", outcome.decision)
+        self.assertEqual(UNAPPROVED_REMOTES_DENIED, outcome.code)
+
+    def test_push_to_unapproved_url_is_denied(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        other = (self.tmp / "other.git").as_uri()
+        outcome = self.begin_push(self.engine(), observed=observed_remote(other))
+        self.assertEqual(PUSH_DESTINATION_DENIED, outcome.code)
+        self.assertFalse((self.work / ".git" / "ainative-push.lock").exists())
+
+    def test_unauthorized_hook_is_never_executed(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        hook_dir = self.tmp / "hooks"
+        hook_dir.mkdir()
+        marker = self.tmp / "hook-ran.txt"
+        hook = hook_dir / "pre-push"
+        hook.write_text("#!/bin/sh\necho ran > " + marker.as_posix() + "\nexit 1\n", encoding="utf-8")
+        run_git(self.work, "config", "core.hooksPath", str(hook_dir))
+        preparation = self.begin_push(self.engine())
+        self.assertIsInstance(preparation, PushPreparation)
+        outcome = preparation.execute()
+        self.assertEqual("ALLOW", outcome.decision)
+        self.assertFalse(marker.exists())
+
+    def test_mid_push_hooks_path_change_is_a_denied_drift(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        preparation = self.begin_push(self.engine())
+        self.assertIsInstance(preparation, PushPreparation)
+        run_git(self.work, "config", "core.hooksPath", str(self.tmp / "elsewhere"))
+        outcome = preparation.execute()
+        self.assertEqual("DENY", outcome.decision)
+        self.assertEqual(TRANSFER_ENVIRONMENT_DRIFT, outcome.code)
 
     def test_sensitive_push_denies_lfs_configuration(self):
         commit_file(self.work, "feature.txt", b"feature\n")

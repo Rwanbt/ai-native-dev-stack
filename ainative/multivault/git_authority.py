@@ -94,6 +94,8 @@ class FetchEvidenceResult:
 REPOSITORY_STATE_SCHEMA_VERSION = 1
 
 _SCP_LIKE = re.compile(r"^(?P<user>[^@/:]+)@(?P<host>[^:/]+):(?P<path>.+)$")
+
+_WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\\\/]")
 _DEFAULT_PORTS = {"https": 443, "http": 80, "ssh": 22}
 
 
@@ -102,6 +104,8 @@ def normalize_remote_url(url: str) -> str | None:
     value = (url or "").strip()
     if not value:
         return None
+    if "://" not in value and (_WINDOWS_ABSOLUTE_PATH.match(value) or value.startswith("/")):
+        return normalize_remote_url("file:///" + value.replace("\\", "/").lstrip("/"))
     scp = _SCP_LIKE.match(value)
     if scp and "://" not in value:
         value = f"ssh://{scp.group('user')}@{scp.group('host')}/{scp.group('path')}"
@@ -234,6 +238,7 @@ class LastVerifiedRepositoryState:
     worktree_security_digest: str
     last_fetch_evidence_digest: str
     verified_at: str
+    hooks_path_digest: str = ""
     schema_version: int = REPOSITORY_STATE_SCHEMA_VERSION
 
     def encode(self) -> str:
@@ -245,6 +250,7 @@ class LastVerifiedRepositoryState:
             "worktree_security_digest": self.worktree_security_digest,
             "last_fetch_evidence_digest": self.last_fetch_evidence_digest,
             "verified_at": self.verified_at,
+            "hooks_path_digest": self.hooks_path_digest,
         }
         return canonical_json(payload).decode("utf-8") + "\n"
 
@@ -270,6 +276,7 @@ class LastVerifiedRepositoryState:
                 worktree_security_digest=str(data["worktree_security_digest"]),
                 last_fetch_evidence_digest=str(data["last_fetch_evidence_digest"]),
                 verified_at=str(data["verified_at"]),
+                hooks_path_digest=str(data.get("hooks_path_digest", "")),
             )
         except (KeyError, TypeError) as error:
             raise ValueError("repository state fields are malformed") from error
@@ -288,6 +295,8 @@ def compare_repository_state(
         differences.append("index-tree-changed")
     if recorded.worktree_security_digest != current.worktree_security_digest:
         differences.append("worktree-changed")
+    if recorded.hooks_path_digest != current.hooks_path_digest:
+        differences.append("hooks-path-changed")
     return tuple(differences)
 
 

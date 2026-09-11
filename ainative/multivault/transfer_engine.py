@@ -22,7 +22,9 @@ from .git_authority import (
     GitTransportPolicy,
     LastVerifiedRepositoryState,
     build_fetch_evidence,
+    compare_repository_state,
     normalize_remote_url,
+    unapproved_remotes,
     validate_remote,
     validate_transport,
 )
@@ -51,6 +53,9 @@ PUSH_LOCK_HELD = "AINATIVE_PUSH_LOCK_HELD"
 PUSH_SCAN_LEAK = "AINATIVE_PUSH_SCAN_LEAK"
 PUSH_SCAN_INCOMPLETE = "AINATIVE_PUSH_SCAN_INCOMPLETE"
 PUSH_SOURCE_CHANGED = "AINATIVE_PUSH_SOURCE_CHANGED"
+SUBMODULE_NETWORK_DENIED = "AINATIVE_SUBMODULE_GIT_NETWORK_DENIED"
+UNAPPROVED_REMOTES_DENIED = "AINATIVE_UNAPPROVED_REMOTES_DENIED"
+TRANSFER_ENVIRONMENT_DRIFT = "AINATIVE_TRANSFER_ENVIRONMENT_DRIFT"
 FETCH_FAILED = "AINATIVE_FETCH_FAILED"
 PUSH_FAILED = "AINATIVE_PUSH_FAILED"
 DEFAULT_TRANSFER_TIMEOUT_SECONDS = 300
@@ -86,8 +91,10 @@ class PushPreparation:
         stdin_text: str,
         lock_path: Path,
         lock_fd: int,
+        pre_state: LastVerifiedRepositoryState,
     ):
         self._engine = engine
+        self.pre_state = pre_state
         self.intent = intent
         self.scan = scan
         self.capability = capability
@@ -219,6 +226,10 @@ class GovernedTransferEngine:
         if resolved is None or resolved.returncode != 0 or resolved.stdout.strip().decode("ascii", "replace") != source_oid:
             self._release_push_lock(lock_path, lock_fd)
             return TransferOutcome("DENY", PUSH_SOURCE_CHANGED, "the source ref no longer matches the push intent")
+        pre_state = self._capture_repository_state("pending", scan.scan_result_digest)
+        if pre_state is None:
+            self._release_push_lock(lock_path, lock_fd)
+            return TransferOutcome("DENY", SECONDARY_NETWORK_DENIED, "repository state cannot be captured; the transfer environment is unverified")
         intent = PushIntent(
             source_oid=source_oid,
             expected_remote_base_oid=expected_remote_base_oid,
@@ -233,7 +244,7 @@ class GovernedTransferEngine:
         capability = self._push_authority.issue(intent)
         local_ref = source_ref if source_ref.startswith("refs/") else source_oid
         stdin_text = f"{local_ref} {source_oid} {target_ref} {expected_remote_base_oid}\n"
-        return PushPreparation(self, intent, scan, capability, stdin_text, lock_path, lock_fd)
+        return PushPreparation(self, intent, scan, capability, stdin_text, lock_path, lock_fd, pre_state)
 
     def _complete_push(
         self,
@@ -258,6 +269,15 @@ class GovernedTransferEngine:
             return TransferOutcome("DENY", PUSH_FAILED, self._failure_detail(result))
         verified_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         state = self._capture_repository_state(verified_at, preparation.intent.digest())
+        if state is None:
+            return TransferOutcome("DENY", TRANSFER_ENVIRONMENT_DRIFT, "post-transfer repository state is unavailable", None, None)
+        differences = tuple(
+            difference
+            for difference in compare_repository_state(preparation.pre_state, state)
+            if difference != "refs-changed"
+        )
+        if differences:
+            return TransferOutcome("DENY", TRANSFER_ENVIRONMENT_DRIFT, "transfer environment changed mid-push: " + ", ".join(differences), None, state)
         return TransferOutcome("ALLOW", "OK", "governed push completed", None, state)
 
     def _abort_push(self, preparation: PushPreparation) -> None:
@@ -283,9 +303,30 @@ class GovernedTransferEngine:
                 return (SECONDARY_NETWORK_DENIED, "partial/promisor repository; lazy fetch is denied")
             if key.startswith("lfs.") or key.startswith("filter.lfs."):
                 return (LFS_NETWORK_DENIED, "Git LFS configuration is present; LFS network is denied")
+            if key.startswith("submodule."):
+                return (SUBMODULE_NETWORK_DENIED, "submodule configuration is present; sensitive submodule network is denied")
         if (self._repository / ".lfsconfig").is_file():
             return (LFS_NETWORK_DENIED, ".lfsconfig is present; LFS network is denied")
+        if (self._repository / ".gitmodules").is_file():
+            return (SUBMODULE_NETWORK_DENIED, ".gitmodules is present; sensitive submodule network is denied")
+        declared = self._declared_remotes()
+        if declared is None:
+            return (SECONDARY_NETWORK_DENIED, "repository remotes are unreadable")
+        unapproved = unapproved_remotes(declared, (self._approved_remote,))
+        if unapproved:
+            return (UNAPPROVED_REMOTES_DENIED, "repository declares unapproved remotes: " + ", ".join(unapproved))
         return None
+
+    def _declared_remotes(self) -> dict[str, list[str]] | None:
+        result = self._run(["remote", "-v"])
+        if result is None or result.returncode != 0:
+            return None
+        declared: dict[str, list[str]] = {}
+        for line in result.stdout.decode("utf-8", "replace").splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[2] in {"(fetch)", "(push)"}:
+                declared.setdefault(parts[0], []).append(parts[1])
+        return declared
 
     def _push_lock_path(self) -> Path | None:
         result = self._run(["rev-parse", "--path-format=absolute", "--git-common-dir"])
@@ -324,6 +365,9 @@ class GovernedTransferEngine:
             return None
         if refs_result.returncode or index_result.returncode or status_result.returncode:
             return None
+        hooks_result = self._run(["rev-parse", "--git-path", "hooks"])
+        if hooks_result is None or hooks_result.returncode != 0:
+            return None
         refs = []
         for line in refs_result.stdout.decode("utf-8", "replace").splitlines():
             name, _separator, oid = line.partition(" ")
@@ -341,6 +385,7 @@ class GovernedTransferEngine:
             worktree_security_digest=sha256(status_result.stdout).hexdigest(),
             last_fetch_evidence_digest=fetch_evidence_digest,
             verified_at=verified_at,
+            hooks_path_digest=sha256(hooks_result.stdout.strip()).hexdigest(),
         )
 
     @staticmethod
