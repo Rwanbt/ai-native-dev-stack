@@ -561,3 +561,32 @@ jobs:
           # With no key at all, both must be clean no-ops.
           node hooks/session-start-memory/run.js | grep -q 'OBSIDIAN_API_KEY not set'
           node hooks/session-end-save/run.js | grep -q 'OBSIDIAN_API_KEY not set'
+  multivault-unit:
+    name: Multi-Vault unit suites
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Run the Multi-Vault suites present at this revision
+        shell: bash
+        # Before this job existed, the Multi-Vault suites were never executed
+        # by CI, so a regression in ainative/multivault/ reported green (#106).
+        run: |
+          set -e
+          modules=""
+          for file in tests/test_multivault_*.py; do
+            [ -e "$file" ] || continue
+            modules="$modules tests.$(basename "$file" .py)"
+          done
+          if [ -z "$modules" ]; then
+            echo "No Multi-Vault suites present at this revision; nothing to run."
+            exit 0
+          fi
+          # A missing module must fail the job rather than silently shrink the run.
+          python -m unittest $modules -v
