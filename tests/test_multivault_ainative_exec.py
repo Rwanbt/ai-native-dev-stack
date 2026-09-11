@@ -17,7 +17,7 @@ from ainative.multivault.sensitive_launch import (
 )
 
 BASE_ENV = {"PATH": "C:/tools", "ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"}
-CREDENTIAL_PROBES = ("ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "NPM_TOKEN", "SMART_CONNECTIONS_KEY")
+CREDENTIAL_PROBES = ("ANTHROPIC_API_KEY", "OBSIDIAN_API_KEY", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "NPM_TOKEN", "SMART_CONNECTIONS_KEY")
 
 
 def make_authority():
@@ -164,3 +164,37 @@ class ExecWrapperTests(unittest.TestCase):
         self.assertNotIn("issue_phase_b_handle", source)
         self.assertNotIn("os.environ", source)
         self.assertNotIn("canonical_digest", source)
+
+class ExecEnvironmentTests(unittest.TestCase):
+    def test_environment_is_required_os_plus_approved_only(self):
+        environment = exec_wrapper.positive_child_environment(
+            approved={"ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"},
+            required_os={"SystemRoot": "C:/Windows", "windir": "C:/Windows"},
+        )
+        self.assertEqual(
+            {"SystemRoot": "C:/Windows", "windir": "C:/Windows", "ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"},
+            environment,
+        )
+
+    def test_empty_required_os_values_are_dropped(self):
+        environment = exec_wrapper.positive_child_environment(approved={}, required_os={"SystemRoot": "", "COMSPEC": "C:/cmd.exe"})
+        self.assertEqual({"COMSPEC": "C:/cmd.exe"}, environment)
+
+    def test_ambient_credentials_and_proxies_absent_unless_approved(self):
+        ambient = {
+            "SystemRoot": "C:/Windows",
+            "OBSIDIAN_API_KEY": "ambient-secret",
+            "HTTP_PROXY": "http://proxy.invalid",
+            "GIT_ASKPASS": "askpass.exe",
+        }
+        sanitized_os = {"SystemRoot": ambient["SystemRoot"]}
+        environment = exec_wrapper.positive_child_environment(approved={}, required_os=sanitized_os)
+        for forbidden in ("OBSIDIAN_API_KEY", "HTTP_PROXY", "GIT_ASKPASS"):
+            self.assertNotIn(forbidden, environment)
+
+    def test_explicit_approval_overrides_required_os(self):
+        environment = exec_wrapper.positive_child_environment(
+            approved={"SystemRoot": "C:/Approved"},
+            required_os={"SystemRoot": "C:/Windows"},
+        )
+        self.assertEqual("C:/Approved", environment["SystemRoot"])

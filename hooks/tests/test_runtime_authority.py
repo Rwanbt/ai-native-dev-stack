@@ -159,3 +159,16 @@ class RuntimeAuthorityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class GovernedObsidianConfigurationTests(unittest.TestCase):
+    def test_ambient_credentials_are_refused_without_the_governed_marker(self):
+        script = (
+            "const {governedObsidianConfiguration}=require('./hooks/lib/obsidian_client');"
+            "const ambient=governedObsidianConfiguration({OBSIDIAN_API_KEY:'secret',OBSIDIAN_API_URL:'http://127.0.0.1:27123'});"
+            "if(ambient.apiKey!==''||ambient.endpoints!==undefined){process.exit(1)}"
+            "const governed=governedObsidianConfiguration({AINATIVE_MULTIVAULT_GOVERNED:'1',OBSIDIAN_API_KEY:'k',OBSIDIAN_API_URL:'http://127.0.0.1:27123'});"
+            "if(governed.apiKey!=='k'||governed.endpoints.length!==1){process.exit(1)}"
+        )
+        completed = subprocess.run(["node", "-e", script], cwd=STACK, capture_output=True, text=True)
+        self.assertEqual(0, completed.returncode, completed.stderr)

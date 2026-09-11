@@ -60,6 +60,7 @@ def _node_binary() -> Path:
 class SessionStartTests(unittest.TestCase):
     def test_key_without_domain_is_rejected_before_vault_access(self) -> None:
         result = _node(SESSION_START, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
         })
@@ -72,6 +73,7 @@ class SessionStartTests(unittest.TestCase):
 
     def test_no_key_is_clean_noop(self) -> None:
         result = _node(SESSION_START, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "",
         })
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -86,6 +88,7 @@ class SessionStartTests(unittest.TestCase):
         # key is wrong. The hook must surface that, not pretend the
         # vault is empty.
         result = _node(SESSION_START, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "800",
@@ -102,6 +105,7 @@ class SessionStartTests(unittest.TestCase):
 
     def test_v4_slug_uses_v4_layout(self) -> None:
         result = _node(SESSION_START, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
@@ -122,6 +126,7 @@ class SessionStartTests(unittest.TestCase):
 
     def test_legacy_layout_when_no_slug(self) -> None:
         result = _node(SESSION_START, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
@@ -135,6 +140,7 @@ class SessionStartTests(unittest.TestCase):
 class SessionEndTests(unittest.TestCase):
     def test_no_key_is_clean_noop(self) -> None:
         result = _node(SESSION_END, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "",
             "OBSIDIAN_PROJECT_SLUG": "ai-native-dev-stack",
         })
@@ -145,6 +151,7 @@ class SessionEndTests(unittest.TestCase):
 
     def test_bad_slug_never_creates_a_project(self) -> None:
         result = _node(SESSION_END, env={
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
@@ -164,6 +171,7 @@ class SessionEndTests(unittest.TestCase):
         # session id is silently lost, and the responses are not
         # truncated to a single entry.
         env = {
+            "AINATIVE_MULTIVAULT_GOVERNED": "1",
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
             "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",

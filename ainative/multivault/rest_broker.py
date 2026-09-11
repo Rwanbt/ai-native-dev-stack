@@ -48,6 +48,7 @@ class EndpointCorrelation:
     endpoint: RestEndpoint
     probe_evidence_digest: str
     correlated: bool
+    instance_identity: str = ""
 
     def eligible(self) -> bool:
         return bool(
@@ -56,6 +57,7 @@ class EndpointCorrelation:
             and self.endpoint.normalized_url()
             and self.probe_evidence_digest
             and self.correlated
+            and self.instance_identity
         )
 
 

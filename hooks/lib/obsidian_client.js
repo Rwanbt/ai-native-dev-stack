@@ -83,6 +83,16 @@ function request(base, apiKey, timeoutMs, { method, path, body }) {
   });
 }
 
+function governedObsidianConfiguration(env = process.env) {
+  // Ambient credentials are refused unless the governed launcher set the marker.
+  const governed = env.AINATIVE_MULTIVAULT_GOVERNED === '1';
+  return {
+    governed,
+    apiKey: governed && typeof env.OBSIDIAN_API_KEY === 'string' ? env.OBSIDIAN_API_KEY : '',
+    endpoints: governed && env.OBSIDIAN_API_URL ? [env.OBSIDIAN_API_URL] : undefined,
+  };
+}
+
 function createObsidianClient({ securityDomainId, apiKey, endpoints, timeoutMs } = {}) {
   const normalizedEndpoints = normalizeEndpoints(endpoints || DEFAULT_ENDPOINTS);
   const domain = typeof securityDomainId === 'string' ? securityDomainId.trim() : '';
@@ -117,4 +127,4 @@ function createObsidianClient({ securityDomainId, apiKey, endpoints, timeoutMs }
   });
 }
 
-module.exports = { DEFAULT_ENDPOINTS, createObsidianClient };
+module.exports = { DEFAULT_ENDPOINTS, createObsidianClient, governedObsidianConfiguration };

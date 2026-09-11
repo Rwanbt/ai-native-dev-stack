@@ -29,7 +29,7 @@
  */
 
 const path = require('path');
-const { createObsidianClient } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { createObsidianClient, governedObsidianConfiguration } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
 const { RuntimeAuthority } = require(path.join(__dirname, '..', 'lib', 'runtime_authority'));
 
 const CALLER_IDENTITY = 'session-start-memory';
@@ -73,8 +73,8 @@ function emit(sessionContext) {
  */
 function buildAuthorityFromEnv() {
   return new RuntimeAuthority(process.env.MULTIVAULT_SECURITY_DOMAIN_ID, {
-    apiKey: process.env.OBSIDIAN_API_KEY,
-    endpoints: process.env.OBSIDIAN_API_URL ? [process.env.OBSIDIAN_API_URL] : undefined,
+    apiKey: governedObsidianConfiguration().apiKey,
+    endpoints: governedObsidianConfiguration().endpoints,
     timeoutMs: Number(process.env.OBSIDIAN_API_TIMEOUT_MS),
   });
 }

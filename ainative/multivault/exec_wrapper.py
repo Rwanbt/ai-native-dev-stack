@@ -83,3 +83,18 @@ def execute_sensitive(
         allowed_context_envelope=allowed_envelope,
         env=child_env,
     )
+
+
+def positive_child_environment(
+    approved: Mapping[str, str],
+    required_os: Mapping[str, str],
+) -> dict[str, str]:
+    """{} + sanitized required OS variables + explicitly approved variables only.
+
+    The caller supplies the sanitized OS subset (composition root); nothing is
+    inherited implicitly, so ambient credentials and proxy variables can never
+    reach the child unless they were explicitly approved.
+    """
+    environment = {name: value for name, value in required_os.items() if value}
+    environment.update(approved)
+    return environment
