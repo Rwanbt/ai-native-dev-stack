@@ -55,7 +55,7 @@ def build_manifest(evidence_digest: str) -> CapabilityManifest:
         provider_selection_control=ControlLevel.NONE,
         model_selection_control=ControlLevel.VERIFIED,
         endpoint_routing_control=ControlLevel.NONE,
-        provider_principal_observation=Observation(ObservationMode.NONE),
+        provider_principal_observation=Observation(ObservationMode.PER_OPERATION),
         model_identity_observation=Observation(ObservationMode.PER_OPERATION),
         endpoint_routing_observation=Observation(ObservationMode.NONE),
         auth_store_observation=Observation(ObservationMode.NONE),
