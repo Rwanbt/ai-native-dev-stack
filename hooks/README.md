@@ -81,6 +81,7 @@ skills partagés sont installés sous `~/.agents/skills/` sur Linux.
 ## Notes
 
 - API Obsidian locale: `http://127.0.0.1:27123` (override via `OBSIDIAN_API_URL`)
+- Vaults multiples : chaque vault doit avoir son **propre port** (le premier demarre possede 27124 et les autres n'ont plus d'API) — voir README, section « Obsidian Memory Vault ».
 - API Key: lue depuis la variable d'environnement `OBSIDIAN_API_KEY` (jamais commitée).
   Récupérer la clé dans Obsidian → plugin *Local REST API* → puis l'exporter :
   `setx OBSIDIAN_API_KEY "<votre-clé>"` (Windows) / `export OBSIDIAN_API_KEY=...` (bash)

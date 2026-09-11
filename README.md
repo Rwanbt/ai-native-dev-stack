@@ -183,6 +183,25 @@ on a different machine.
 - Architectural decisions link to their ADR: `[[ADR-0004 Extract Service Pattern]]`
 - The `related:` frontmatter field is always populated
 
+#### Multiple vaults: one Local REST API port per vault
+
+The Obsidian Local REST API plugin binds a port per vault. With two or more
+vaults open, all of them default to `27124` (HTTPS) / `27123` (HTTP): only the
+first vault to start owns the port, the others silently have no API, and any
+client that assumes the default endpoint may reach the wrong vault (MV-00.1
+evidence, 2026-09-11: a second vault owned `27124` while the intended vault was
+unreachable).
+
+- Give every vault its own port pair: Settings -> Community plugins ->
+  Local REST API -> `Encrypted (HTTPS) Server Port` and
+  `Non-encrypted (HTTP) Server Port` (e.g. 27124/27123, 27130/27129,
+  27132/27131), then toggle the plugin off/on so it rebinds.
+- Point `OBSIDIAN_API_URL` at that vault's own port.
+- Never share an API key between vaults or vault copies; regenerate the key
+  after cloning a vault's `.obsidian` directory.
+- Verify with a status-only probe: the vault's own key answers `200` on
+  `/vault/` and every other vault's key answers `401`.
+
 ### 6. Claude Code Memory
 
 Claude Code persists cross-session memory in `~/.claude/projects/<project-key>/memory/`. Four memory types:
