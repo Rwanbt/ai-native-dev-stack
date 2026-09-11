@@ -1,0 +1,1 @@
+{"breakaway_denied": true, "detached_descendant_killed": true, "evidence": ["GRANDCHILD 25932", "BREAKAWAY_DENIED 5", "CHILD_READY"], "kill_on_close": true, "platform": "win32", "reason": "supervisor loss killed the workload including detached descendants and breakaway was denied", "recorded_at": "2026-09-11T12:29:32+00:00", "result": "VERIFIED", "schema_version": 1}
