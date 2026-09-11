@@ -105,3 +105,48 @@ class PersistenceIsolationTests(unittest.TestCase):
             root = Path(directory)
             current = namespace()
             self.assertEqual(root.joinpath(*current.path_segments()), namespace_path(root, current))
+
+class RealStoreIsolationTests(unittest.TestCase):
+    def store_root(self, directory: str) -> Path:
+        root = Path(directory) / "stores"
+        root.mkdir(exist_ok=True)
+        return root
+
+    def write_store(self, root: Path, namespace, payload: str = "notes") -> Path:
+        path = namespace_path(root, namespace)
+        path.mkdir(parents=True, exist_ok=True)
+        header = StoreHeader(STORE_HEADER_SCHEMA_VERSION, namespace.namespace_digest)
+        (path / "header.json").write_text(header.encode() + payload + "\n", encoding="utf-8")
+        return path
+
+    def read_header(self, path: Path) -> StoreHeader:
+        content = (path / "header.json").read_text(encoding="utf-8")
+        first_line, _separator, _rest = content.partition("\n")
+        return StoreHeader.decode(first_line)
+
+    def test_real_store_loads_only_for_its_exact_namespace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.store_root(directory)
+            current = namespace("company-a")
+            path = self.write_store(root, current)
+            self.assertEqual("LOAD", admit_load(self.read_header(path), current).decision)
+
+    def test_copied_store_under_a_foreign_namespace_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.store_root(directory)
+            foreign = namespace("company-b")
+            path = self.write_store(root, foreign, payload="foreign notes")
+            self.assertEqual("REFUSE", admit_load(self.read_header(path), namespace("company-a")).decision)
+
+    def test_stale_digest_requires_recorded_migration_not_auto_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.store_root(directory)
+            stale = namespace_for(domain("company-a"), envelope("repo"), memory_policy("global"), assurance())
+            path = self.write_store(root, stale)
+            current = namespace("company-a")
+            header = self.read_header(path)
+            self.assertEqual("REFUSE", admit_load(header, current).decision)
+            plan = plan_migration(header, current)
+            self.assertIsNotNone(plan)
+            migrated = apply_migration(plan, operator_approval_reference="decision-2026-09-11")
+            self.assertEqual("LOAD", admit_load(migrated, current).decision)
