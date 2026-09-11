@@ -28,6 +28,9 @@ def _doctor_checks(store_path: Path, domain: str, repository: Path, vault_root: 
     except (AuthorityStoreCorruptError, OSError):
         binding = None
         checks["binding"] = None
+    checks["checkout_identity"] = (
+        bool(binding.get("checkout_identity")) if binding else None
+    )
     if vault_root is None:
         checks["root_freshness"] = None
     else:

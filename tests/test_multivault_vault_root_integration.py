@@ -36,6 +36,7 @@ class VaultRootIntegrationTests(unittest.TestCase):
         self.vault.mkdir()
         self.other.mkdir()
         self.store = AuthorityStore(base / "authority.json")
+        self.checkout = self.git_repository("checkout-default")
         self.recorded = vault_root_identity(discover_vault("vault-a", self.vault))
         self.write_binding(root_identity=self.recorded)
         self.declaration = WorkspaceDeclaration("company-a", "vault-a", "checkout-a")
@@ -43,10 +44,13 @@ class VaultRootIntegrationTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_binding(self, root_identity=None, checkout_identity=None):
+    def write_binding(self, root_identity=None, checkout_identity="__fixture__"):
+        from ainative.multivault.identity import checkout_identity_digest, discover_checkout
         binding = {"vault": "vault-a", "checkout": "checkout-a", "classification": "PERSONAL", "roots": []}
         if root_identity is not None:
             binding["root_identity"] = root_identity
+        if checkout_identity == "__fixture__":
+            checkout_identity = checkout_identity_digest(discover_checkout(self.checkout))
         if checkout_identity is not None:
             binding["checkout_identity"] = checkout_identity
         self.store.replace({"company-a": binding})
@@ -62,7 +66,7 @@ class VaultRootIntegrationTests(unittest.TestCase):
         return root
 
     def resolve(self, root):
-        return resolve_with_vault_root(self.declaration, self.store, root)
+        return resolve_with_vault_root(self.declaration, self.store, root, checkout_root=self.checkout)
 
     def test_correct_root_is_authorized_and_fresh(self):
         result = self.resolve(self.vault)
@@ -144,7 +148,7 @@ class VaultRootIntegrationTests(unittest.TestCase):
         self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout)))
         result = resolve_with_vault_root(self.declaration, self.store, self.vault, checkout_root=checkout)
         self.assertTrue(result.authorized)
-        self.assertEqual(ALLOW_ROOT_FRESH, result.checkout_freshness.decision)
+        self.assertEqual("ALLOW_CHECKOUT_FRESH", result.checkout_freshness.decision)
 
     def test_copied_or_moved_checkout_denies(self):
         from ainative.multivault.identity import checkout_identity_digest, discover_checkout
@@ -153,7 +157,7 @@ class VaultRootIntegrationTests(unittest.TestCase):
         self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout_a)))
         result = resolve_with_vault_root(self.declaration, self.store, self.vault, checkout_root=checkout_b)
         self.assertFalse(result.authorized)
-        self.assertEqual(DENY_ROOT_STALE, result.checkout_freshness.decision)
+        self.assertEqual("DENY_CHECKOUT_STALE", result.checkout_freshness.decision)
 
     def test_recorded_checkout_identity_requires_a_live_measurement(self):
         from ainative.multivault.identity import checkout_identity_digest, discover_checkout
@@ -161,7 +165,22 @@ class VaultRootIntegrationTests(unittest.TestCase):
         self.write_binding(root_identity=self.recorded, checkout_identity=checkout_identity_digest(discover_checkout(checkout)))
         result = resolve_with_vault_root(self.declaration, self.store, self.vault)
         self.assertFalse(result.authorized)
-        self.assertEqual(DENY_ROOT_MEASUREMENT_INCOMPLETE, result.checkout_freshness.decision)
+        self.assertEqual("DENY_CHECKOUT_MEASUREMENT_INCOMPLETE", result.checkout_freshness.decision)
+
+    def test_legacy_binding_without_checkout_identity_denies(self):
+        self.write_binding(root_identity=self.recorded, checkout_identity=None)
+        result = self.resolve(self.vault)
+        self.assertFalse(result.authorized)
+        self.assertEqual("DENY_CHECKOUT_IDENTITY_UNRECORDED", result.checkout_freshness.decision)
+
+    def test_legacy_confidential_binding_denies_before_any_gate(self):
+        self.store.replace({"company-a": {
+            "vault": "vault-a", "checkout": "checkout-a", "classification": "CONFIDENTIAL",
+            "roots": [], "root_identity": self.recorded,
+        }})
+        result = self.resolve(self.vault)
+        self.assertFalse(result.authorized)
+        self.assertEqual("DENY_CHECKOUT_IDENTITY_UNRECORDED", result.checkout_freshness.decision)
 
     def test_stale_after_identity_change_denies(self):
         self.write_binding(root_identity="sha256:changed")

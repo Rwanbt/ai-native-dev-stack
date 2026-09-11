@@ -80,6 +80,25 @@ class MultiVaultCliTests(unittest.TestCase):
         code = product_main(["multivault", "context", "--store", str(self.store), "--domain", "personal"])
         self.assertEqual(1, code)
 
+    def test_doctor_reports_the_measured_checkout_identity_after_bind(self):
+        import contextlib
+        import io
+        self.assertEqual(0, self.bind())
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            multivault_main(["doctor", "--store", str(self.store), "--domain", "personal",
+                             "--repo", str(self.checkout)])
+        self.assertIn("PASS\tcheckout_identity", output.getvalue())
+
+    def test_explicit_rebind_migrates_a_legacy_binding(self):
+        from ainative.multivault.authority_store import AuthorityStore
+        AuthorityStore(self.store).replace({"personal": {
+            "vault": "vault-personal", "checkout": "checkout-personal",
+            "classification": "PERSONAL", "roots": [],
+        }})
+        self.assertEqual(0, self.bind())
+        self.assertTrue(AuthorityStore(self.store).binding("personal")["checkout_identity"])
+
     def test_multivault_cli_does_not_reimplement_security_policies(self):
         source = Path("ainative/multivault/__main__.py").read_text(encoding="utf-8")
         for forbidden in ("AllowedContextEnvelope(", "RuntimeContextHandle(", "SensitiveQualification(",
