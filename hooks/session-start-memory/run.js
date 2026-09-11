@@ -29,7 +29,7 @@
  */
 
 const path = require('path');
-const { readVaultFile, configured, ENDPOINTS } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { createObsidianClient } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
 
 const USER_MEMORY_PATH = process.env.OBSIDIAN_USER_MEMORY_PATH || 'memory/user.md';
 const HANDOFF_PATH = process.env.OBSIDIAN_HANDOFF_PATH || '_global/handoff.md';
@@ -63,13 +63,21 @@ function emit(sessionContext) {
 }
 
 async function main() {
-  if (!configured()) {
-    emit({ loaded: false, skipped: 'OBSIDIAN_API_KEY not set' });
-    return;
-  }
-
+  const client = createObsidianClient({
+    securityDomainId: process.env.MULTIVAULT_SECURITY_DOMAIN_ID,
+    apiKey: process.env.OBSIDIAN_API_KEY,
+    endpoints: process.env.OBSIDIAN_API_URL ? [process.env.OBSIDIAN_API_URL] : undefined,
+    timeoutMs: Number(process.env.OBSIDIAN_API_TIMEOUT_MS),
+  });
   const slug = resolveSlug();
   const wantV4 = Boolean(slug);
+  if (!client.configured()) {
+    const keyMissing = client.configurationError === 'OBSIDIAN_API_KEY not set';
+    emit(keyMissing
+      ? { loaded: false, skipped: client.configurationError }
+      : { loaded: false, error: client.configurationError, needsTriage: true, layout: wantV4 ? 'v4' : 'legacy' });
+    return;
+  }
 
   // v4 paths are tried first; the legacy ones stay as a safety net.
   const candidates = [];
@@ -83,7 +91,7 @@ async function main() {
   candidates.push({ name: 'handoff',    path: HANDOFF_PATH });
 
   const results = await Promise.all(candidates.map(async (c) => {
-    const r = await readVaultFile(c.path);
+    const r = await client.readVaultFile(c.path);
     return { ...c, ...r, body: normalize(r.body) };
   }));
 
@@ -96,7 +104,7 @@ async function main() {
     emit({
       loaded: false,
       error: results.map((r) => r.error).filter(Boolean)[0] || 'vault unreachable',
-      triedEndpoints: ENDPOINTS,
+      triedEndpoints: client.endpoints,
       layout: wantV4 ? 'v4' : 'legacy',
     });
     return;

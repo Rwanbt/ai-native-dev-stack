@@ -42,7 +42,7 @@
  */
 
 const path = require('path');
-const { appendVaultFile, writeVaultFile, configured } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
+const { createObsidianClient } = require(path.join(__dirname, '..', 'lib', 'obsidian_client'));
 
 const SESSION_ID = process.env.SESSION_ID || 'unknown';
 const PROJECT_NAME = process.env.PROJECT_NAME || '';
@@ -101,8 +101,18 @@ function buildLogEntry(stamp, slug, projectName, summary, sessionId) {
 }
 
 async function main() {
-  if (!configured()) {
-    emit({ sessionSaveSkipped: 'OBSIDIAN_API_KEY not set' });
+  const client = createObsidianClient({
+    securityDomainId: process.env.MULTIVAULT_SECURITY_DOMAIN_ID,
+    apiKey: process.env.OBSIDIAN_API_KEY,
+    endpoints: process.env.OBSIDIAN_API_URL ? [process.env.OBSIDIAN_API_URL] : undefined,
+    timeoutMs: Number(process.env.OBSIDIAN_API_TIMEOUT_MS),
+  });
+  if (!client.configured()) {
+    if (client.configurationError === 'OBSIDIAN_API_KEY not set') {
+      emit({ sessionSaveSkipped: client.configurationError });
+    } else {
+      emit({ sessionSaveError: client.configurationError, needsTriage: true });
+    }
     return;
   }
 
@@ -127,7 +137,7 @@ async function main() {
     }
     const notePath = `projects/${SLUG}/operations/sessions/${SESSION_ID}.md`;
     const note = buildNote(stamp, SLUG, PROJECT_NAME, SUMMARY, SESSION_ID);
-    noteResult = await writeVaultFile(notePath, note);
+    noteResult = await client.writeVaultFile(notePath, note);
     if (!noteResult.ok) {
       emit({
         sessionSaveError: noteResult.error,
@@ -139,7 +149,7 @@ async function main() {
   }
 
   const entry = buildLogEntry(stamp, SLUG, PROJECT_NAME, SUMMARY, SESSION_ID);
-  const logResult = await appendVaultFile(LOG_PATH, entry);
+  const logResult = await client.appendVaultFile(LOG_PATH, entry);
 
   if (!logResult.ok) {
     // Report the failure; never fall back to overwriting the log.

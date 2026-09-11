@@ -58,6 +58,18 @@ def _node_binary() -> Path:
 
 
 class SessionStartTests(unittest.TestCase):
+    def test_key_without_domain_is_rejected_before_vault_access(self) -> None:
+        result = _node(SESSION_START, env={
+            "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "OBSIDIAN_API_TIMEOUT_MS": "500",
+        })
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        payload = json.loads(result.stdout.strip().splitlines()[0])
+        meta = payload["metadata"]["sessionContext"]
+        self.assertFalse(meta["loaded"])
+        self.assertTrue(meta["needsTriage"])
+        self.assertIn("MULTIVAULT_SECURITY_DOMAIN_ID not set", meta["error"])
+
     def test_no_key_is_clean_noop(self) -> None:
         result = _node(SESSION_START, env={
             "OBSIDIAN_API_KEY": "",
@@ -75,6 +87,7 @@ class SessionStartTests(unittest.TestCase):
         # vault is empty.
         result = _node(SESSION_START, env={
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "800",
         })
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -90,6 +103,7 @@ class SessionStartTests(unittest.TestCase):
     def test_v4_slug_uses_v4_layout(self) -> None:
         result = _node(SESSION_START, env={
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
             "OBSIDIAN_PROJECT_SLUG": "ai-native-dev-stack",
         })
@@ -109,6 +123,7 @@ class SessionStartTests(unittest.TestCase):
     def test_legacy_layout_when_no_slug(self) -> None:
         result = _node(SESSION_START, env={
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
         })
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -131,6 +146,7 @@ class SessionEndTests(unittest.TestCase):
     def test_bad_slug_never_creates_a_project(self) -> None:
         result = _node(SESSION_END, env={
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
             "OBSIDIAN_PROJECT_SLUG": "BadSlug_Uppercase",
             "SESSION_ID": "x1",
@@ -149,6 +165,7 @@ class SessionEndTests(unittest.TestCase):
         # truncated to a single entry.
         env = {
             "OBSIDIAN_API_KEY": "definitely-wrong-key",
+            "MULTIVAULT_SECURITY_DOMAIN_ID": "test-domain",
             "OBSIDIAN_API_TIMEOUT_MS": "500",
             "OBSIDIAN_PROJECT_SLUG": "ai-native-dev-stack",
         }
