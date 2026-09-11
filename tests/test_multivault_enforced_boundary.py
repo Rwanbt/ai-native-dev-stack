@@ -1,3 +1,4 @@
+import sys
 import tempfile
 import time
 import unittest
@@ -22,12 +23,14 @@ class EnforcedBoundaryTests(unittest.TestCase):
     def test_missing_principal_resolves_to_none(self):
         self.assertIsNone(resolve_principal_sid("ainative-enforced-definitely-absent"))
 
+    @unittest.skipUnless(sys.platform.startswith("win"), "Windows SID resolution")
     def test_current_user_sid_resolves(self):
         import getpass
         sid = resolve_principal_sid(getpass.getuser())
         self.assertIsNotNone(sid)
         self.assertTrue(sid.startswith("S-1-5-21-"))
 
+    @unittest.skipUnless(sys.platform.startswith("win"), "Windows ACL semantics")
     def test_acl_of_a_path_without_the_sid_is_denied_by_absence(self):
         with tempfile.TemporaryDirectory() as directory:
             verdict = evaluate_acl_for_sid(directory, "S-1-5-21-0-0-0-9999")

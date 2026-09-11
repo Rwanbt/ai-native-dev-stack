@@ -157,11 +157,28 @@ class ProjectInstructionAdmissionTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from ainative.multivault.harness_claude import project_instruction_admission
+        from ainative.multivault.harness_claude import CLAUDE_INSTRUCTIONS_REASON_CODE, project_instruction_admission
 
         with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            (parent / "CLAUDE.md").write_text("rule", encoding="utf-8")
-            child = parent / "nested" / "child"
+            outer = Path(directory) / "outer"
+            repo = outer / "repo"
+            child = repo / "nested" / "child"
             child.mkdir(parents=True)
+            (outer / "CLAUDE.md").write_text("rule", encoding="utf-8")
+            (repo / ".git").mkdir()
+            # Above the nearest git root is not a governed surface.
+            self.assertEqual("ALLOW", project_instruction_admission(child)["decision"])
+            # Inside the git boundary, ancestors up to the root are governed.
+            (repo / "CLAUDE.md").write_text("rule", encoding="utf-8")
+            denied = project_instruction_admission(child)
+            self.assertEqual("DENY", denied["decision"])
+            self.assertEqual(CLAUDE_INSTRUCTIONS_REASON_CODE, denied["reason_code"])
+            # The immediate parent is governed (with or without a git root).
+            (repo / "CLAUDE.md").unlink()
+            (repo / "nested" / "CLAUDE.md").write_text("rule", encoding="utf-8")
             self.assertEqual("DENY", project_instruction_admission(child)["decision"])
+            (repo / "nested" / "CLAUDE.md").unlink()
+            plain = Path(directory) / "plain" / "one" / "child"
+            plain.mkdir(parents=True)
+            (Path(directory) / "plain" / "one" / "CLAUDE.md").write_text("rule", encoding="utf-8")
+            self.assertEqual("DENY", project_instruction_admission(plain)["decision"])

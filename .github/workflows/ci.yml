@@ -554,9 +554,9 @@ jobs:
           set -e
           # With no vault reachable, the hooks must say so rather than
           # reporting an empty-but-successful load (the old silent failure).
-          OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
+          AINATIVE_MULTIVAULT_GOVERNED=1 OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
             node hooks/session-start-memory/run.js | grep -q '"loaded":false'
-          OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
+          AINATIVE_MULTIVAULT_GOVERNED=1 OBSIDIAN_API_KEY=dummy OBSIDIAN_API_TIMEOUT_MS=800 \
             node hooks/session-end-save/run.js | grep -q 'sessionSaveError'
           # With no key at all, both must be clean no-ops.
           node hooks/session-start-memory/run.js | grep -q 'OBSIDIAN_API_KEY not set'
