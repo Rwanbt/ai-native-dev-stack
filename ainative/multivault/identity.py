@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
+from .schema import digest as canonical_digest
+
 
 @dataclass(frozen=True)
 class VaultIdentity:
@@ -53,3 +55,19 @@ def discover_checkout(root: Path) -> CheckoutIdentity:
     common = _git(resolved, "rev-parse", "--path-format=absolute", "--git-common-dir")
     origin = subprocess.run(["git", "-C", str(resolved), "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
     return CheckoutIdentity(str(resolved), git_dir, common, origin.stdout.strip() or None)
+
+def vault_root_identity(identity: VaultIdentity) -> str:
+    """Digest of the ADR-0015 root identity primitives for binding comparison."""
+    return canonical_digest({
+        "canonical_root": identity.canonical_root,
+        "device_identity": identity.device_identity,
+        "root_file_identity": identity.root_file_identity,
+    })
+
+
+def measure_root_identity(logical_id: str, root: Path) -> str | None:
+    """Best-effort root identity; absent or unreadable roots measure as None."""
+    try:
+        return vault_root_identity(discover_vault(logical_id, root))
+    except (ValueError, OSError):
+        return None

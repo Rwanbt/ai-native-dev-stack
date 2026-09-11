@@ -15,15 +15,25 @@ import sys
 
 from .audit import AuditLog
 from .authority_store import AuthorityStore, AuthorityStoreCorruptError
+from .binding import ALLOW_ROOT_FRESH, root_freshness
+from .identity import measure_root_identity
 from .status import ContextReport, doctor_report
 
 
-def _doctor_checks(store_path: Path, domain: str, repository: Path) -> dict:
+def _doctor_checks(store_path: Path, domain: str, repository: Path, vault_root: Path | None = None) -> dict:
     checks: dict = {"canary": None}
     try:
-        checks["binding"] = AuthorityStore(store_path).binding(domain) is not None
+        binding = AuthorityStore(store_path).binding(domain)
+        checks["binding"] = binding is not None
     except (AuthorityStoreCorruptError, OSError):
+        binding = None
         checks["binding"] = None
+    if vault_root is None:
+        checks["root_freshness"] = None
+    else:
+        measured = measure_root_identity(str((binding or {}).get("vault", "")), vault_root)
+        verdict = root_freshness(binding, measured)
+        checks["root_freshness"] = verdict.decision == ALLOW_ROOT_FRESH
     try:
         inside = subprocess.run(
             ["git", "-C", str(repository), "rev-parse", "--is-inside-work-tree"],
@@ -82,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--store", type=Path, required=True)
     doctor.add_argument("--domain", required=True)
     doctor.add_argument("--repo", type=Path, default=Path("."))
+    doctor.add_argument("--vault-root", type=Path, default=None)
 
     context = subparsers.add_parser("context", help="describe the resolved security context")
     context.add_argument("--store", type=Path, required=True)
@@ -103,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "doctor":
-        report = doctor_report(_doctor_checks(args.store, args.domain, args.repo))
+        report = doctor_report(_doctor_checks(args.store, args.domain, args.repo, args.vault_root))
         for name, verdict in report:
             print(f"{verdict}\t{name}")
         return 0 if all(verdict == "PASS" for _name, verdict in report) else 1
