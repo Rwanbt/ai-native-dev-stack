@@ -1,0 +1,1 @@
+{"inherited_variables": ["GIT_SSH_COMMAND", "HTTP_PROXY", "HTTPS_PROXY"], "reason": "parent transport environment must not be reused", "recorded_at": "2026-09-11T09:23:42+00:00", "schema_version": 1, "sensitive_transfer_available": false, "transport_qualified": false}
