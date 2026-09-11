@@ -1,9 +1,8 @@
 {
- "correction": "commit 3617c2c message overstated the principal verdict; this file records the measured result",
- "discrepancy": "a manual diagnostic read the raw auth-status JSON and saw email/orgId present, while the automated probe path returned logged_in=True with no principal digest; the parser path is not yet trusted for this field",
+ "decision": "auth_store_observation stays PARTIAL/UNKNOWN: store identity and cross-store isolation are proven, but the account-level principal is not observable when the store is pinned explicitly. The fallback justification (stable orgId) does not apply because orgId is also null; no schema relaxation.",
+ "divergence_explained": true,
  "harness": "claude-code",
  "harness_version": "2.1.220",
- "identity_schema": "H(schema_version | canonical_path | inventory_digest)",
  "measured_verdicts": {
   "empty_store_not_logged_in": true,
   "foreign_store_distinct_identity": true,
@@ -12,12 +11,23 @@
   "qualified_store_expected_principal": false,
   "switch_mismatch_detected": true
  },
- "protocol": "CLAUDE_CONFIG_DIR -> canonical path -> store identity digest -> auth status probe -> cross-store non-leak -> A/B binding",
- "recorded_at": "2026-09-11T17:05:00+00:00",
- "remaining_before_auth_store_verified": [
-  "explain the principal-digest discrepancy",
-  "re-run the six verdicts green"
- ],
+ "production_transport": "direct executable invocation (no shell)",
+ "recorded_at": "2026-09-11T17:20:00+00:00",
+ "root_cause": "with CLAUDE_CONFIG_DIR set explicitly, claude auth status returns loggedIn=true with email=null, orgId=null and orgName=null on the same binary/argv/env; the earlier manual check tested key presence only, not values. The difference is field values, not transport or parsing.",
  "schema_version": 1,
- "sensitive_available": false
+ "sensitive_available": false,
+ "transports": {
+  "cmd_d_s_c": {
+   "exit": 1,
+   "stderr_first_80": "quoting error; transport unusable",
+   "usable": false
+  },
+  "direct_exe": {
+   "bom": false,
+   "exit": 0,
+   "json_objects": 1,
+   "stderr_bytes": 0,
+   "stdout_bytes": 165
+  }
+ }
 }
