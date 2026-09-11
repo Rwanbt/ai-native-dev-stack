@@ -68,7 +68,7 @@ class TransferOutcome:
 
 
 def _secondary_network_arguments(operation: str) -> list[str]:
-    common = ["-c", "submodule.recurse=false"]
+    common = ["-c", "submodule.recurse=false", "-c", "core.hooksPath=" + os.devnull]
     if operation == "fetch":
         return ["-c", "fetch.recurseSubmodules=false", *common]
     return ["-c", "push.recurseSubmodules=no", *common]

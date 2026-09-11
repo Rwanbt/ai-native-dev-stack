@@ -69,6 +69,8 @@ def default_git_environment(git_executable: str) -> dict[str, str]:
         "GIT_NO_LAZY_FETCH": "1",
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
         "GIT_OPTIONAL_LOCKS": "0",
     }
     system_root = os.environ.get("SYSTEMROOT")
@@ -76,6 +78,28 @@ def default_git_environment(git_executable: str) -> dict[str, str]:
         environment["SYSTEMROOT"] = system_root
     return environment
 
+
+
+FORBIDDEN_GIT_ENVIRONMENT_KEYS = frozenset({
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_CONFIG_COUNT",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+})
+
+
+def validate_git_environment(environment: Mapping[str, str]) -> None:
+    """Reject caller environments that reintroduce ambient credential or proxy vectors."""
+    forbidden = sorted(set(environment) & FORBIDDEN_GIT_ENVIRONMENT_KEYS)
+    if forbidden:
+        raise ValueError("git environment reuses forbidden ambient vectors: " + ", ".join(forbidden))
 
 def _is_zero_oid(value: str) -> bool:
     return len(value) in (40, 64) and value.strip("0") == ""
@@ -105,7 +129,11 @@ class CandidateObjectScanner:
         self._forbidden_paths = tuple(forbidden_paths)
         self._secret_patterns = tuple(secret_patterns)
         self._max_binary_bytes = max_binary_bytes
-        self._environment = dict(environment) if environment is not None else default_git_environment(executable)
+        if environment is not None:
+            validate_git_environment(environment)
+            self._environment = dict(environment)
+        else:
+            self._environment = default_git_environment(executable)
         self._timeout_seconds = timeout_seconds
 
     def scan(self, source_oid: str, remote_base_oid: str | None, refspec: str) -> CandidateScanResult:

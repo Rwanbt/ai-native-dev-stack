@@ -1,10 +1,11 @@
 import shutil
 import subprocess
 import tempfile
+import os
 import unittest
 from pathlib import Path
 
-from ainative.multivault.git_scanner import CandidateObjectScanner, ScanVerdict
+from ainative.multivault.git_scanner import CandidateObjectScanner, FORBIDDEN_GIT_ENVIRONMENT_KEYS, ScanVerdict, default_git_environment, validate_git_environment
 
 
 def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
@@ -121,3 +122,24 @@ class CandidateObjectScannerTests(unittest.TestCase):
         first = self.scan(source)
         second = self.scan(source)
         self.assertEqual(first, second)
+
+class GitEnvironmentNeutralizationTests(unittest.TestCase):
+    def test_default_environment_neutralizes_config_files_and_keeps_no_ambient_vectors(self):
+        executable = shutil.which("git")
+        if not executable:
+            self.skipTest("git executable is unavailable")
+        environment = default_git_environment(executable)
+        self.assertEqual(os.devnull, environment["GIT_CONFIG_GLOBAL"])
+        self.assertEqual(os.devnull, environment["GIT_CONFIG_SYSTEM"])
+        self.assertEqual("1", environment["GIT_CONFIG_NOSYSTEM"])
+        self.assertEqual("0", environment["GIT_TERMINAL_PROMPT"])
+        self.assertFalse(set(environment) & FORBIDDEN_GIT_ENVIRONMENT_KEYS)
+
+    def test_forbidden_ambient_vectors_are_rejected(self):
+        for key in ("GIT_ASKPASS", "SSH_ASKPASS", "HTTP_PROXY", "GIT_CONFIG_COUNT", "GIT_SSH_COMMAND"):
+            with self.assertRaises(ValueError):
+                validate_git_environment({key: "value"})
+
+    def test_scanner_refuses_a_caller_environment_with_ambient_vectors(self):
+        with self.assertRaises(ValueError):
+            CandidateObjectScanner("repo", environment={"PATH": "C:/git", "GIT_ASKPASS": "askpass.exe"})
