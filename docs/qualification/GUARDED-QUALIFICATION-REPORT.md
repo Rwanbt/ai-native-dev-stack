@@ -37,3 +37,22 @@ Cumulative Multi-Vault suite: 176 tests before this item (177+ with it).
 
 Until that evidence exists, every sensitive admission path in this codebase
 denies by construction.
+## Tuple evidence update — 2026-09-11
+
+Probed tuple: Windows 11 + claude-code 2.1.220 + Anthropic firstParty + claude-haiku-4-5-20251001.
+
+Proven by executed probes: project settings autoload and its disable
+(`--setting-sources user`); project MCP execution autoload and its disable
+(`--strict-mcp-config` blocked the spawn); `CLAUDE.md` autoload; post-call
+versioned model identity via `claude -p --output-format json` (modelUsage:
+claude-haiku-4-5-20251001 / canonical claude-haiku-4-5 / provider firstParty);
+Windows Job Object containment.
+
+Still missing before sensitive qualification: provider principal observation,
+endpoint routing control and observation, auth-store observation, and a
+`CLAUDE.md` disable control. `harness_claude.build_manifest` therefore fails
+`sensitive_eligible()` and `CapabilityRegistry.sensitive_admission` returns
+DENY.
+
+Verdict: NOT QUALIFIED (unchanged), now with the exact remaining probes
+enumerated instead of an open UNKNOWN.
