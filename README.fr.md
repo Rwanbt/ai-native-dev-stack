@@ -442,7 +442,7 @@ d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
 OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.0"   # release epinglee (reproductible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.1"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative init                          # demande Standard ou Verified

@@ -1,9 +1,17 @@
-# Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
+# Knowledge Convergence — Legacy Capability Parity Matrix
 
-Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-FINAL PARITY: 18/18 with explicit destinies (see the audit section at the end). Behavioural E2E A-J green, K1-K4 gate executed (STOP), isolation E2E green. (rows 2, 7, 18 ported; row 13 superseded by the planner).
-This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
-`PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
+STATUS: HISTORICAL INITIAL AUDIT + FINAL PARITY RECORD
+
+Current qualified release candidate: v2.2.1
+
+Initial baseline: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422,
+archived as tag `archive/knowledge-lifecycle-final`; the branch was deleted after the convergence.
+
+Final result: 18/18 explicit destinies — 13 PORTED, 2 SUPERSEDED, 3 INTENTIONALLY DROPPED (all linked
+to the K5 STOP decision), no UNKNOWN. Behavioural E2E A-J green, K1-K4 gate executed (STOP), isolation
+E2E green. The body below is the initial STATIC audit (file/docstring/inventory level) kept as the
+historical record of the convergence; the final destinies and their evidence are in the audit section
+at the end.
 
 ## Owner freeze (no duplicates allowed)
 

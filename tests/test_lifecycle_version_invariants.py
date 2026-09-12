@@ -9,6 +9,7 @@ and the packaged metadata.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,12 @@ class FreshCheckoutInvariants(unittest.TestCase):
         self.assertEqual(package_version(REPO), ainative.__version__)
         self.assertEqual(assert_version_consistency(REPO), ainative.__version__)
 
+    def test_the_agents_md_stack_version_marker_matches_the_release(self):
+        marker = re.search(r"stack-version:\s*([0-9][0-9A-Za-z.\-]*)",
+                           (REPO / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIsNotNone(marker, "AGENTS.md lost its stack-version header")
+        self.assertEqual(marker.group(1), ainative.__version__,
+                         "UPDATING.md moves VERSION and the AGENTS.md header together")
     def test_packaged_metadata_derives_from_the_package_version(self):
         pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('version = { attr = "ainative.__version__" }', pyproject)
