@@ -179,6 +179,14 @@ jobs:
       - name: Update check, apply, conflict, recovery and rollback
         run: python -m unittest tests.test_lifecycle_update -v
 
+      - name: Version invariants and the official update integrity path
+        # setuptools is pip-installed here because the wheel-payload test
+        # builds a real wheel through the in-tree backend; the version gate
+        # must run, not skip.
+        run: |
+          python -m pip install --disable-pip-version-check -q setuptools
+          python -m unittest tests.test_lifecycle_version_invariants tests.test_lifecycle_update_integrity -v
+
       - name: CLI contract, exit codes, JSON and the layer boundary
         run: python -m unittest tests.test_lifecycle_cli -v
 
@@ -187,6 +195,9 @@ jobs:
 
       - name: Implementation Economy corpus non-vacuity
         run: python -m unittest discover -s tests/implementation_economy -p "test_*.py" -v
+
+      - name: Implementation Economy skill contract (#53 - never executed before)
+        run: python -m unittest tests.test_implementation_economy_skill -v
 
       - name: Non-vacuity — each guard must actually block
         # A protection nobody has seen refuse is a comment. This reverts each
@@ -238,6 +249,35 @@ jobs:
 
       - name: Support conflict dedup normative order
         run: python -m unittest tests.test_knowledge_resolution -v
+
+  knowledge-b2:
+    name: Knowledge convergence Auto-Memory (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The convergence wave shipped 11 suites no workflow executed - the same
+      # class as #53 - so "tested" had no remote proof per platform. They run
+      # here on the same matrix as the B1 foundation.
+      - name: Capture, classification, import and maintenance
+        run: python -m unittest tests.test_knowledge_classifier tests.test_knowledge_import tests.test_knowledge_maintenance -v
+
+      - name: Staleness, consolidation and the review queue
+        run: python -m unittest tests.test_knowledge_staleness tests.test_knowledge_consolidation tests.test_knowledge_review -v
+
+      - name: Doctor, context CLI and the knowledge CLI surface
+        run: python -m unittest tests.test_knowledge_doctor tests.test_knowledge_context_cli tests.test_knowledge_cli -v
+
+      - name: Behavioural E2E A-J and the isolation E2E
+        run: python -m unittest tests.test_knowledge_e2e tests.test_knowledge_isolation_e2e -v
 
   clean-install:
     name: Clean install E2E (${{ matrix.os }})
