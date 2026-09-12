@@ -141,3 +141,42 @@ class ContinuityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkingMemoryExtensionTests(unittest.TestCase):
+    def test_extended_fields_roundtrip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = _repo(directory)
+            state = _state(next_action="run the suite",
+                           hypotheses=["store is bounded"],
+                           findings=["flaky test isolated"],
+                           questions=["when is the K5 gate?"],
+                           candidate_ids=["cand_example"])
+            record = continuitylib.checkpoint(project, state, ttl_seconds=3600)
+            self.assertEqual("run the suite", record["state"]["next_action"])
+            restored = continuitylib.restore(project, record["checkpoint_id"])
+            self.assertEqual(continuitylib.RESTORED, restored["status"])
+            self.assertEqual(state["hypotheses"], restored["state"]["hypotheses"])
+            self.assertEqual(state["findings"], restored["state"]["findings"])
+            self.assertEqual(state["questions"], restored["state"]["questions"])
+            self.assertEqual(state["candidate_ids"], restored["state"]["candidate_ids"])
+
+    def test_legacy_shaped_state_still_validates_with_defaults(self):
+        validated = continuitylib.validate_state(_state())
+        for name in ("next_action", "hypotheses", "findings", "questions",
+                     "candidate_ids"):
+            self.assertIn(name, validated)
+        self.assertEqual("", validated["next_action"])
+        self.assertEqual([], validated["candidate_ids"])
+
+    def test_chain_of_thought_is_still_refused(self):
+        with self.assertRaises(KnowledgeError):
+            continuitylib.validate_state(_state(chain_of_thought=["hidden reasoning"]))
+
+    def test_extended_fields_are_bounded(self):
+        with self.assertRaises(KnowledgeError):
+            continuitylib.validate_state(_state(questions=[f"q{i}" for i in range(101)]))
+        with self.assertRaises(KnowledgeError):
+            continuitylib.validate_state(_state(findings=["x" * 2001]))
+        with self.assertRaises(KnowledgeError):
+            continuitylib.validate_state(_state(next_action=["not", "text"]))

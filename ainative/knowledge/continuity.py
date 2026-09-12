@@ -1,7 +1,8 @@
 """Working continuity: checkpoints bound to repository state (PR10).
 
-A checkpoint freezes operational state (task, files touched, open
-work, blockers) together with the Git HEAD, a dirty-tree fingerprint
+A checkpoint freezes operational state (task, next action, files
+touched, open work, hypotheses, findings, questions, blockers, tests
+run, candidate ids) together with the Git HEAD, a dirty-tree fingerprint
 and a diff digest. Restore compares all three: same HEAD plus same
 fingerprint restores cleanly; same HEAD with a changed tree reports
 RESTORE_DIRTY_TREE_DIVERGENCE instead of pretending continuity; a
@@ -42,7 +43,8 @@ EXPIRED = "EXPIRED"
 MISSING = "MISSING"
 
 FIELDS = frozenset({"task", "files_touched", "open_work", "blockers",
-                    "tests_run"})
+                    "tests_run", "next_action", "hypotheses", "findings",
+                    "questions", "candidate_ids"})
 
 
 def _git(project: Path, *args: str, timeout: int = 10):
@@ -111,15 +113,26 @@ def validate_state(raw: Any) -> dict[str, Any]:
     task = raw.get("task", "")
     if not isinstance(task, str) or not task.strip() or len(task) > MAX_TEXT_CHARS:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "task must be short text")
+    next_action = raw.get("next_action", "")
+    if not isinstance(next_action, str) or len(next_action) > MAX_TEXT_CHARS:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "next_action must be short text")
     state = {"task": task,
              "files_touched": _bounded_list("files_touched",
                                             raw.get("files_touched", [])),
              "open_work": _bounded_list("open_work", raw.get("open_work", [])),
              "blockers": _bounded_list("blockers", raw.get("blockers", [])),
-             "tests_run": _bounded_list("tests_run", raw.get("tests_run", []))}
-    quarantinelib.check(task, *state["files_touched"], *state["open_work"],
-                        *state["blockers"], *state["tests_run"],
-                        purpose="working state")
+             "tests_run": _bounded_list("tests_run", raw.get("tests_run", [])),
+             "next_action": next_action,
+             "hypotheses": _bounded_list("hypotheses", raw.get("hypotheses", [])),
+             "findings": _bounded_list("findings", raw.get("findings", [])),
+             "questions": _bounded_list("questions", raw.get("questions", [])),
+             "candidate_ids": _bounded_list("candidate_ids",
+                                            raw.get("candidate_ids", []))}
+    quarantinelib.check(task, next_action, *state["files_touched"],
+                        *state["open_work"], *state["blockers"],
+                        *state["tests_run"], *state["hypotheses"],
+                        *state["findings"], *state["questions"],
+                        *state["candidate_ids"], purpose="working state")
     return state
 
 
@@ -231,7 +244,49 @@ def list_checkpoints(project: Path) -> list[dict[str, Any]]:
                   reverse=True)
 
 
+def checkpoint_status(project: Path) -> dict[str, Any]:
+    """Working-memory footprint for health reporting. Read-only."""
+
+    root = Path(project)
+    controlpaths.ensure_contained(root)
+    directory = _working_dir(root)
+    if not directory.is_dir():
+        return {"checkpoints": 0, "expired": 0, "bytes": 0}
+    records = [_read_checkpoint(path) for path in sorted(directory.glob("ckpt_*.json"))]
+    total = sum(path.stat().st_size for path in directory.glob("ckpt_*.json"))
+    return {"checkpoints": len(records),
+            "expired": sum(1 for record in records if _expired(record)),
+            "bytes": total}
+
+
+def prune_expired(project: Path) -> dict[str, Any]:
+    """Remove only provably expired checkpoints. Corrupt entries are never touched."""
+
+    root = Path(project)
+    controlpaths.ensure_contained(root)
+    directory = _working_dir(root)
+    if not directory.is_dir():
+        return {"removed": [], "kept": 0}
+    removed, kept = [], 0
+    for path in sorted(directory.glob("ckpt_*.json")):
+        try:
+            record = _read_checkpoint(path)
+            expired = _expired(record)
+        except KnowledgeError:
+            kept += 1
+            continue
+        if not expired:
+            kept += 1
+            continue
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            kept += 1
+    return {"removed": removed, "kept": kept}
+
+
 __all__ = ["WORKING_DIRNAME", "MAX_CHECKPOINT_BYTES", "MAX_CHECKPOINTS",
            "RESTORED", "DIVERGENCE", "STALE_HEAD", "EXPIRED", "MISSING",
            "FIELDS", "repository_snapshot", "validate_state", "checkpoint",
-           "restore", "list_checkpoints"]
+           "restore", "list_checkpoints", "checkpoint_status", "prune_expired"]
