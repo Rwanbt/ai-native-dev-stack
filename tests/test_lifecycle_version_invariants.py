@@ -81,23 +81,38 @@ class FreshCheckoutInvariants(unittest.TestCase):
                 assert_version_consistency(root)
 
 
-@unittest.skipUnless(_has_setuptools(), "setuptools is not installed in this environment")
 class WheelPayloadInvariants(unittest.TestCase):
+    """The wheel's payload, built the way a PEP 517 frontend builds it.
+
+    `pip wheel` performs an isolated build, so the test never depends on
+    whichever setuptools sits in the runner environment: the macos and windows
+    py3.11 runners ship one without a usable `bdist_wheel`, and delegating to
+    it in-process failed there (first CI run of PR #130) while py3.13 and
+    ubuntu passed. Isolation makes the result depend on the declared build
+    requirements, not on the image.
+    """
 
     def test_wheel_payload_version_matches_package_version(self):
-        import _build_backend
-
         with tempfile.TemporaryDirectory(prefix="ainative-wheel-") as staging:
-            name = _build_backend.build_wheel(staging)
-            wheel = Path(staging) / name
-            self.assertTrue(wheel.is_file(), name)
-            with zipfile.ZipFile(wheel) as archive:
+            output = Path(staging)
+            completed = subprocess.run(
+                [sys.executable, "-m", "pip", "wheel", "--disable-pip-version-check",
+                 "--no-deps", "--wheel-dir", str(output), str(REPO)],
+                capture_output=True, text=True, timeout=900)
+            self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+            wheels = sorted(output.glob("*.whl"))
+            self.assertTrue(wheels, completed.stdout[-1000:])
+            with zipfile.ZipFile(wheels[0]) as archive:
                 payload = archive.read("ainative/_payload/VERSION").decode("utf-8").strip()
                 self.assertEqual(payload, ainative.__version__)
                 metadata = next(entry for entry in archive.namelist()
                                 if entry.endswith(".dist-info/METADATA"))
                 head = archive.read(metadata).decode("utf-8")
                 self.assertIn(f"Version: {ainative.__version__}", head)
+
+
+@unittest.skipUnless(_has_setuptools(), "setuptools is not installed in this environment")
+class BuildBackendRefusal(unittest.TestCase):
 
     def test_a_mismatched_tree_cannot_build_a_wheel(self):
         import _build_backend

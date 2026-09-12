@@ -180,9 +180,9 @@ jobs:
         run: python -m unittest tests.test_lifecycle_update -v
 
       - name: Version invariants and the official update integrity path
-        # setuptools is pip-installed here because the wheel-payload test
-        # builds a real wheel through the in-tree backend; the version gate
-        # must run, not skip.
+        # setuptools is pip-installed for the backend-refusal test import; the
+        # wheel-payload test builds with `pip wheel` (isolated PEP 517) so it
+        # cannot depend on the runner's ambient setuptools.
         run: |
           python -m pip install --disable-pip-version-check -q setuptools
           python -m unittest tests.test_lifecycle_version_invariants tests.test_lifecycle_update_integrity -v
