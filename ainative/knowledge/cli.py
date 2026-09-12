@@ -251,6 +251,111 @@ def _cmd_knowledge_reject(args: argparse.Namespace) -> int:
                    f"rejected {updated.get('candidate_id')}")
 
 
+def add_context_parser(commands) -> None:
+    """Register `ainative context ...` (working continuity, transient state)."""
+
+    context = commands.add_parser("context", help="Working continuity: checkpoints bound to repository state.")
+    sub = context.add_subparsers(dest="context_command", required=True)
+    for name, help_text in (("checkpoint", "Freeze bounded operational state."),
+                            ("save", "Alias for checkpoint.")):
+        parser = sub.add_parser(name, help=help_text)
+        parser.add_argument("--project", type=Path, default=Path("."))
+        parser.add_argument("--state-json", default=None)
+        parser.add_argument("--state-file", type=Path, default=None)
+        parser.add_argument("--ttl", type=int, default=86400)
+    restore = sub.add_parser("restore", help="Restore with explicit divergence accounting.")
+    restore.add_argument("--project", type=Path, default=Path("."))
+    restore.add_argument("--id", default=None)
+    status = sub.add_parser("status", help="Working-memory footprint.")
+    status.add_argument("--project", type=Path, default=Path("."))
+    clear = sub.add_parser("clear", help="Remove provably expired checkpoints (dry-run unless --apply).")
+    clear.add_argument("--project", type=Path, default=Path("."))
+    clear.add_argument("--apply", action="store_true")
+
+
+def _context_payload(args) -> str | None:
+    if args.state_file is not None:
+        try:
+            return Path(args.state_file).read_text(encoding="utf-8")
+        except OSError as error:
+            raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                                 f"state file unreadable: {error}") from error
+    return args.state_json
+
+
+def _cmd_context_checkpoint(args: argparse.Namespace) -> int:
+    import json as jsonlib
+
+    from ainative.knowledge import continuity as continuitylib
+
+    payload = _context_payload(args)
+    if not payload:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                             "state is required (--state-json or --state-file)")
+    try:
+        state = jsonlib.loads(payload)
+    except ValueError as error:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                             "state is not valid JSON") from error
+    record = continuitylib.checkpoint(args.project, state, ttl_seconds=args.ttl)
+    return _report(args, {"checkpoint": record},
+                   f"checkpoint {record['checkpoint_id']} saved")
+
+
+def _cmd_context_restore(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    checkpoint_id = args.id
+    if checkpoint_id is None:
+        records = continuitylib.list_checkpoints(args.project)
+        if not records:
+            return _report(args, {"status": continuitylib.MISSING, "state": None},
+                           "restore: MISSING (no checkpoint)")
+        checkpoint_id = str(records[0]["checkpoint_id"])
+    result = continuitylib.restore(args.project, checkpoint_id)
+    return _report(args, result, f"restore: {result['status']} ({checkpoint_id})")
+
+
+def _cmd_context_status(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    status = continuitylib.checkpoint_status(args.project)
+    return _report(args, status,
+                   f"working: {status['checkpoints']} checkpoint(s), "
+                   f"{status['expired']} expired, {status['bytes']} bytes")
+
+
+def _cmd_context_clear(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    if not args.apply:
+        status = continuitylib.checkpoint_status(args.project)
+        return _report(args, {"dry_run": True, "expired": status["expired"]},
+                       f"clear (dry-run): {status['expired']} expired checkpoint(s) "
+                       "removable; nothing was removed")
+    outcome = continuitylib.prune_expired(args.project)
+    return _report(args, outcome,
+                   f"clear: removed {len(outcome['removed'])}, kept {outcome['kept']}")
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    """Dispatch `ainative context ...` (called lazily from the top CLI)."""
+
+    handler = _CONTEXT_HANDLERS.get(getattr(args, "context_command", None))
+    if handler is None:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "unknown context command")
+    return handler(args)
+
+
+_CONTEXT_HANDLERS = {
+    "checkpoint": _cmd_context_checkpoint,
+    "save": _cmd_context_checkpoint,
+    "restore": _cmd_context_restore,
+    "status": _cmd_context_status,
+    "clear": _cmd_context_clear,
+}
+
+
 _HANDLERS = {
     "status": _cmd_knowledge_status,
     "learn": _cmd_knowledge_learn,
