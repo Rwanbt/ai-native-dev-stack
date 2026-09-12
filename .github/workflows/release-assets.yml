@@ -12,16 +12,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: The tag must point at the current main
+        # A release promotes a qualified main SHA. Publishing a tag main does
+        # not carry would distribute a tree nobody reviewed there.
+        run: |
+          set -e
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
       - run: python -m pip install --disable-pip-version-check -q build
-      - run: python -m build
+      - name: Build the wheel and sdist (refuses a two-version tree)
+        # _build_backend refuses to stage when VERSION and ainative.__version__
+        # disagree; the artifact cannot exist if the invariant is broken.
+        run: python -m build
+      - name: Build the lifecycle bundle consumed by `ainative update`
+        run: python scripts/build_lifecycle_bundle.py
       - name: Write SHA256SUMS
-        run: cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum *.whl *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
       - name: Publish assets to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}"
-          gh release upload "${GITHUB_REF_NAME}" dist/*.whl dist/*.tar.gz dist/SHA256SUMS --clobber
+          set -e
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}"
+          # No --clobber: an existing asset of the same name must fail the
+          # publish loudly, never be silently replaced.
+          gh release upload "${GITHUB_REF_NAME}" dist/*.whl dist/*.tar.gz dist/*.zip dist/SHA256SUMS
