@@ -403,34 +403,6 @@ Guides : [guide operateur](docs/MULTIVAULT-OPERATOR-GUIDE.md) -
 [guide de migration](docs/MULTIVAULT-MIGRATION-GUIDE.md). Les releases publient des
 checksums SHA-256 ; la provenance cryptographique est suivie dans #24.
 
-## Auto-Memoire (Knowledge)
-
-Capturez des observations sous forme de candidats structures et conservez un etat de
-travail borne a travers compaction et redemarrages. Tout reste advisory : une observation
-d'agent n'est jamais une verite, et l'auto-promotion canonique n'est intentionnellement
-pas livree - `ainative knowledge consolidate` propose, un humain decide (gate K5 FERME
-par decision mesuree ; voir docs/knowledge/K1-K4-MEASUREMENT-GATE.md).
-
-```bash
-# depuis la racine du projet (l'etat vit sous .ai-native/)
-ainative knowledge learn --claim "..." --identity-key project/<slug>/<namespace>/<property>
-ainative knowledge candidates; ainative knowledge review; ainative knowledge conflicts
-ainative knowledge consolidate      # propositions advisory uniquement ; zero ecriture canonique
-ainative knowledge stale            # signaux de peremption ; jamais de reecriture
-ainative knowledge import export.json --harness claude [--apply]
-ainative knowledge maintain         # dry-run par defaut
-ainative context checkpoint --state-json '{"task": "...", "next_action": "..."}'
-ainative context restore            # RESTORED / STALE_HEAD / DIVERGENCE / EXPIRED / MISSING
-ainative doctor                     # inclut la section Knowledge
-```
-
-- Isolation : stores confines au projet ; identites cross-projet, variables vault
-  ambiantes et dependances hors projet refusees (E2E d'isolation).
-- Statut : K1-K4 qualifies (210 tests knowledge, E2E A-J) ; K5 = STOP ; promotion
-  GATE_CLOSED ; confiance UNVERIFIED.
-- Guides : docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md et
-  docs/knowledge/K1-K4-MEASUREMENT-GATE.md
-
 ## Démarrage rapide
 
 ### Installer sur un projet existant
@@ -442,7 +414,7 @@ d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
 OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.0"   # release epinglee (reproductible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.1.1"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative init                          # demande Standard ou Verified

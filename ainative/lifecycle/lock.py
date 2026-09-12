@@ -73,38 +73,6 @@ def _mutation_guard_path(project: Path) -> Path:
     return Path(tempfile.gettempdir()) / "ainative-lock-guards" / name
 
 
-LOCK_ACQUIRE_TIMEOUT_SECONDS = 60.0
-LOCK_RETRY_INITIAL_DELAY_SECONDS = 0.05
-LOCK_RETRY_MAX_DELAY_SECONDS = 0.5
-
-
-def _windows_exclusive_lock(descriptor: int) -> None:
-    """Acquire with a bounded deadline instead of msvcrt's internal ten-try cap.
-
-    `msvcrt.locking(LK_LOCK)` gives up after roughly ten seconds of contention
-    and raises `OSError: [Errno 36]` (EDEADLK). On a loaded CI machine with many
-    concurrent writers that cap is reached while every writer is making
-    progress, so this primitive retries with bounded exponential backoff until
-    the deadline and then fails closed with the original error.
-    """
-
-    import msvcrt
-    import time
-
-    deadline = time.monotonic() + LOCK_ACQUIRE_TIMEOUT_SECONDS
-    delay = LOCK_RETRY_INITIAL_DELAY_SECONDS
-    while True:
-        try:
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
-            return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(delay)
-            delay = min(delay * 1.5, LOCK_RETRY_MAX_DELAY_SECONDS)
-
-
 @contextmanager
 def _exclusive_fd(descriptor: int):
     """Hold one open file descriptor exclusively (OS primitive, both platforms)."""
@@ -117,7 +85,7 @@ def _exclusive_fd(descriptor: int):
         if os.name == "nt":
             import msvcrt
 
-            _windows_exclusive_lock(descriptor)
+            msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
         else:
             import fcntl
 

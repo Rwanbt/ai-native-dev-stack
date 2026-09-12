@@ -112,9 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--force", action="store_true",
                         help="apply even when the check reports no newer release")
 
-    from ainative.knowledge.cli import add_context_parser, add_knowledge_parser
+    from ainative.knowledge.cli import add_knowledge_parser
     add_knowledge_parser(commands)
-    add_context_parser(commands)
 
     for name in VERIFIED_COMMANDS:
         commands.add_parser(name, add_help=False,
@@ -268,16 +267,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     from .lifecycle import recovery
-    from .knowledge import doctor as knowledgedoctor
 
-    project = _project(args)
-    diagnosis = recovery.diagnose(project, check_updates=args.check_updates)
-    knowledge = knowledgedoctor.knowledge_status(project)
-    knowledge_failed = knowledge["status"] == knowledgedoctor.STATUS_FAIL
+    diagnosis = recovery.diagnose(_project(args), check_updates=args.check_updates)
     if args.json:
-        record = diagnosis.to_record()
-        record["knowledge"] = knowledge
-        _emit(record)
+        _emit(diagnosis.to_record())
     else:
         print(f"Project: {diagnosis.project}")
         print(f"Installed: {diagnosis.installed}   Profile: {diagnosis.active_profile}")
@@ -289,22 +282,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  INTERRUPTED    {item['id']} ({item['operation']}) — run `ainative repair`")
         for note in diagnosis.notes:
             print(f"  note: {note}")
-        print("Knowledge:")
-        print(f"  status: {knowledge['status']}   store: {knowledge['store']}")
-        if knowledge["status"] != knowledgedoctor.STATUS_FAIL:
-            print(f"  candidates: {knowledge['candidates']}   "
-                  f"review backlog: {knowledge['review_backlog']}   "
-                  f"conflicts: {knowledge['conflicts']}   stale: {knowledge['stale']}")
-            print(f"  working: {knowledge['working']['checkpoints']} checkpoint(s), "
-                  f"{knowledge['working']['expired']} expired")
-            print(f"  providers: graph {knowledge['graph_provider']}, "
-                  f"semantic {knowledge['semantic_provider']}")
-            print(f"  Multi-Vault scope: {knowledge['multivault_scope']}   "
-                  f"promotion: {knowledge['promotion_mode']}   "
-                  f"trust: {knowledge['trust']}")
-        else:
-            print(f"  FAIL: {knowledge['detail']}")
-    return EXIT_OK if (diagnosis.healthy and not knowledge_failed) else EXIT_FAILED
+    return EXIT_OK if diagnosis.healthy else EXIT_FAILED
 
 
 def _cmd_repair(args: argparse.Namespace) -> int:
@@ -386,16 +364,9 @@ def _cmd_knowledge(args: argparse.Namespace) -> int:
     return cmd_knowledge(args)
 
 
-def _cmd_context(args: argparse.Namespace) -> int:
-    from ainative.knowledge.cli import cmd_context
-
-    return cmd_context(args)
-
-
 LIFECYCLE_COMMANDS = {
     "init": _cmd_init,
     "knowledge": _cmd_knowledge,
-    "context": _cmd_context,
     "profile": _cmd_profile,
     "status": _cmd_status,
     "doctor": _cmd_doctor,

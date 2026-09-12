@@ -514,41 +514,13 @@ Guides: [operator guide](docs/MULTIVAULT-OPERATOR-GUIDE.md) -
 [migration guide](docs/MULTIVAULT-MIGRATION-GUIDE.md). Releases publish SHA-256
 checksums; cryptographic provenance is tracked in #24.
 
-## Auto-Memory (Knowledge)
-
-Capture observations as structured candidates and keep bounded working state across
-compaction and restarts. Everything stays advisory: agent observations are never truth,
-and canonical auto-promotion is intentionally not shipped - `ainative knowledge
-consolidate` proposes, humans decide (K5 gate CLOSED by a measured decision; see
-docs/knowledge/K1-K4-MEASUREMENT-GATE.md).
-
-```bash
-# run from the project root (state lives under .ai-native/)
-ainative knowledge learn --claim "..." --identity-key project/<slug>/<namespace>/<property>
-ainative knowledge candidates; ainative knowledge review; ainative knowledge conflicts
-ainative knowledge consolidate      # advisory proposals only; zero canonical writes
-ainative knowledge stale            # dependency staleness signals; never rewrites
-ainative knowledge import export.json --harness claude [--apply]
-ainative knowledge maintain         # dry-run by default
-ainative context checkpoint --state-json '{"task": "...", "next_action": "..."}'
-ainative context restore            # RESTORED / STALE_HEAD / DIVERGENCE / EXPIRED / MISSING
-ainative doctor                     # includes the Knowledge section
-```
-
-- Isolation: project-confined stores; cross-project identities, ambient vault variables
-  and out-of-project dependencies are refused (isolation E2E).
-- Status: K1-K4 qualified (210 knowledge tests, E2E A-J); K5 = STOP; promotion
-  GATE_CLOSED; trust UNVERIFIED.
-- Guides: docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md and
-  docs/knowledge/K1-K4-MEASUREMENT-GATE.md
-
 ## Quick Start
 
 ### For an existing project
 
 ```bash
 # 1. Install the CLI (once), then choose a profile in your project
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.0"   # pinned release (reproducible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.1.1"   # pinned release (reproducible)
 cd your-project
 ainative init                          # asks Standard or Verified
 #   or, non-interactively:
