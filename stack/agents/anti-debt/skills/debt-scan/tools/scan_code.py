@@ -12,6 +12,7 @@ Exits with 0 on success, 1 on missing language / scanner.
 """
 from __future__ import annotations
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,16 +25,20 @@ from heuristic_scan import heuristic_python_scan, detect_coverage_gaps  # noqa: 
 
 
 LANG_MAP = [
-    # (marker_file, language, scanner_command, json_parser)
-    ("pyproject.toml", "python", "ruff check --output-format=json", "ruff"),
-    ("requirements.txt", "python", "ruff check --output-format=json", "ruff"),
+    # (marker_file, language, scanner_argv, json_parser)
+    # Native argument vectors, never shell strings: see run_scanner (#127).
+    ("pyproject.toml", "python", ("ruff", "check", "--output-format=json"), "ruff"),
+    ("requirements.txt", "python", ("ruff", "check", "--output-format=json"), "ruff"),
     # B3 fix: clippy --no-deps avoids requiring a full debug build
-    ("Cargo.toml", "rust", "cargo clippy --no-deps --message-format=json --quiet", "clippy"),
-    ("package.json", "typescript", "npx --no-install eslint --format=json .", "eslint"),
-    ("tsconfig.json", "typescript", "npx --no-install eslint --format=json .", "eslint"),
-    ("go.mod", "go", "golangci-lint run --out-format=json", "golangci-lint"),
-    ("pom.xml", "java", "mvn -q spotbugs:spotbugs", "spotbugs"),
-    ("build.gradle", "java", "gradle spotbugsMain", "spotbugs"),
+    ("Cargo.toml", "rust",
+     ("cargo", "clippy", "--no-deps", "--message-format=json", "--quiet"), "clippy"),
+    ("package.json", "typescript",
+     ("npx", "--no-install", "eslint", "--format=json", "."), "eslint"),
+    ("tsconfig.json", "typescript",
+     ("npx", "--no-install", "eslint", "--format=json", "."), "eslint"),
+    ("go.mod", "go", ("golangci-lint", "run", "--out-format=json"), "golangci-lint"),
+    ("pom.xml", "java", ("mvn", "-q", "spotbugs:spotbugs"), "spotbugs"),
+    ("build.gradle", "java", ("gradle", "spotbugsMain"), "spotbugs"),
 ]
 
 
@@ -50,9 +55,9 @@ def detect_language(root: Path) -> tuple[str, str, str] | None:
     py_count = sum(1 for _ in root.rglob("*.py"))
     rs_count = sum(1 for _ in root.rglob("*.rs"))
     ts_count = sum(1 for _ in root.rglob("*.ts")) + sum(1 for _ in root.rglob("*.tsx"))
-    counts = [("python", py_count, ("pyproject.toml", "python", "ruff check --output-format=json", "ruff")),
-              ("rust", rs_count, ("Cargo.toml", "rust", "cargo clippy --no-deps --message-format=json --quiet", "clippy")),
-              ("typescript", ts_count, ("tsconfig.json", "typescript", "npx --no-install eslint --format=json .", "eslint"))]
+    counts = [("python", py_count, ("pyproject.toml", "python", ("ruff", "check", "--output-format=json"), "ruff")),
+              ("rust", rs_count, ("Cargo.toml", "rust", ("cargo", "clippy", "--no-deps", "--message-format=json", "--quiet"), "clippy")),
+              ("typescript", ts_count, ("tsconfig.json", "typescript", ("npx", "--no-install", "eslint", "--format=json", "."), "eslint"))]
     counts.sort(key=lambda c: c[1], reverse=True)
     if counts[0][1] > 0:
         # We treat as if the marker existed, so the LANG_MAP path is reused
@@ -154,7 +159,11 @@ def normalize_clippy(stdout: str, root: Path) -> list[dict]:
             continue
 
         _cfile = str(primary_span.get("file_name", ""))
-        _cline = f"{primary_span.get('line_start', {}).get('line_start', '?')}"
+        # Clippy emits line_start as an integer; reading it as a mapping
+        # raised AttributeError, which the broad except then swallowed into a
+        # warning - so every clippy finding silently degraded (#127).
+        _line_start = primary_span.get("line_start")
+        _cline = str(_line_start) if isinstance(_line_start, int) else "?"
         finding = {
             "id": finding_id("code", "complexity", _cfile, _cline, code_str),
             "category": "code",
@@ -168,7 +177,7 @@ def normalize_clippy(stdout: str, root: Path) -> list[dict]:
             "evidence": [
                 {
                     "type": "file_location",
-                    "value": f"{primary_span.get('file_name', '')}:{primary_span.get('line_start', {}).get('line_start', '?')}",
+                    "value": f"{_cfile}:{_cline}",
                 },
                 {
                     "type": "tool_output",
@@ -195,11 +204,42 @@ PARSERS = {
 }
 
 
-def run_scanner(root: Path, cmd: str, parser: str) -> list[dict]:
-    """Run the scanner command and return normalized findings."""
-    # B1 fix: explicit binary check (Windows + shell=True does not raise
-    # FileNotFoundError when the binary is missing — it just returns 1).
-    binary = cmd.split()[0] if isinstance(cmd, str) else cmd[0]
+WINDOWS_SHIM_SUFFIXES = (".cmd", ".bat")
+
+
+def executable_argv(argv, *, platform_name: str | None = None,
+                    which=None) -> list[str]:
+    """The process argv for a scanner, never routed through a shell string.
+
+    Windows cannot hand a `.cmd`/`.bat` shim (npx, mvn, gradle) to
+    CreateProcess, so exactly those are invoked through `cmd /c` with the
+    resolved path. Every original argument stays a separate argv element, so
+    nothing is ever re-parsed by a shell (#127). Everywhere else the argv is
+    returned unchanged.
+    """
+
+    argv = [str(item) for item in argv]
+    if (platform_name or os.name) == "nt":
+        resolve = which or shutil.which
+        resolved = resolve(argv[0]) or argv[0]
+        if resolved.lower().endswith(WINDOWS_SHIM_SUFFIXES):
+            return ["cmd", "/c", resolved, *argv[1:]]
+    return argv
+
+
+def run_scanner(root: Path, argv, parser: str) -> list[dict]:
+    """Run the scanner and return normalized findings.
+
+    `argv` is a native argument vector and the process is spawned with
+    `shell=False` (#127): splitting a string and handing it to a shell was both
+    an injection surface and wrong for any path containing a space. The Windows
+    shim exception above keeps the vector intact.
+    """
+
+    argv = tuple(str(item) for item in argv)
+    # B1 fix: explicit binary check — a missing binary must degrade loudly
+    # rather than produce a confusing exit code from the spawn itself.
+    binary = argv[0]
     if binary not in ("npx",) and shutil.which(binary) is None:
         return [{
             "warning": f"scanner binary not found: {binary}",
@@ -207,14 +247,14 @@ def run_scanner(root: Path, cmd: str, parser: str) -> list[dict]:
         }]
     try:
         result = subprocess.run(
-            cmd.split() if isinstance(cmd, str) else cmd,
+            executable_argv(argv),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             cwd=str(root),
             timeout=300,
-            shell=isinstance(cmd, str) and (" " in cmd),
+            shell=False,
         )
         # ruff + clippy return nonzero when issues found — that's OK
         if result.returncode not in (0, 1):
@@ -275,8 +315,8 @@ def main() -> int:
     if not detected:
         print(json.dumps({"error": "no_supported_language", "path": str(root)}))
         return 1
-    lang, cmd, parser = detected
-    findings = run_scanner(root, cmd, parser)
+    lang, argv, parser = detected
+    findings = run_scanner(root, argv, parser)
     if lang == "python":
         findings = _augment_python(root, findings)
     elif lang in ("rust", "typescript"):

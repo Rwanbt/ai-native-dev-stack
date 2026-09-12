@@ -109,6 +109,12 @@ jobs:
         # Enforced: the test asserts recall >= 0.70 and precision >= 0.60.
         run: python3 tests/test_scan_quality.py
 
+      - name: Scanner execution contracts (argv, shell=False, clippy parser)
+        working-directory: stack/agents/anti-debt
+        # Ruff is installed above, so the real-process smoke test runs here
+        # instead of only the mocked contracts (#127).
+        run: python3 tests/test_scan_code_execution.py
+
   test-layer0-kg:
     name: Test Layer 0 (Knowledge Graph)
     runs-on: ubuntu-latest
