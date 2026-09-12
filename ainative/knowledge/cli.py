@@ -119,6 +119,7 @@ def _coerce_value(kind: str | None, raw: str | None, claim: str) -> dict:
 
 def _cmd_knowledge_learn(args: argparse.Namespace) -> int:
     from ainative.knowledge import assertions as assertionslib
+    from ainative.knowledge import classifier as classifierlib
     from ainative.knowledge import identity as identitylib
     from ainative.knowledge import states as stateslib
     from ainative.knowledge import store as storelib
@@ -152,15 +153,18 @@ def _cmd_knowledge_learn(args: argparse.Namespace) -> int:
               "assertion_value": hashed["value"],
               "provenance": {"actor": args.actor, "origin": "cli",
                              "identity_confirmed_by": attested["confirmed_by"]}}
+    suggestion = classifierlib.suggest(
+        args.claim, module=(args.module[0] if args.module else None))
+    note = f"; advisory kind suggestion: {suggestion['kind']}"
     if args.dry_run:
         from ainative.knowledge.bounds import Bounds
         stored = storelib.validate_candidate(record, bounds=Bounds())
         return _report(args, {"dry_run": True, "candidate": stored},
                        f"would capture {stored['candidate_id']} "
-                       f"({stored['kind']}) as PENDING")
+                       f"({stored['kind']}) as PENDING" + note)
     stored = storelib.append_candidate(project, record)
     return _report(args, {"candidate": stored},
-                   f"captured {stored['candidate_id']} ({stored['kind']}) as PENDING")
+                   f"captured {stored['candidate_id']} ({stored['kind']}) as PENDING" + note)
 
 
 def _cmd_knowledge_candidates(args: argparse.Namespace) -> int:
