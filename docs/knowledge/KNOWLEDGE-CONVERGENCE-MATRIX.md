@@ -1,7 +1,7 @@
 # Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
 
 Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-Progress: 6/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
+Progress: 7/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
 This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
 `PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
 
@@ -28,7 +28,7 @@ This is the STATIC audit (file/docstring/inventory level). Behavioral verificati
 |---|---|---|---|---|---|
 | 1 | Candidate capture (proposal schema, state machine, capture-time validation) | candidate.py (263 l) | assertions.py + states.py + store.py + cli.py (K1) | COVERED (verify behaviorally) | extend capture provenance fields only |
 | 2 | Advisory classification (kind + reasons) | classifier.py (43 l) | classifier.py (ported 9a973bf) | PORTED | port as pure keyword heuristic; advisory-only contract; versioned categories; UNKNOWN never guessed |
-| 3 | Consolidation cycle (collect/cluster/verify/recommend, advisory) | consolidation.py (156 l) | resolution.py (K4, partial) | PARTIAL | extend resolution with advisory `knowledge consolidate`; zero canonical writes |
+| 3 | Consolidation cycle (collect/cluster/propose, advisory) | consolidation.py (156 l) | consolidation.py (ported wave 7, composes resolution) | PORTED | extend resolution with advisory `knowledge consolidate`; zero canonical writes |
 | 4 | Dedup relations (exact/containment/lexical, SEMANTIC_AMBIGUITY human-gated) | dedupe.py (177 l) | resolution.py (K4) | LIKELY COVERED | behavioral verify; port gaps into resolution only |
 | 5 | Evidence accumulation (idempotent reinforce, sufficiency rule) | evidence.py (73 l) | resolution.py / assertions.py | PARTIAL | verify idempotence + sufficiency; verification stays a referenced proof, never owned here |
 | 6 | Health (read-only status/doctor) | health.py (68 l) | status/report surface | PARTIAL | extend `ainative doctor` with Knowledge section (program section 24) |

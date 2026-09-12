@@ -87,6 +87,8 @@ def add_knowledge_parser(commands) -> None:
 
     stale = sub.add_parser("stale", help="Evaluate dependency staleness of candidates (read-only).")
 
+    consolidate = sub.add_parser("consolidate", help="Advisory consolidation pass (reads only).")
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -340,9 +342,21 @@ def _cmd_knowledge_stale(args: argparse.Namespace) -> int:
                    "\n".join(lines))
 
 
+def _cmd_knowledge_consolidate(args: argparse.Namespace) -> int:
+    from ainative.knowledge import consolidation as consolidationlib
+
+    report = consolidationlib.consolidate(_project(args))
+    lines = [f"{item['candidate_id']}  {item['outcome']}  ({item['verdict']})"
+             for item in report["proposals"]] or [
+        f"no reviewable candidates (scanned {report['scanned']})"]
+    lines.append(report["note"])
+    return _report(args, report, "\n".join(lines))
+
+
 _HANDLERS["import"] = _cmd_knowledge_import
 
 
+_HANDLERS["consolidate"] = _cmd_knowledge_consolidate
 _HANDLERS["stale"] = _cmd_knowledge_stale
 _HANDLERS["maintain"] = _cmd_knowledge_maintain
 _HANDLERS["export"] = _cmd_knowledge_export
