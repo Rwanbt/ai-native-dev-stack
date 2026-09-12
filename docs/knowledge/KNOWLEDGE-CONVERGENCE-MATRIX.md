@@ -1,7 +1,7 @@
 # Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
 
 Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-Progress: 8/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
+Progress: 8/18 treated; behavioural E2E A-J green (tests/test_knowledge_e2e.py, 11 scenarios) for rows 1/4/5/14 (rows 2, 7, 18 ported; row 13 superseded by the planner).
 This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
 `PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
 
