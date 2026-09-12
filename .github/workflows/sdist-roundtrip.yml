@@ -1,0 +1,29 @@
+name: sdist round-trip
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --disable-pip-version-check -q build
+      - run: python -m build
+      - name: Build a wheel from the generated sdist only
+        run: |
+          mkdir -p /tmp/roundtrip /tmp/roundtrip-wheel
+          tar -xzf dist/*.tar.gz -C /tmp/roundtrip
+          cd /tmp/roundtrip/*/ && python -m build --wheel --outdir /tmp/roundtrip-wheel
+      - name: Install that wheel in a fresh venv and drive the CLI
+        run: |
+          python -m venv /tmp/rtvenv
+          /tmp/rtvenv/bin/pip install --disable-pip-version-check -q /tmp/roundtrip-wheel/*.whl
+          /tmp/rtvenv/bin/ainative --version
+          mkdir -p /tmp/rtproj
+          cd /tmp && /tmp/rtvenv/bin/ainative init --profile standard --project /tmp/rtproj --dry-run

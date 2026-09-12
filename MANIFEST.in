@@ -1,0 +1,12 @@
+include AGENTS.md
+include CHANGELOG.md
+include LICENSE
+include README.fr.md
+include README.md
+include VERSION
+include _build_backend.py
+include conventions.json
+include docs/VERIFIED-WORK-PLANE.md
+recursive-include skills *
+recursive-include templates *
+recursive-include tools/ai_docs *

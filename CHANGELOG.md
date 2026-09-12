@@ -6,6 +6,38 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-12
+
+### Fixed
+
+- `python -m build` round-trip: `MANIFEST.in` ships the in-tree build backend and
+  the payload sources, so a wheel built from the generated sdist works without the
+  checkout (#54).
+- Current qualification evidence references the exact published release SHA
+  `a55ac69` / CI run 34685643192 / tag `v2.1.0` (the matrix and report no longer
+  diverge from the release).
+
+### Changed
+
+- User-facing documentation: removed the contradictory historical verdicts from the
+  Multi-Vault operator guide, made the migration guide CLI-first, and added
+  Multi-Vault sections to README EN and FR with a pinned reproducible Quick Start.
+
+### Added
+
+- Dedicated CI gates: a build-from-sdist round-trip workflow (build, wheel from
+  sdist, fresh-venv install, `ainative --version`, `init --dry-run`) and a release
+  workflow that publishes wheel, sdist and `SHA256SUMS` as release assets.
+
+## [2.1.0] - 2026-09-12
+
+### Added
+
+- **Multi-Vault GUARDED production readiness**: profiles A/B/C/D GUARDED QUALIFIED;
+  `ainative multivault bind|doctor|context|exec|sync`; governed Git transfers through
+  the transfer engine only; clean-install wheel E2E; real canary sweep (exit 0);
+  fault-injection matrix; qualification evidence under
+  `docs/spikes/multivault/` and `docs/qualification/`.
 ### Added
 
 - GitHub-centered work management: `docs/GITHUB-WORKFLOW.md` defines Issue /

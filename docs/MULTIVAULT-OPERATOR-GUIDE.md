@@ -2,10 +2,12 @@
 
 # Multi-Vault Operator Guide
 
-Implementation status: cores are implemented and fail closed. No
-platform/harness/provider tuple is qualified; CONFIDENTIAL/CRITICAL admission
-is DENY everywhere. This guide describes what exists today, not a production
-qualification.
+Implementation status: cores are implemented and fail closed. The current
+qualification is MULTI-VAULT GUARDED - PRODUCTION READY (profiles A/B/C/D
+GUARDED QUALIFIED); see docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md.
+ENFORCED (dedicated OS account, ACL boundary, external authenticator) is
+optional high-assurance hardening, experimental and NOT QUALIFIED; it is not a
+condition for GUARDED.
 
 ## Commands
 
@@ -47,7 +49,7 @@ refused with stable codes.
 
 ## Qualification
 
-Current state lives in `docs/spikes/multivault/CAPABILITY-MATRIX.json`; the
-tuple-specific verdict is `docs/qualification/GUARDED-QUALIFICATION-REPORT.md`
-(NOT QUALIFIED). ENFORCED-DIAGNOSTIC and ENFORCED-AUTHENTICATED are not
-available.
+Current state lives in `docs/spikes/multivault/CAPABILITY-MATRIX.json` under
+`current_qualification`. The pre-qualification report
+`docs/qualification/GUARDED-QUALIFICATION-REPORT.md` is SUPERSEDED and kept for
+history only. ENFORCED-DIAGNOSTIC and ENFORCED-AUTHENTICATED are not available.

@@ -485,13 +485,42 @@ verify, so **bootstrap trust before a controlled agent has repository access**
 Full documentation, empirical results and known limitations:
 [docs/VERIFIED-WORK-PLANE.md](docs/VERIFIED-WORK-PLANE.md).
 
+## Multi-Vault (GUARDED - production ready)
+
+Multi-Vault keeps vault and security-domain boundaries enforced inside every governed
+AI Native execution path: wrong vault selection, wrong workspace binding, stale vault
+roots or checkouts, cross-vault memory/semantic reuse, unapproved Git destinations and
+unapproved provider routing are denied fail-closed before any sensitive action.
+
+- Threat model: strong isolation between vault/security domains inside governed paths.
+  It does not claim protection against a malicious process running as the same OS user
+  outside those paths.
+- Qualification: profiles A/B/C/D are GUARDED QUALIFIED
+  (`docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md`).
+- ENFORCED (dedicated OS account, ACL boundary) is optional high-assurance hardening,
+  experimental and not available today.
+
+```bash
+ainative multivault bind --store .ainative/authority.json --domain work \
+  --vault-id work-vault --checkout-id my-repo --vault /path/to/vault --checkout .
+ainative multivault doctor  --store .ainative/authority.json --domain work --repo .
+ainative multivault context --store .ainative/authority.json --domain work
+# governed launch / transfer (fail-closed composition roots)
+ainative multivault exec  ...   # see the operator guide
+ainative multivault sync  ...   # transfers only through the governed engine
+```
+
+Guides: [operator guide](docs/MULTIVAULT-OPERATOR-GUIDE.md) -
+[migration guide](docs/MULTIVAULT-MIGRATION-GUIDE.md). Releases publish SHA-256
+checksums; cryptographic provenance is tracked in #24.
+
 ## Quick Start
 
 ### For an existing project
 
 ```bash
 # 1. Install the CLI (once), then choose a profile in your project
-pip install git+https://github.com/Rwanbt/ai-native-dev-stack.git
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.1.1"   # pinned release (reproducible)
 cd your-project
 ainative init                          # asks Standard or Verified
 #   or, non-interactively:

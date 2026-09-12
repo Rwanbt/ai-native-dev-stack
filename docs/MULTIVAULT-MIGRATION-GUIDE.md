@@ -1,3 +1,8 @@
+> Nominal workflow is CLI-first: `ainative multivault bind`, `doctor`, `context`,
+> `exec`, `sync`. The internal APIs shown later in this guide
+> (`ainative.multivault.identity`, `AuthorityStore(...)`) are advanced/operator
+> troubleshooting paths, not the nominal workflow.
+
 # Multi-Vault Migration Guide
 
 Existing installations start as PERSONAL + GUARDED. Classification never

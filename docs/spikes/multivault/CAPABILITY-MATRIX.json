@@ -31,10 +31,11 @@
     "verdict": "PRODUCTION READY",
     "closure": {
       "canary_sweep_replay": "EXIT 0 - complete clean (checkout, vault, runtime-temp)",
-      "ci_run": 34685003958,
+      "ci_run": 34685643192,
       "exec_sync_product_paths": "SHIPPED - ainative multivault exec|sync, composition roots are pure wiring",
-      "final_sha": "90017d5",
+      "final_sha": "a55ac69",
       "issue_122": "CLOSED as completed",
+      "tag": "v2.1.0",
       "multi_vault_tests": 341,
       "wheel_e2e": "GREEN - clean-install drives bind/doctor/context/exec/sync from the installed wheel"
     }

@@ -200,6 +200,8 @@ Toute décision architecturale non triviale reçoit un ADR dans `docs/adr/NNNN-t
 Le fichier principal (18 000 LOC) concentre trop de responsabilités.
 
 ## Décision
+
+
 Extraire chaque domaine dans un service dédié avec un Host struct
 passé par paramètre (pas de singleton, injection explicite).
 
@@ -371,6 +373,36 @@ ci-dessous). Garder les deux séparés, c'est ce qui rend les deux réversibles.
 
 ---
 
+## Multi-Vault (GUARDED - pret pour la production)
+
+Multi-Vault maintient les frontieres de vault et de domaine de securite dans tous les
+chemins d'execution gouvernes d'AI Native : mauvais vault, mauvais binding de workspace,
+racines ou checkouts perimes, reutilisation memoire/semantique inter-vaults, destinations
+Git non approuvees et routage provider non approuve sont refuses en fail-closed avant
+toute action sensible.
+
+- Modele de menace : isolation forte entre vaults/domaines dans les chemins gouvernes.
+  Aucune protection revendiquee contre un processus malveillant du meme utilisateur OS
+  en dehors de ces chemins.
+- Qualification : profils A/B/C/D GUARDED QUALIFIED
+  (`docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md`).
+- ENFORCED (compte OS dedie, frontiere ACL) est un durcissement optionnel,
+  experimental, non disponible aujourd'hui.
+
+```bash
+ainative multivault bind --store .ainative/authority.json --domain work \
+  --vault-id work-vault --checkout-id my-repo --vault /chemin/vault --checkout .
+ainative multivault doctor  --store .ainative/authority.json --domain work --repo .
+ainative multivault context --store .ainative/authority.json --domain work
+# lancement / transfert gouvernes (composition roots fail-closed)
+ainative multivault exec  ...   # voir le guide operateur
+ainative multivault sync  ...   # transferts uniquement via le moteur gouverné
+```
+
+Guides : [guide operateur](docs/MULTIVAULT-OPERATOR-GUIDE.md) -
+[guide de migration](docs/MULTIVAULT-MIGRATION-GUIDE.md). Les releases publient des
+checksums SHA-256 ; la provenance cryptographique est suivie dans #24.
+
 ## Démarrage rapide
 
 ### Installer sur un projet existant
@@ -382,7 +414,7 @@ d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
 OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
-pip install git+https://github.com/Rwanbt/ai-native-dev-stack.git
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.1.1"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative init                          # demande Standard ou Verified
