@@ -5,6 +5,7 @@ include README.fr.md
 include README.md
 include VERSION
 include _build_backend.py
+include _payload_staging.py
 include conventions.json
 include docs/VERIFIED-WORK-PLANE.md
 recursive-include skills *

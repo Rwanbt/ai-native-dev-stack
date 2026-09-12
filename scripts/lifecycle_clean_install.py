@@ -119,6 +119,20 @@ def check_install(ainative: Path, project: Path, cwd: Path, env: dict) -> None:
         require((project / marker).is_file(), f"missing after a Standard install: {marker}")
 
 
+def check_version_invariants(ainative: Path, project: Path, cwd: Path, env: dict) -> None:
+    print("[2b] the installed wheel records one version everywhere (#125)")
+    expected = (REPO / "VERSION").read_text(encoding="utf-8").strip()
+    output = run([ainative, "--version"], cwd=cwd, env=env).stdout
+    reported = [line.split(":", 1)[1].strip() for line in output.splitlines()
+                if line.strip().startswith("lifecycle:")]
+    require(reported and reported[0] == expected,
+            f"`--version` reports lifecycle {reported!r}, expected {expected}")
+    state = json.loads((project / ".ai-native/lifecycle/state.json").read_text(encoding="utf-8"))
+    require(state["stack_version"] == expected,
+            f"stack_version is {state['stack_version']!r}, expected {expected}")
+    require(state["source_version"] == expected,
+            f"source_version is {state['source_version']!r}, expected {expected}")
+
 def check_payload_matches_checkout(ainative: Path, project: Path, root: Path,
                                    cwd: Path, env: dict) -> None:
     print("[4] the wheel's staged payload installs exactly what the checkout does")
@@ -344,6 +358,7 @@ def main() -> int:
         env = clean_environment()
         check_versions(ainative, root, env)
         check_install(ainative, project, root, env)
+        check_version_invariants(ainative, project, root, env)
         check_multivault_wheel(ainative, project, root, env)
         check_multivault_exec_sync(ainative, root, root, env)
         check_payload_matches_checkout(ainative, project, root, root, env)
