@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -194,11 +195,136 @@ def check_multivault_wheel(ainative: Path, project: Path, cwd: Path, env: dict) 
     python = ainative.parent / ("python.exe" if sys.platform.startswith("win") else "python")
     run([python, "-c",
          "import ainative.multivault; import ainative.multivault.harness_claude; "
-         "import ainative.multivault.exec_wrapper; import ainative.multivault.enforced_boundary"],
+         "import ainative.multivault.exec_wrapper; import ainative.multivault.enforced_boundary; "
+         "import ainative.multivault.exec_composition; import ainative.multivault.sync_composition"],
         cwd=cwd, env=env)
     run([ainative, "multivault", "--help"], cwd=cwd, env=env)
     run([ainative, "multivault", "context", "--store", str(cwd / "no-authority.json"),
          "--domain", "smoke"], cwd=cwd, env=env, expect=1)
+
+
+def check_multivault_exec_sync(ainative: Path, root: Path, cwd: Path, env: dict) -> None:
+    print("[3c] the installed wheel drives bind/doctor/context/exec/sync end to end")
+    workspace = root / "mv-workspace"
+    vault = root / "mv-vault"
+    checkout = root / "mv-checkout"
+    workspace.mkdir()
+    vault.mkdir()
+    checkout.mkdir()
+    run(["git", "-C", str(checkout), "init", "-q"], cwd=cwd, env=env)
+    run(["git", "-C", str(checkout), "-c", "user.email=t@example.invalid", "-c", "user.name=t",
+         "commit", "--allow-empty", "-q", "-m", "init"], cwd=cwd, env=env)
+    hooks = checkout / "hooks"
+    hooks.mkdir()
+    run(["git", "-C", str(checkout), "config", "core.hooksPath", str(hooks)], cwd=cwd, env=env)
+    store = root / "mv-authority.json"
+    empty_store = root / "mv-empty-authority.json"
+
+    print("      [3c-1] bind, doctor and context")
+    run([ainative, "multivault", "context", "--store", str(empty_store),
+         "--domain", "smoke"], cwd=cwd, env=env, expect=1)
+    run([ainative, "multivault", "doctor", "--store", str(empty_store),
+         "--domain", "smoke", "--repo", str(checkout)], cwd=cwd, env=env, expect=1)
+    run([ainative, "multivault", "bind", "--store", str(store), "--domain", "smoke",
+         "--vault-id", "vault-smoke", "--checkout-id", "checkout-smoke",
+         "--vault", str(vault), "--checkout", str(checkout)], cwd=cwd, env=env)
+    # UNKNOWN canary evidence keeps doctor fail-closed on exit 1; the binding
+    # and checkout evidence below is what this gate asserts.
+    doctor = run([ainative, "multivault", "doctor", "--store", str(store), "--domain", "smoke",
+                  "--repo", str(checkout), "--vault-root", str(vault)],
+                 cwd=cwd, env=env, expect=1).stdout
+    require("PASS\tbinding" in doctor, "doctor did not pass the binding")
+    require("PASS\tcheckout_identity" in doctor, "doctor did not pass the checkout identity")
+    context = run([ainative, "multivault", "context", "--store", str(store),
+                   "--domain", "smoke"], cwd=cwd, env=env).stdout
+    require("smoke" in context, "context did not report the bound domain")
+
+    print("      [3c-2] exec: denial never spawns, nominal spawns once")
+    python = ainative.parent / ("python.exe" if os.name == "nt" else "python")
+    operator_state = root / "mv-operator-state.json"
+    operator_state.write_text(json.dumps({
+        "classification": "PERSONAL",
+        "project_security_id": "project-smoke",
+        "approved_model_egress_digest": "egress-smoke",
+        "memory_policy_digest": "memory-smoke",
+        "persistence_assurance_digest": "persistence-smoke",
+        "execution_profile": "profile-smoke",
+        "runtime_observation_policy_digest": "observation-smoke",
+        "security_epoch": {"epoch_counter_or_nonce": "1", "authority_instance_generation": "1"},
+        "repository_roots": [str(workspace)],
+        "vault_memory_roots": [str(vault)],
+    }), encoding="utf-8")
+    evidence = {field: f"v-{field}" for field in (
+        "harness_binary_identity", "harness_version", "config_root_digest",
+        "provider_principal", "effective_model_id", "routing_class",
+        "endpoint_policy_digest", "plugin_inventory_digest", "adapter_version", "probe_version")}
+    evidence.update({"provider_ok": True, "model_ok": True, "endpoint_ok": True,
+                     "auth_store_ok": True, "containment_ok": True})
+    probe_evidence = root / "mv-probe-evidence.json"
+    probe_evidence.write_text(json.dumps(evidence), encoding="utf-8")
+
+    def exec_arguments(marker: Path, store_path: Path) -> list:
+        command = [str(python), "-c",
+                   f"from pathlib import Path; Path({str(marker)!r}).write_text('spawned')"]
+        return [ainative, "multivault", "exec", "--store", str(store_path), "--domain", "smoke",
+                "--vault-id", "vault-smoke", "--checkout-id", "checkout-smoke",
+                "--vault", str(vault), "--checkout", str(checkout), "--workspace", str(workspace),
+                "--operator-state", str(operator_state), "--probe-evidence", str(probe_evidence),
+                "--env", "APPROVED=1", *command]
+
+    denied_marker = root / "mv-denied-marker.txt"
+    run(exec_arguments(denied_marker, empty_store), cwd=cwd, env=env, expect=1)
+    require(not denied_marker.exists(), "a denied exec spawned a child")
+    marker = root / "mv-spawn-marker.txt"
+    nominal = run(exec_arguments(marker, store), cwd=cwd, env=env).stdout
+    require("ALLOW_PHASE_B" in nominal, "the nominal exec did not reach ALLOW_PHASE_B")
+    require(marker.is_file(), "the nominal exec did not spawn the approved command")
+
+    print("      [3c-3] sync: mismatched remote denied, approved fetch transfers")
+    origin = root / "mv-origin.git"
+    run(["git", "init", "--bare", "-q", str(origin)], cwd=cwd, env=env)
+    repo = root / "mv-repo"
+    repo.mkdir()
+    run(["git", "-C", str(repo), "init", "-q"], cwd=cwd, env=env)
+    run(["git", "-C", str(repo), "-c", "user.email=t@example.invalid", "-c", "user.name=t",
+         "commit", "--allow-empty", "-q", "-m", "init"], cwd=cwd, env=env)
+    url = origin.as_uri()
+    run(["git", "-C", str(repo), "remote", "add", "origin", url], cwd=cwd, env=env)
+    run(["git", "-C", str(repo), "push", "-q", "origin", "HEAD:refs/heads/main"], cwd=cwd, env=env)
+
+    def observed_document(remote_url: str) -> str:
+        return json.dumps({
+            "remote": {"provider_type": "local", "stable_repository_id": None,
+                       "owner_org": "local-team", "visibility": "private",
+                       "effective_fetch_url": remote_url, "effective_push_url": remote_url},
+            "transport": {"protocol": "file", "transport_executable_identity": "git-local",
+                          "proxy": None, "ssh_command": None, "credential_helper": None,
+                          "effective_transport_config_digest": "digest-1"}})
+
+    git_state = root / "mv-git-state.json"
+    git_state.write_text(json.dumps({
+        "approved_remote": {"canonical_fetch_url": url, "canonical_push_url": url,
+                            "provider_type": "local", "stable_repository_id": None,
+                            "required_owner_org": "local-team",
+                            "required_visibility_for_push": "private",
+                            "allowed_refs": ["refs/heads/*"],
+                            "require_stable_repository_id": False},
+        "transport_policy": {"protocol_allowlist": ["file"],
+                             "transport_executable_identity": "git-local",
+                             "proxy": None, "ssh_command": None, "credential_helper": None,
+                             "ssh_peer_policy": "pinned", "tls_peer_policy": "pinned",
+                             "effective_transport_config_digest": "digest-1"}}), encoding="utf-8")
+    observed_ok = root / "mv-observed-ok.json"
+    observed_ok.write_text(observed_document(url), encoding="utf-8")
+    observed_bad = root / "mv-observed-bad.json"
+    observed_bad.write_text(observed_document("file:///nowhere/other-repo"), encoding="utf-8")
+    sync_arguments = [ainative, "multivault", "sync", "--store", str(store), "--domain", "smoke",
+                      "--vault-id", "vault-smoke", "--checkout-id", "checkout-smoke",
+                      "--vault", str(vault), "--checkout", str(checkout), "--repo", str(repo),
+                      "--git-state", str(git_state), "--refs", "refs/heads/main",
+                      "--verified-at", "2026-09-12T00:00:00Z"]
+    run([*sync_arguments, "--observed", str(observed_bad)], cwd=cwd, env=env, expect=1)
+    run([*sync_arguments, "--observed", str(observed_ok)], cwd=cwd, env=env)
 
 
 def main() -> int:
@@ -219,6 +345,7 @@ def main() -> int:
         check_versions(ainative, root, env)
         check_install(ainative, project, root, env)
         check_multivault_wheel(ainative, project, root, env)
+        check_multivault_exec_sync(ainative, root, root, env)
         check_payload_matches_checkout(ainative, project, root, root, env)
         check_round_trip(ainative, project, root, env)
         check_reporting(ainative, project, root, env)
