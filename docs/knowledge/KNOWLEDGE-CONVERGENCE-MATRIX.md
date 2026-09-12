@@ -1,7 +1,7 @@
 # Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
 
 Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-Progress: 8/18 treated; behavioural E2E A-J green (tests/test_knowledge_e2e.py, 11 scenarios) for rows 1/4/5/14 (rows 2, 7, 18 ported; row 13 superseded by the planner).
+FINAL PARITY: 18/18 with explicit destinies (see the audit section at the end). Behavioural E2E A-J green, K1-K4 gate executed (STOP), isolation E2E green. (rows 2, 7, 18 ported; row 13 superseded by the planner).
 This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
 `PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
 
@@ -47,11 +47,63 @@ This is the STATIC audit (file/docstring/inventory level). Behavioral verificati
 
 ## Legacy test inventory (15) — migration status pending behavioral pass
 
-test_knowledge_{candidate,consolidation,promotion,providers,retrieval,review,staleness,trust,working,cli,context,e2e,import,perf,promote}.py
-Each will be classified: already covered / still relevant / obsolete due to frozen spec / must be ported / must be rewritten against the new owner.
+| Legacy test | Destiny | Evidence |
+|---|---|---|
+| candidate | SUPERSEDED by test_knowledge_store/states/cli + E2E-A | ae79c86 |
+| consolidation | PORTED as test_knowledge_consolidation | fbe22e5 |
+| promotion | INTENTIONALLY DROPPED (K5 STOP) | 1b214f4 |
+| providers | SUPERSEDED by planner degraded-mode tests + E2E-G | ae79c86 |
+| retrieval | SUPERSEDED by test_knowledge_planner | K2 PR |
+| review | PORTED as test_knowledge_review | 010b30a |
+| staleness | PORTED as test_knowledge_staleness | 97ffc4b |
+| trust | REPLACED by the honest exposure tests + measurement gate | 1b214f4 |
+| working | PORTED into test_knowledge_continuity | 34d4b64 |
+| cli | SUPERSEDED by test_knowledge_cli | K1 PR |
+| context | SUPERSEDED by continuity + E2E-D | ae79c86 |
+| e2e | PORTED as test_knowledge_e2e (A-J) | ae79c86 |
+| import | PORTED as test_knowledge_import | 43dec88 |
+| perf | INTENTIONALLY DROPPED (legacy engine timings not applicable; suite cost tracked in the gate artifact) | 1b214f4 |
+| promote | INTENTIONALLY DROPPED (K5 STOP) | 1b214f4 |
 
 ## Notes
 
 - Legacy also carried `ainative_workplane/{evidence,provenance,trust}.py`; dev's `ainative_workplane` package is authoritative — those legacy files are NOT ported.
 - K5 measurement gate must run for real (section 15 of the program) before any promotion work; STOP/NARROW/FULL decided by data, not ambition.
 - No deletion of `knowledge-lifecycle` before the final parity audit reaches PORTED/SUPERSEDED/INTENTIONALLY_DROPPED with zero UNKNOWN.
+
+## FINAL PARITY AUDIT - 18/18 explicit destinies (2026-09-12)
+
+No UNKNOWN. PORTED = capability lives on a current owner with tests; SUPERSEDED = the
+capability is provided by a different current architecture; INTENTIONALLY DROPPED = a
+normative decision, with its reason recorded.
+
+| # | Capability | Destiny | Owner / evidence | Commit |
+|---|---|---|---|---|
+| 1 | Candidate capture | PORTED | K1 assertions/states/store/cli; E2E-A restart persistence | ae79c86 |
+| 2 | Advisory classification | PORTED | classifier.py + test_knowledge_classifier (display-only) | 9a973bf |
+| 3 | Consolidation | PORTED | consolidation.py + test_knowledge_consolidation (advisory) | fbe22e5 |
+| 4 | Dedup relations | PORTED | resolution.py exact-hash + tombstone + conflict-before-dedup; E2E-B/C. Containment/lexical auto-equivalence DROPPED by design (semantic similarity never decides equivalence - legacy INV-04 kept) | ae79c86 |
+| 5 | Evidence accumulation | PORTED | support records + support_summary (resolution). Evidence-type catalog DROPPED (free-form kinds survive; the catalog enforced nothing) | K4 PR + ae79c86 |
+| 6 | Health | PORTED | doctor Knowledge section + storage_status + checkpoint_status | 6d0e501 |
+| 7 | Cross-harness import | PORTED | imports.py + test_knowledge_import (preview/apply, owner identity, quarantine) | 43dec88 |
+| 8 | Maintenance | PORTED | maintenance.py + test_knowledge_maintenance (owner-composed, dry-run default) | a8a5154 |
+| 9 | Approval policy | INTENTIONALLY DROPPED | K5 STOP: a policy table for a gate that refuses by design would be dead policy | 1b214f4 |
+| 10 | Promotion engine | INTENTIONALLY DROPPED | K5 STOP with evidence-based re-evaluation path (usage window -> NARROW) | 1b214f4 |
+| 11 | Provenance | PORTED | record + import provenance (harness/origin project/repo/session); ambient immunity E2E; git state via staleness git_head deps | f632e14 |
+| 12 | Provider contracts | SUPERSEDED | planner core is provider-free by design ("no recall providers in core", E2E-G); providers absent = degraded, doctor reports ABSENT | ae79c86 + 6d0e501 |
+| 13 | Retrieval | SUPERSEDED | single ContextPlanner (K2); legacy engine never replicated | K2 PR |
+| 14 | Review | PORTED | review.py queue/conflicts + states machine hops | 010b30a |
+| 15 | Staleness | PORTED | staleness.py + test_knowledge_staleness; E2E-I | 97ffc4b |
+| 16 | Promotion targets | INTENTIONALLY DROPPED | K5 STOP: no targets exist without promotion | 1b214f4 |
+| 17 | Trust receipts | PORTED (exposure) + receipts DROPPED with K5 | review exposes TRUSTED_OPERATOR_CEREMONY/UNVERIFIED; three-axis model documented in the gate; no fake VERIFIED anywhere (tested) | 010b30a + 1b214f4 |
+| 18 | Working memory | PORTED | continuity.py extended (bounded fields, TTL, divergence); E2E-D/E | 34d4b64 |
+
+Tally: 13 PORTED - 2 SUPERSEDED - 3 INTENTIONALLY DROPPED (rows 9, 10, 16, all K5-linked),
+with two design-level drops inside PORTED rows (4: auto-equivalence relations; 5: type catalog),
+each with a normative reason above.
+
+Legacy `ainative_workplane/{evidence,provenance,trust}.py` shadow files: NOT ported - the
+current `ainative_workplane` package is authoritative.
+
+**knowledge-lifecycle deletable = YES** (archive tag first; the deletion itself belongs to the
+release cleanup phase, after the PR/merge/release chain per the program).
