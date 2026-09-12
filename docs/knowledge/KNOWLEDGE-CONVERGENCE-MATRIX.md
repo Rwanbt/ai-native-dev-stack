@@ -1,7 +1,7 @@
 # Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
 
 Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-Progress: 5/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
+Progress: 6/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
 This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
 `PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
 
@@ -40,7 +40,7 @@ This is the STATIC audit (file/docstring/inventory level). Behavioral verificati
 | 12 | Provider contracts (optional, probe/degraded, injected) | providers.py (189 l) | graph.py + semantic.py (K2) | PARTIAL | verify optional/degraded contract; providers feed planner Sources only |
 | 13 | Retrieval (deterministic-first, budgets, UNVERIFIED notes, recall gating) | retrieval.py (346 l) | planner.py (single ContextPlanner) | SUPERSEDED | port only verified behavior gaps INTO planner; never a second retrieval engine |
 | 14 | Review pipeline (classify -> verify hops, audited) | review.py (116 l) | states.py + resolution.py | PARTIAL | verify hop-by-hop audit trail; NEEDS_EVIDENCE/SUPPORTED/DUPLICATE/CONFLICTING |
-| 15 | Staleness (impacted promotions, no auto rewrite) | staleness.py (178 l) | semantic.py (drift, different concern) | LIKELY MISSING | port impact scan; GIT_HISTORY evidence candidates; decai only priority |
+| 15 | Staleness (dependency signals, decay ranking-only, no auto rewrite) | staleness.py (178 l) | staleness.py (ported wave 6) | PORTED | port impact scan; GIT_HISTORY evidence candidates; decai only priority |
 | 16 | Promotion targets (narrow subset, explicit --target) | targets.py (77 l) | none (K5) | MISSING | port narrow subset (AI_CONTEXT sections, KFP); Vault/AGENTS/ADR auto-promotion forbidden initially |
 | 17 | Trust receipts (3 orthogonal fields, V3.3.1 erratum) | trust.py (141 l) | none; authority exists in ainative_workplane | MISSING | port model onto existing authority via minimal owner API; STANDARD ceremony = UNVERIFIED, honestly |
 | 18 | Working memory (bounded fields, TTL, crash-safe) | working.py (330 l) | continuity.py (extended 34d4b64) | PORTED | extend continuity; CLI `ainative context save/status/checkpoint/restore/clear`; no raw CoT |

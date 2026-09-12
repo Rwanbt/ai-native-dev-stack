@@ -85,6 +85,8 @@ def add_knowledge_parser(commands) -> None:
     reset_derived = sub.add_parser("reset-derived", help="Remove registered derived paths (registry is empty by design).")
     reset_derived.add_argument("--apply-safe", action="store_true")
 
+    stale = sub.add_parser("stale", help="Evaluate dependency staleness of candidates (read-only).")
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -311,9 +313,37 @@ def _cmd_knowledge_reset_derived(args: argparse.Namespace) -> int:
                    f"removed={len(report.get('removed', []))}")
 
 
+def _cmd_knowledge_stale(args: argparse.Namespace) -> int:
+    from ainative.knowledge import staleness as stalenesslib
+    from ainative.knowledge import store as storelib
+
+    project = _project(args)
+    records = storelib.list_candidates(project)
+    reports = []
+    for record in records:
+        dependencies = record.get("dependencies")
+        if not dependencies:
+            continue
+        result = stalenesslib.evaluate(project, dependencies)
+        decay = stalenesslib.decay_class(record)
+        reports.append({"candidate_id": record.get("candidate_id"),
+                        "signal": result["signal"],
+                        "decay_class": decay,
+                        "retrieval_penalty": stalenesslib.retrieval_penalty(result["signal"], decay),
+                        "review_priority": stalenesslib.review_priority(result["signal"], decay),
+                        "details": result["details"],
+                        "refused": result["refused"]})
+    lines = [f"{item['candidate_id']}  {item['signal']}  penalty={item['retrieval_penalty']} "
+             f"review={item['review_priority']}" for item in reports] or [
+        f"no candidates with dependency metadata (scanned {len(records)})"]
+    return _report(args, {"reports": reports, "scanned": len(records)},
+                   "\n".join(lines))
+
+
 _HANDLERS["import"] = _cmd_knowledge_import
 
 
+_HANDLERS["stale"] = _cmd_knowledge_stale
 _HANDLERS["maintain"] = _cmd_knowledge_maintain
 _HANDLERS["export"] = _cmd_knowledge_export
 _HANDLERS["reset-derived"] = _cmd_knowledge_reset_derived
