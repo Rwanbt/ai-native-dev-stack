@@ -89,6 +89,9 @@ def add_knowledge_parser(commands) -> None:
 
     consolidate = sub.add_parser("consolidate", help="Advisory consolidation pass (reads only).")
 
+    review = sub.add_parser("review", help="Advisory review queue (read-only).")
+    conflicts = sub.add_parser("conflicts", help="Conflict/advisory entries only (read-only).")
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -353,9 +356,33 @@ def _cmd_knowledge_consolidate(args: argparse.Namespace) -> int:
     return _report(args, report, "\n".join(lines))
 
 
+def _cmd_knowledge_review(args: argparse.Namespace) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    report = reviewlib.review_queue(_project(args))
+    lines = [f"p{item['review_priority']}  {item['candidate_id']}  {item['outcome']}  "
+             f"({item['verdict']})" for item in report["queue"]] or [
+        f"queue empty (scanned {report['scanned']})"]
+    lines.append(f"promotion: {report['promotion']['eligibility']}; "
+                 f"trust: {report['trust']['qualification']}")
+    return _report(args, report, "\n".join(lines))
+
+
+def _cmd_knowledge_conflicts(args: argparse.Namespace) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    report = reviewlib.conflicts(_project(args))
+    lines = [f"{item['candidate_id']}  {item['verdict']}  "
+             f"holders={','.join(item.get('holders', [])) or '-'}"
+             for item in report["conflicts"]] or [f"no conflicts (scanned {report['scanned']})"]
+    return _report(args, report, "\n".join(lines))
+
+
 _HANDLERS["import"] = _cmd_knowledge_import
 
 
+_HANDLERS["review"] = _cmd_knowledge_review
+_HANDLERS["conflicts"] = _cmd_knowledge_conflicts
 _HANDLERS["consolidate"] = _cmd_knowledge_consolidate
 _HANDLERS["stale"] = _cmd_knowledge_stale
 _HANDLERS["maintain"] = _cmd_knowledge_maintain

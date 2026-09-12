@@ -40,6 +40,9 @@ def _outcome_for(verdict: str, support_total: int) -> str:
     return ADD if support_total else NEEDS_EVIDENCE
 
 
+outcome_for = _outcome_for
+
+
 def _confirmed_identities(records: list[dict]) -> frozenset[str]:
     keys = []
     for record in records:
