@@ -1,7 +1,7 @@
 # Knowledge Convergence — Legacy Capability Parity Matrix (initial audit)
 
 Source of truth: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422 (140 behind, 14 ahead).
-Progress: 4/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
+Progress: 5/18 treated (rows 2, 7, 18 ported; row 13 superseded by the planner).
 This is the STATIC audit (file/docstring/inventory level). Behavioral verification and the final
 `PORTED / SUPERSEDED / INTENTIONALLY_DROPPED` audit (no UNKNOWN) come before any branch deletion.
 
@@ -33,7 +33,7 @@ This is the STATIC audit (file/docstring/inventory level). Behavioral verificati
 | 5 | Evidence accumulation (idempotent reinforce, sufficiency rule) | evidence.py (73 l) | resolution.py / assertions.py | PARTIAL | verify idempotence + sufficiency; verification stays a referenced proof, never owned here |
 | 6 | Health (read-only status/doctor) | health.py (68 l) | status/report surface | PARTIAL | extend `ainative doctor` with Knowledge section (program section 24) |
 | 7 | Cross-harness import (preview/apply, staged as candidates) | imports.py (149 l) | imports.py (ported 43dec88) | PORTED | port preview/apply staging; never canonical direct import; preserve harness provenance |
-| 8 | Derived-state maintenance (reset-derived, rebuild) | maintenance.py (50 l) | none | MISSING | port small; registry-based, reconstructibility proof |
+| 8 | Derived-state maintenance (maintain/export/reset-derived, owner-composed) | maintenance.py (50 l) | maintenance.py (ported wave 5) | PORTED | port small; registry-based, reconstructibility proof |
 | 9 | Approval policy (per-class table, human-gated) | policy.py (79 l) | none (K5) | MISSING | port with K5 gate decision; conservative default |
 | 10 | Promotion engine (audited minimal patch, base digest, atomic) | promotion.py (487 l) | none (K5) | MISSING | implement on ainative.lifecycle transactions (B3 spec), NOT a cherry-pick; no second transaction engine |
 | 11 | Candidate provenance (who/where/git state, degraded OK) | provenance.py (77 l) | identity/assertions (partial) | PARTIAL | extend capture provenance; best-effort git; never import workplane on Standard |

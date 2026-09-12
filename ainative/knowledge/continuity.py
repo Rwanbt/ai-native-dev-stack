@@ -244,7 +244,49 @@ def list_checkpoints(project: Path) -> list[dict[str, Any]]:
                   reverse=True)
 
 
+def checkpoint_status(project: Path) -> dict[str, Any]:
+    """Working-memory footprint for health reporting. Read-only."""
+
+    root = Path(project)
+    controlpaths.ensure_contained(root)
+    directory = _working_dir(root)
+    if not directory.is_dir():
+        return {"checkpoints": 0, "expired": 0, "bytes": 0}
+    records = [_read_checkpoint(path) for path in sorted(directory.glob("ckpt_*.json"))]
+    total = sum(path.stat().st_size for path in directory.glob("ckpt_*.json"))
+    return {"checkpoints": len(records),
+            "expired": sum(1 for record in records if _expired(record)),
+            "bytes": total}
+
+
+def prune_expired(project: Path) -> dict[str, Any]:
+    """Remove only provably expired checkpoints. Corrupt entries are never touched."""
+
+    root = Path(project)
+    controlpaths.ensure_contained(root)
+    directory = _working_dir(root)
+    if not directory.is_dir():
+        return {"removed": [], "kept": 0}
+    removed, kept = [], 0
+    for path in sorted(directory.glob("ckpt_*.json")):
+        try:
+            record = _read_checkpoint(path)
+            expired = _expired(record)
+        except KnowledgeError:
+            kept += 1
+            continue
+        if not expired:
+            kept += 1
+            continue
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            kept += 1
+    return {"removed": removed, "kept": kept}
+
+
 __all__ = ["WORKING_DIRNAME", "MAX_CHECKPOINT_BYTES", "MAX_CHECKPOINTS",
            "RESTORED", "DIVERGENCE", "STALE_HEAD", "EXPIRED", "MISSING",
            "FIELDS", "repository_snapshot", "validate_state", "checkpoint",
-           "restore", "list_checkpoints"]
+           "restore", "list_checkpoints", "checkpoint_status", "prune_expired"]

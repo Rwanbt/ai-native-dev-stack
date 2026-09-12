@@ -75,6 +75,16 @@ def add_knowledge_parser(commands) -> None:
     import_parser.add_argument("--origin-session", default=None)
 
 
+    maintain = sub.add_parser("maintain", help="Advisory maintenance; dry-run unless --apply-safe.")
+    maintain.add_argument("--apply-safe", action="store_true",
+                          help="remove only provably expired working checkpoints")
+
+    export = sub.add_parser("export", help="Export the JSONL stores to a portable bundle.")
+    export.add_argument("--out", required=True)
+
+    reset_derived = sub.add_parser("reset-derived", help="Remove registered derived paths (registry is empty by design).")
+    reset_derived.add_argument("--apply-safe", action="store_true")
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -274,7 +284,39 @@ def _cmd_knowledge_import(args: argparse.Namespace) -> int:
                        f"import refused: {error.code}: {error.message}")
 
 
+def _cmd_knowledge_maintain(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.maintain(_project(args), apply_safe=args.apply_safe)
+    return _report(args, report,
+                   f"maintain: {report['action']}; "
+                   f"expired={report['removable_expired_checkpoints']} "
+                   f"kept={report['kept_checkpoints']}")
+
+
+def _cmd_knowledge_export(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.export(_project(args), Path(args.out))
+    return _report(args, report,
+                   f"export: {report['exported']} file(s) -> {report['target']}")
+
+
+def _cmd_knowledge_reset_derived(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.reset_derived(_project(args), apply_safe=args.apply_safe)
+    return _report(args, report,
+                   f"reset-derived: registered={len(report['registered'])} "
+                   f"removed={len(report.get('removed', []))}")
+
+
 _HANDLERS["import"] = _cmd_knowledge_import
+
+
+_HANDLERS["maintain"] = _cmd_knowledge_maintain
+_HANDLERS["export"] = _cmd_knowledge_export
+_HANDLERS["reset-derived"] = _cmd_knowledge_reset_derived
 
 
 def cmd_knowledge(args: argparse.Namespace) -> int:
