@@ -69,3 +69,11 @@ ENFORCED (dedicated Windows account, OS-level ACL isolation, per-principal netwo
 FINAL VERDICT: MULTI-VAULT GUARDED - PRODUCTION READY.
 Profiles: A GUARDED QUALIFIED - B GUARDED QUALIFIED - C GUARDED QUALIFIED - D GUARDED QUALIFIED.
 Optional ENFORCED hardening: EXPERIMENTAL - NOT QUALIFIED (separate verdict, does not block).
+
+## Final closure - 2026-09-12
+
+Issue #122 is closed as completed. `ainative multivault exec` and `ainative multivault sync` are wired as parsing plus delegation only: the exec composition root resolves the store, the workspace declaration, the live vault and checkout measurements, denies immediately when unauthorized, runs the repository admission, the frozen SensitiveLaunchGate (Phase A then Phase B) and the launcher exactly once with the exact gate-released objects; the sync composition root transfers only through the GovernedTransferEngine. Authoritative objects are materialized exclusively by owner factories (decision A-prime).
+
+Evidence: 341 Multi-Vault tests green; clean-install wheel E2E green (bind, doctor PASS binding and checkout_identity, context, exec denial with zero spawn, exec nominal with ALLOW_PHASE_B and exactly one spawn, sync remote mismatch DENY, approved fetch ALLOW through the engine); real canary sweep replay exit 0 (complete clean over checkout, vault and runtime-temp); fault-injection matrix green; CI run 34685003958 on final SHA 90017d5.
+
+VERDICT UNCHANGED: MULTI-VAULT GUARDED - PRODUCTION READY. Profiles A/B/C/D GUARDED QUALIFIED.

@@ -1,4 +1,4 @@
-> Status note: the current qualification is MULTI-VAULT GUARDED - PRODUCTION READY (A/B/C/D GUARDED QUALIFIED). See docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md. ENFORCED is optional high-assurance hardening and is not required.
+> Status note: the current qualification is MULTI-VAULT GUARDED - PRODUCTION READY (A/B/C/D GUARDED QUALIFIED). See docs/qualification/MULTIVAULT-QUALIFICATION-REPORT-2026-09-11.md. ENFORCED is optional high-assurance hardening and is not required. Issue #122 is closed: `ainative multivault exec` and `ainative multivault sync` are available, and the clean-install wheel E2E exercises bind, doctor, context, exec and sync from the installed wheel.
 
 # Multi-Vault Operator Guide
 
