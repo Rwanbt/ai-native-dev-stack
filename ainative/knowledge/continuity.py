@@ -1,7 +1,8 @@
 """Working continuity: checkpoints bound to repository state (PR10).
 
-A checkpoint freezes operational state (task, files touched, open
-work, blockers) together with the Git HEAD, a dirty-tree fingerprint
+A checkpoint freezes operational state (task, next action, files
+touched, open work, hypotheses, findings, questions, blockers, tests
+run, candidate ids) together with the Git HEAD, a dirty-tree fingerprint
 and a diff digest. Restore compares all three: same HEAD plus same
 fingerprint restores cleanly; same HEAD with a changed tree reports
 RESTORE_DIRTY_TREE_DIVERGENCE instead of pretending continuity; a
@@ -42,7 +43,8 @@ EXPIRED = "EXPIRED"
 MISSING = "MISSING"
 
 FIELDS = frozenset({"task", "files_touched", "open_work", "blockers",
-                    "tests_run"})
+                    "tests_run", "next_action", "hypotheses", "findings",
+                    "questions", "candidate_ids"})
 
 
 def _git(project: Path, *args: str, timeout: int = 10):
@@ -111,15 +113,26 @@ def validate_state(raw: Any) -> dict[str, Any]:
     task = raw.get("task", "")
     if not isinstance(task, str) or not task.strip() or len(task) > MAX_TEXT_CHARS:
         raise KnowledgeError("KNOWLEDGE_MALFORMED", "task must be short text")
+    next_action = raw.get("next_action", "")
+    if not isinstance(next_action, str) or len(next_action) > MAX_TEXT_CHARS:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "next_action must be short text")
     state = {"task": task,
              "files_touched": _bounded_list("files_touched",
                                             raw.get("files_touched", [])),
              "open_work": _bounded_list("open_work", raw.get("open_work", [])),
              "blockers": _bounded_list("blockers", raw.get("blockers", [])),
-             "tests_run": _bounded_list("tests_run", raw.get("tests_run", []))}
-    quarantinelib.check(task, *state["files_touched"], *state["open_work"],
-                        *state["blockers"], *state["tests_run"],
-                        purpose="working state")
+             "tests_run": _bounded_list("tests_run", raw.get("tests_run", [])),
+             "next_action": next_action,
+             "hypotheses": _bounded_list("hypotheses", raw.get("hypotheses", [])),
+             "findings": _bounded_list("findings", raw.get("findings", [])),
+             "questions": _bounded_list("questions", raw.get("questions", [])),
+             "candidate_ids": _bounded_list("candidate_ids",
+                                            raw.get("candidate_ids", []))}
+    quarantinelib.check(task, next_action, *state["files_touched"],
+                        *state["open_work"], *state["blockers"],
+                        *state["tests_run"], *state["hypotheses"],
+                        *state["findings"], *state["questions"],
+                        *state["candidate_ids"], purpose="working state")
     return state
 
 
