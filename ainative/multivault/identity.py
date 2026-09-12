@@ -89,3 +89,18 @@ def measure_checkout_identity(root: Path) -> str | None:
         return checkout_identity_digest(discover_checkout(root))
     except (ValueError, OSError):
         return None
+
+
+def repository_checks(root: Path) -> dict:
+    """Doctor probe: worktree membership and managed hooks path, fail-soft."""
+    def probe(*arguments: str):
+        return subprocess.run(
+            ["git", "-C", str(root), *arguments], capture_output=True, text=True, check=False
+        )
+
+    inside = probe("rev-parse", "--is-inside-work-tree")
+    hooks = probe("config", "--get", "core.hooksPath")
+    return {
+        "repository": inside.returncode == 0 and inside.stdout.strip() == "true",
+        "managed_hooks_path": bool(hooks.stdout.strip()) if hooks.returncode == 0 else False,
+    }

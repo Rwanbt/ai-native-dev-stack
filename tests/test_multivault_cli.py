@@ -101,6 +101,6 @@ class MultiVaultCliTests(unittest.TestCase):
 
     def test_multivault_cli_does_not_reimplement_security_policies(self):
         source = Path("ainative/multivault/__main__.py").read_text(encoding="utf-8")
-        for forbidden in ("AllowedContextEnvelope(", "RuntimeContextHandle(", "SensitiveQualification(",
+        for forbidden in ("AllowedContextEnvelope(", "RuntimeContextHandle(", "SensitiveQualification(", "subprocess", "os.system", "git fetch", "git push",
                           "GovernedPushCapability(", "classification >=", "CONFIDENTIAL", "CRITICAL"):
             self.assertNotIn(forbidden, source)

@@ -98,3 +98,29 @@ def positive_child_environment(
     environment = {name: value for name, value in required_os.items() if value}
     environment.update(approved)
     return environment
+
+
+def launch_sensitive_process(
+    *,
+    argv,
+    env,
+    runtime_context_handle,
+    allowed_context_envelope,
+    cwd=None,
+):
+    """Real launcher bridge: approved argv, positive environment, approved cwd.
+
+    The capability objects are consumed out of the child contract: they are
+    in-process capabilities and are never serialized into the child
+    environment, so the child receives only the positive environment built by
+    the composition root. @returns the child exit status.
+    """
+    import subprocess
+
+    completed = subprocess.run(
+        list(argv),
+        env=dict(env),
+        cwd=None if cwd is None else str(cwd),
+        check=False,
+    )
+    return completed.returncode
