@@ -267,10 +267,16 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     from .lifecycle import recovery
+    from .knowledge import doctor as knowledgedoctor
 
-    diagnosis = recovery.diagnose(_project(args), check_updates=args.check_updates)
+    project = _project(args)
+    diagnosis = recovery.diagnose(project, check_updates=args.check_updates)
+    knowledge = knowledgedoctor.knowledge_status(project)
+    knowledge_failed = knowledge["status"] == knowledgedoctor.STATUS_FAIL
     if args.json:
-        _emit(diagnosis.to_record())
+        record = diagnosis.to_record()
+        record["knowledge"] = knowledge
+        _emit(record)
     else:
         print(f"Project: {diagnosis.project}")
         print(f"Installed: {diagnosis.installed}   Profile: {diagnosis.active_profile}")
@@ -282,7 +288,22 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  INTERRUPTED    {item['id']} ({item['operation']}) — run `ainative repair`")
         for note in diagnosis.notes:
             print(f"  note: {note}")
-    return EXIT_OK if diagnosis.healthy else EXIT_FAILED
+        print("Knowledge:")
+        print(f"  status: {knowledge['status']}   store: {knowledge['store']}")
+        if knowledge["status"] != knowledgedoctor.STATUS_FAIL:
+            print(f"  candidates: {knowledge['candidates']}   "
+                  f"review backlog: {knowledge['review_backlog']}   "
+                  f"conflicts: {knowledge['conflicts']}   stale: {knowledge['stale']}")
+            print(f"  working: {knowledge['working']['checkpoints']} checkpoint(s), "
+                  f"{knowledge['working']['expired']} expired")
+            print(f"  providers: graph {knowledge['graph_provider']}, "
+                  f"semantic {knowledge['semantic_provider']}")
+            print(f"  Multi-Vault scope: {knowledge['multivault_scope']}   "
+                  f"promotion: {knowledge['promotion_mode']}   "
+                  f"trust: {knowledge['trust']}")
+        else:
+            print(f"  FAIL: {knowledge['detail']}")
+    return EXIT_OK if (diagnosis.healthy and not knowledge_failed) else EXIT_FAILED
 
 
 def _cmd_repair(args: argparse.Namespace) -> int:
