@@ -385,6 +385,14 @@ check → resolve release → download → verify digest → validate archive pa
 
 There is no `curl … | overwrite project` anywhere in this path.
 
+**The artifact, stated precisely.** The official provider consumes exactly one
+asset: the lifecycle bundle `ainative-dev-stack-<version>.zip` published beside
+the wheel and the sdist. Its SHA-256 must be published by the source (the
+release asset digest); a release whose bundle carries no digest, or no bundle
+at all, is refused with `UPDATE_INTEGRITY_METADATA_MISSING` before any download.
+There is no `zipball` fallback and no unverified path. The internal mirror
+contract is the same: a `releases.json` channel without a valid `sha256` is
+refused.
 **Integrity, stated precisely.** SHA-256 over the release archive proves the
 bytes are the bytes the source described, and the archive's entry names are
 validated by the same containment rule as every other destination (an entry
@@ -558,7 +566,7 @@ Stable error codes: `PROFILE_INVALID` · `COMPONENT_UNKNOWN` · `MANIFEST_INVALI
 `CONFIRMATION_REQUIRED` · `PATH_ESCAPE` · `INSTALL_STATE_CORRUPTED` ·
 `NOT_INSTALLED` · `USER_MODIFIED_CONFLICT` · `TRANSACTION_IN_PROGRESS` ·
 `RECOVERY_REQUIRED` · `LOCK_HELD` · `UPDATE_UNAVAILABLE` · `UPDATE_CHECK_FAILED`
-· `UPDATE_INTEGRITY_FAILED` · `ROLLBACK_UNAVAILABLE` · `APPLY_FAILED`.
+· `UPDATE_INTEGRITY_FAILED` · `UPDATE_INTEGRITY_METADATA_MISSING` · `ROLLBACK_UNAVAILABLE` · `APPLY_FAILED`.
 
 The CLI prints `refused: <CODE>: <message>` on stderr — never a traceback — and
 `--json` emits `{"error": ..., "message": ..., "detail": {...}}`.

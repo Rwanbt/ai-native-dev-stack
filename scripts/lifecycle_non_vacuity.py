@@ -129,7 +129,7 @@ CASES = (
         name="archive_digest",
         guards="a release archive whose digest does not match must not be applied",
         edits=(Edit("ainative/lifecycle/provider.py",
-                    "    if expected and actual.lower() != expected.lower():\n",
+                    "    if actual.lower() != expected.lower():\n",
                     "    if False:\n"),),
         test=("tests.test_lifecycle_update.UpdateApply"
               ".test_a_tampered_archive_digest_stops_the_update_before_any_write"),

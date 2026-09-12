@@ -1,5 +1,5 @@
 # Universal Engineering Rules
-<!-- stack-version: 2.0.0 -->
+<!-- stack-version: 2.2.1 -->
 <!-- Cross-tool: Claude Code (@AGENTS.md in CLAUDE.md), Cursor (reads AGENTS.md natively at root + nested dirs), Codex (auto-loaded AGENTS.md) -->
 <!-- Keep this file at the project root. Customize per project as needed. -->
 <!-- Canonical source — reference this file (@AGENTS.md), do not copy it. Updates flow via `git pull` + /stack-upgrade. See UPDATING.md. -->
@@ -225,16 +225,16 @@ Central unread modules (>5 incoming imports): none
 
 ### This project — ai-native-dev-stack
 
-Measured 2026-09-11 (distribution & lifecycle v1, knowledge K1-K4, Multi-Vault V1) via `git ls-files` (image excluded). Re-measure
+Measured 2026-09-13 (v2.2.1 corrective: version invariants, update integrity, anti-debt scanner execution, CI coverage) via `git ls-files` (image excluded). Re-measure
 with `python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~624 085 | 369 | **Layered read** — cartography first  then targeted reads |
-| Anti-debt agent | ~129 650 | 118 | Read its `AI_CONTEXT.md` and ADRs before its sources |
-| Whole repo | ~753 736 | 487 | **Multi-phase workflow** — never a single direct read |
+| Core stack (excl. anti-debt) | ~725 837 | 438 | **Layered read** — cartography first  then targeted reads |
+| Anti-debt agent | ~132 216 | 119 | Read its `AI_CONTEXT.md` and ADRs before its sources |
+| Whole repo | ~858 054 | 557 | **Multi-phase workflow** — never a single direct read |
 
-Do **not** read the whole repo in one pass: at ~668k tokens it does not fit,
+Do **not** read the whole repo in one pass: at ~858k tokens it does not fit,
 and the strategy table above applies in full. Pick the scope the task needs —
 most work touches only one of the three halves below.
 

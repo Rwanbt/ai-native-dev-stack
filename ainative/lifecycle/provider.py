@@ -5,6 +5,12 @@ update path — check, download, digest verification, extraction, conflict,
 rollback — without reaching the network, and because a user must be able to
 point the updater at an internal mirror.
 
+Both providers obey the same integrity contract: a release this stack is
+willing to install names exactly one archive AND the SHA-256 of those bytes.
+A source that cannot say what it published is refused rather than trusted
+(#126). There is no unverified fallback path — not even the GitHub
+`zipball_url`, which no digest can ever cover.
+
 This is not a plugin system. There is no registry, no discovery, no entry
 points: two classes and a factory that reads one environment variable.
 """
@@ -13,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import urllib.error
 import urllib.request
@@ -28,6 +35,13 @@ PROVIDER_ENV = "AINATIVE_UPDATE_PROVIDER"     # "github" (default) | "local"
 LOCAL_SOURCE_ENV = "AINATIVE_UPDATE_LOCAL_DIR"
 RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
 
+# The one asset the official update path consumes. Published by
+# `scripts/build_lifecycle_bundle.py` beside the wheel and the sdist.
+LIFECYCLE_BUNDLE_PREFIX = "ainative-dev-stack-"
+LIFECYCLE_BUNDLE_SUFFIX = ".zip"
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
 # Short on purpose: an update check runs in the background of a status command,
 # and a user must never wait on a slow endpoint to be told their profile.
 NETWORK_TIMEOUT_SECONDS = 5
@@ -39,7 +53,7 @@ MAX_ARCHIVE_BYTES = 256 << 20     # 256 MiB
 class Release:
     version: str
     url: str | None
-    digest: str | None       # sha256 of the archive, when the source publishes one
+    digest: str | None       # sha256 of the archive; always present on a selectable release
     notes: str = ""
     source: str = ""
 
@@ -63,8 +77,11 @@ class UpdateProvider:
 class LocalDirectoryProvider(UpdateProvider):
     """Releases published as `<dir>/<version>/` plus a `releases.json` index.
 
-    The index names the channel, the version and the archive digest, exactly as
-    a remote source would, so a test exercises the same code path a user does.
+    The index names the channel, the version, the archive and the archive
+    digest, exactly as a remote source would, so a test exercises the same code
+    path a user does. The mirror contract matches the official one: an entry
+    without a valid `sha256` is refused, because an update nobody can verify is
+    not one this stack performs.
     """
 
     name = "local"
@@ -89,10 +106,16 @@ class LocalDirectoryProvider(UpdateProvider):
         if not isinstance(entry, dict) or not entry.get("version"):
             raise LifecycleError("UPDATE_UNAVAILABLE",
                                  f"local release index declares no {channel!r} channel")
+        digest = entry.get("sha256")
+        if not (isinstance(digest, str) and _SHA256.match(digest.strip().lower())):
+            raise LifecycleError(
+                "UPDATE_INTEGRITY_METADATA_MISSING",
+                f"local release index declares no valid sha256 for "
+                f"{entry['version']}; refusing an update this stack cannot verify")
         archive = entry.get("archive")
         url = str((self.root / archive).resolve()) if archive else None
         return Release(version=str(entry["version"]), url=url,
-                       digest=entry.get("sha256"), notes=str(entry.get("notes", "")),
+                       digest=digest.strip().lower(), notes=str(entry.get("notes", "")),
                        source=f"local:{self.root}")
 
     def fetch(self, release: Release) -> bytes:
@@ -112,11 +135,14 @@ class LocalDirectoryProvider(UpdateProvider):
 
 
 class ReleaseApiProvider(UpdateProvider):
-    """The official source: a JSON release document naming a versioned archive.
+    """The official source: a JSON release document naming the lifecycle bundle.
 
     Everything read here is attacker-influenceable in the sense that matters:
     it arrives over the network. So the size is bounded before it is parsed, the
-    version must be SemVer, and the archive URL must be HTTPS.
+    version must be SemVer, the archive URL must be HTTPS, and the bundle's
+    SHA-256 must be published by the source — `_select_asset` refuses anything
+    less, which is what makes `verify_archive` a comparison rather than a
+    computation.
     """
 
     name = "release-api"
@@ -169,34 +195,59 @@ class ReleaseApiProvider(UpdateProvider):
 
 
 def _select_asset(document: dict) -> tuple[str | None, str | None]:
-    """Pick the `.zip` asset and its published digest, if the source gives one."""
+    """Pick the lifecycle bundle and its published digest, or refuse.
+
+    The official path accepts exactly one kind of asset: the lifecycle bundle
+    published beside the wheel and the sdist. A digest is not optional — an
+    update that cannot verify what it downloaded is not an update this stack
+    performs (#126). The `zipball_url` fallback this function used to return
+    (with `digest=None`, verifying nothing) is gone on purpose: no silent
+    unverified path exists.
+    """
 
     assets = document.get("assets")
-    if isinstance(assets, list):
-        for asset in assets:
-            if not isinstance(asset, dict):
-                continue
-            name = str(asset.get("name", ""))
-            url = asset.get("browser_download_url")
-            if name.endswith(".zip") and isinstance(url, str):
-                digest = asset.get("digest")
-                sha = None
-                if isinstance(digest, str) and digest.startswith("sha256:"):
-                    sha = digest.split(":", 1)[1]
-                return url, sha
-    zipball = document.get("zipball_url")
-    return (zipball if isinstance(zipball, str) else None), None
+    for asset in assets if isinstance(assets, list) else []:
+        if not isinstance(asset, dict):
+            continue
+        name = str(asset.get("name", ""))
+        url = asset.get("browser_download_url")
+        if not (name.startswith(LIFECYCLE_BUNDLE_PREFIX)
+                and name.endswith(LIFECYCLE_BUNDLE_SUFFIX)
+                and isinstance(url, str)):
+            continue
+        digest = asset.get("digest")
+        if not (isinstance(digest, str) and digest.startswith("sha256:")):
+            raise LifecycleError(
+                "UPDATE_INTEGRITY_METADATA_MISSING",
+                f"release asset {name!r} publishes no sha256 digest; "
+                "refusing an update this stack cannot verify")
+        sha = digest.split(":", 1)[1].strip().lower()
+        if not _SHA256.match(sha):
+            raise LifecycleError(
+                "UPDATE_INTEGRITY_METADATA_MISSING",
+                f"release asset {name!r} carries a malformed sha256 digest")
+        return url, sha
+    raise LifecycleError(
+        "UPDATE_INTEGRITY_METADATA_MISSING",
+        f"release publishes no {LIFECYCLE_BUNDLE_PREFIX}*{LIFECYCLE_BUNDLE_SUFFIX} "
+        "lifecycle bundle; the official update path refuses what it cannot verify")
 
 
 def verify_archive(payload: bytes, expected: str | None) -> str:
-    """Return the archive's digest, refusing a mismatch.
+    """Return the archive's digest, refusing a mismatch or a missing digest.
 
-    SHA-256 here proves the bytes are the bytes the source described. It does
-    not prove the source is honest; see ADR-0009 §6 and the threat model.
+    SHA-256 proves the bytes are the bytes the source described. It does not
+    prove the source is honest; see ADR-0009 §6 and the threat model. A missing
+    expected digest is not a weaker success — it is no verification at all, and
+    this function refuses it (#126).
     """
 
+    if not expected:
+        raise LifecycleError("UPDATE_INTEGRITY_METADATA_MISSING",
+                             "no published digest to verify the archive against; "
+                             "refusing the update")
     actual = digest_bytes(payload)
-    if expected and actual.lower() != expected.lower():
+    if actual.lower() != expected.lower():
         raise LifecycleError("UPDATE_INTEGRITY_FAILED",
                              f"archive digest {actual} does not match the published "
                              f"{expected}; nothing was written",
@@ -229,5 +280,6 @@ __all__ = [
     "Release", "UpdateProvider", "LocalDirectoryProvider", "ReleaseApiProvider",
     "build", "verify_archive", "copy_tree",
     "PROVIDER_ENV", "LOCAL_SOURCE_ENV", "RELEASE_URL_ENV", "DEFAULT_RELEASE_URL",
+    "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
 ]

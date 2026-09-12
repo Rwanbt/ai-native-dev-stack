@@ -60,6 +60,38 @@ def add_knowledge_parser(commands) -> None:
     _add_common(reject)
 
 
+    import_parser = sub.add_parser("import", help="Stage foreign harness learnings as candidates.")
+    import_parser.add_argument("source", help="path to a memory export (.md bullets or .json array)")
+    import_parser.add_argument("--harness", required=True)
+    import_parser.add_argument("--format", choices=("auto", "md", "json"), default="auto")
+    import_parser.add_argument("--apply", action="store_true",
+                               help="stage candidates; without it this is a preview (zero writes)")
+    import_parser.add_argument("--project-slug", default=None)
+    import_parser.add_argument("--module", action="append", default=[])
+    import_parser.add_argument("--shared-root", action="append", default=[])
+    import_parser.add_argument("--actor", default="operator")
+    import_parser.add_argument("--origin-project", default=None)
+    import_parser.add_argument("--origin-repository", default=None)
+    import_parser.add_argument("--origin-session", default=None)
+
+
+    maintain = sub.add_parser("maintain", help="Advisory maintenance; dry-run unless --apply-safe.")
+    maintain.add_argument("--apply-safe", action="store_true",
+                          help="remove only provably expired working checkpoints")
+
+    export = sub.add_parser("export", help="Export the JSONL stores to a portable bundle.")
+    export.add_argument("--out", required=True)
+
+    reset_derived = sub.add_parser("reset-derived", help="Remove registered derived paths (registry is empty by design).")
+    reset_derived.add_argument("--apply-safe", action="store_true")
+
+    stale = sub.add_parser("stale", help="Evaluate dependency staleness of candidates (read-only).")
+
+    consolidate = sub.add_parser("consolidate", help="Advisory consolidation pass (reads only).")
+
+    review = sub.add_parser("review", help="Advisory review queue (read-only).")
+    conflicts = sub.add_parser("conflicts", help="Conflict/advisory entries only (read-only).")
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -119,6 +151,7 @@ def _coerce_value(kind: str | None, raw: str | None, claim: str) -> dict:
 
 def _cmd_knowledge_learn(args: argparse.Namespace) -> int:
     from ainative.knowledge import assertions as assertionslib
+    from ainative.knowledge import classifier as classifierlib
     from ainative.knowledge import identity as identitylib
     from ainative.knowledge import states as stateslib
     from ainative.knowledge import store as storelib
@@ -152,15 +185,18 @@ def _cmd_knowledge_learn(args: argparse.Namespace) -> int:
               "assertion_value": hashed["value"],
               "provenance": {"actor": args.actor, "origin": "cli",
                              "identity_confirmed_by": attested["confirmed_by"]}}
+    suggestion = classifierlib.suggest(
+        args.claim, module=(args.module[0] if args.module else None))
+    note = f"; advisory kind suggestion: {suggestion['kind']}"
     if args.dry_run:
         from ainative.knowledge.bounds import Bounds
         stored = storelib.validate_candidate(record, bounds=Bounds())
         return _report(args, {"dry_run": True, "candidate": stored},
                        f"would capture {stored['candidate_id']} "
-                       f"({stored['kind']}) as PENDING")
+                       f"({stored['kind']}) as PENDING" + note)
     stored = storelib.append_candidate(project, record)
     return _report(args, {"candidate": stored},
-                   f"captured {stored['candidate_id']} ({stored['kind']}) as PENDING")
+                   f"captured {stored['candidate_id']} ({stored['kind']}) as PENDING" + note)
 
 
 def _cmd_knowledge_candidates(args: argparse.Namespace) -> int:
@@ -215,6 +251,111 @@ def _cmd_knowledge_reject(args: argparse.Namespace) -> int:
                    f"rejected {updated.get('candidate_id')}")
 
 
+def add_context_parser(commands) -> None:
+    """Register `ainative context ...` (working continuity, transient state)."""
+
+    context = commands.add_parser("context", help="Working continuity: checkpoints bound to repository state.")
+    sub = context.add_subparsers(dest="context_command", required=True)
+    for name, help_text in (("checkpoint", "Freeze bounded operational state."),
+                            ("save", "Alias for checkpoint.")):
+        parser = sub.add_parser(name, help=help_text)
+        parser.add_argument("--project", type=Path, default=Path("."))
+        parser.add_argument("--state-json", default=None)
+        parser.add_argument("--state-file", type=Path, default=None)
+        parser.add_argument("--ttl", type=int, default=86400)
+    restore = sub.add_parser("restore", help="Restore with explicit divergence accounting.")
+    restore.add_argument("--project", type=Path, default=Path("."))
+    restore.add_argument("--id", default=None)
+    status = sub.add_parser("status", help="Working-memory footprint.")
+    status.add_argument("--project", type=Path, default=Path("."))
+    clear = sub.add_parser("clear", help="Remove provably expired checkpoints (dry-run unless --apply).")
+    clear.add_argument("--project", type=Path, default=Path("."))
+    clear.add_argument("--apply", action="store_true")
+
+
+def _context_payload(args) -> str | None:
+    if args.state_file is not None:
+        try:
+            return Path(args.state_file).read_text(encoding="utf-8")
+        except OSError as error:
+            raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                                 f"state file unreadable: {error}") from error
+    return args.state_json
+
+
+def _cmd_context_checkpoint(args: argparse.Namespace) -> int:
+    import json as jsonlib
+
+    from ainative.knowledge import continuity as continuitylib
+
+    payload = _context_payload(args)
+    if not payload:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                             "state is required (--state-json or --state-file)")
+    try:
+        state = jsonlib.loads(payload)
+    except ValueError as error:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED",
+                             "state is not valid JSON") from error
+    record = continuitylib.checkpoint(args.project, state, ttl_seconds=args.ttl)
+    return _report(args, {"checkpoint": record},
+                   f"checkpoint {record['checkpoint_id']} saved")
+
+
+def _cmd_context_restore(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    checkpoint_id = args.id
+    if checkpoint_id is None:
+        records = continuitylib.list_checkpoints(args.project)
+        if not records:
+            return _report(args, {"status": continuitylib.MISSING, "state": None},
+                           "restore: MISSING (no checkpoint)")
+        checkpoint_id = str(records[0]["checkpoint_id"])
+    result = continuitylib.restore(args.project, checkpoint_id)
+    return _report(args, result, f"restore: {result['status']} ({checkpoint_id})")
+
+
+def _cmd_context_status(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    status = continuitylib.checkpoint_status(args.project)
+    return _report(args, status,
+                   f"working: {status['checkpoints']} checkpoint(s), "
+                   f"{status['expired']} expired, {status['bytes']} bytes")
+
+
+def _cmd_context_clear(args: argparse.Namespace) -> int:
+    from ainative.knowledge import continuity as continuitylib
+
+    if not args.apply:
+        status = continuitylib.checkpoint_status(args.project)
+        return _report(args, {"dry_run": True, "expired": status["expired"]},
+                       f"clear (dry-run): {status['expired']} expired checkpoint(s) "
+                       "removable; nothing was removed")
+    outcome = continuitylib.prune_expired(args.project)
+    return _report(args, outcome,
+                   f"clear: removed {len(outcome['removed'])}, kept {outcome['kept']}")
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    """Dispatch `ainative context ...` (called lazily from the top CLI)."""
+
+    handler = _CONTEXT_HANDLERS.get(getattr(args, "context_command", None))
+    if handler is None:
+        raise KnowledgeError("KNOWLEDGE_MALFORMED", "unknown context command")
+    return handler(args)
+
+
+_CONTEXT_HANDLERS = {
+    "checkpoint": _cmd_context_checkpoint,
+    "save": _cmd_context_checkpoint,
+    "restore": _cmd_context_restore,
+    "status": _cmd_context_status,
+    "clear": _cmd_context_clear,
+}
+
+
 _HANDLERS = {
     "status": _cmd_knowledge_status,
     "learn": _cmd_knowledge_learn,
@@ -223,6 +364,135 @@ _HANDLERS = {
     "inspect": _cmd_knowledge_inspect,
     "reject": _cmd_knowledge_reject,
 }
+
+
+def _cmd_knowledge_import(args: argparse.Namespace) -> int:
+    from ainative.knowledge import imports as importslib
+    from ainative.knowledge.errors import KnowledgeError
+
+    project = _project(args)
+    slug = args.project_slug or project.resolve().name
+    source = Path(args.source)
+    try:
+        if args.apply:
+            report = importslib.apply(
+                project, source, harness=args.harness, project_slug=slug,
+                modules=args.module, shared_roots=args.shared_root,
+                actor=args.actor, origin_project=args.origin_project,
+                origin_repository=args.origin_repository,
+                origin_session=args.origin_session, format=args.format)
+            return _report(args, report,
+                           f"import: staged {len(report['created'])} candidate(s) "
+                           f"from {report['harness']}; refused {len(report['refused'])}")
+        report = importslib.preview(
+            source, harness=args.harness, project_slug=slug,
+            modules=args.module, shared_roots=args.shared_root,
+            actor=args.actor, format=args.format)
+        return _report(args, report,
+                       f"import preview: {len(report['staged'])} item(s) resolvable, "
+                       f"{len(report['refused'])} refused; no write performed")
+    except KnowledgeError as error:
+        return _report(args, {"error": error.code, "message": error.message},
+                       f"import refused: {error.code}: {error.message}")
+
+
+def _cmd_knowledge_maintain(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.maintain(_project(args), apply_safe=args.apply_safe)
+    return _report(args, report,
+                   f"maintain: {report['action']}; "
+                   f"expired={report['removable_expired_checkpoints']} "
+                   f"kept={report['kept_checkpoints']}")
+
+
+def _cmd_knowledge_export(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.export(_project(args), Path(args.out))
+    return _report(args, report,
+                   f"export: {report['exported']} file(s) -> {report['target']}")
+
+
+def _cmd_knowledge_reset_derived(args: argparse.Namespace) -> int:
+    from ainative.knowledge import maintenance as maintenancelib
+
+    report = maintenancelib.reset_derived(_project(args), apply_safe=args.apply_safe)
+    return _report(args, report,
+                   f"reset-derived: registered={len(report['registered'])} "
+                   f"removed={len(report.get('removed', []))}")
+
+
+def _cmd_knowledge_stale(args: argparse.Namespace) -> int:
+    from ainative.knowledge import staleness as stalenesslib
+    from ainative.knowledge import store as storelib
+
+    project = _project(args)
+    records = storelib.list_candidates(project)
+    reports = []
+    for record in records:
+        dependencies = record.get("dependencies")
+        if not dependencies:
+            continue
+        result = stalenesslib.evaluate(project, dependencies)
+        decay = stalenesslib.decay_class(record)
+        reports.append({"candidate_id": record.get("candidate_id"),
+                        "signal": result["signal"],
+                        "decay_class": decay,
+                        "retrieval_penalty": stalenesslib.retrieval_penalty(result["signal"], decay),
+                        "review_priority": stalenesslib.review_priority(result["signal"], decay),
+                        "details": result["details"],
+                        "refused": result["refused"]})
+    lines = [f"{item['candidate_id']}  {item['signal']}  penalty={item['retrieval_penalty']} "
+             f"review={item['review_priority']}" for item in reports] or [
+        f"no candidates with dependency metadata (scanned {len(records)})"]
+    return _report(args, {"reports": reports, "scanned": len(records)},
+                   "\n".join(lines))
+
+
+def _cmd_knowledge_consolidate(args: argparse.Namespace) -> int:
+    from ainative.knowledge import consolidation as consolidationlib
+
+    report = consolidationlib.consolidate(_project(args))
+    lines = [f"{item['candidate_id']}  {item['outcome']}  ({item['verdict']})"
+             for item in report["proposals"]] or [
+        f"no reviewable candidates (scanned {report['scanned']})"]
+    lines.append(report["note"])
+    return _report(args, report, "\n".join(lines))
+
+
+def _cmd_knowledge_review(args: argparse.Namespace) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    report = reviewlib.review_queue(_project(args))
+    lines = [f"p{item['review_priority']}  {item['candidate_id']}  {item['outcome']}  "
+             f"({item['verdict']})" for item in report["queue"]] or [
+        f"queue empty (scanned {report['scanned']})"]
+    lines.append(f"promotion: {report['promotion']['eligibility']}; "
+                 f"trust: {report['trust']['qualification']}")
+    return _report(args, report, "\n".join(lines))
+
+
+def _cmd_knowledge_conflicts(args: argparse.Namespace) -> int:
+    from ainative.knowledge import review as reviewlib
+
+    report = reviewlib.conflicts(_project(args))
+    lines = [f"{item['candidate_id']}  {item['verdict']}  "
+             f"holders={','.join(item.get('holders', [])) or '-'}"
+             for item in report["conflicts"]] or [f"no conflicts (scanned {report['scanned']})"]
+    return _report(args, report, "\n".join(lines))
+
+
+_HANDLERS["import"] = _cmd_knowledge_import
+
+
+_HANDLERS["review"] = _cmd_knowledge_review
+_HANDLERS["conflicts"] = _cmd_knowledge_conflicts
+_HANDLERS["consolidate"] = _cmd_knowledge_consolidate
+_HANDLERS["stale"] = _cmd_knowledge_stale
+_HANDLERS["maintain"] = _cmd_knowledge_maintain
+_HANDLERS["export"] = _cmd_knowledge_export
+_HANDLERS["reset-derived"] = _cmd_knowledge_reset_derived
 
 
 def cmd_knowledge(args: argparse.Namespace) -> int:

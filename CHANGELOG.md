@@ -6,6 +6,91 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-13
+
+Corrective release. v2.2.0 is rolled back on `main` by revert (`b0c7ffd`,
+reverting `fc0a270`); its tag and published release remain untouched as the
+historical record of what was distributed. Everything below is the corrective
+fix set, qualified by a published-artifact E2E before the tag.
+
+### Fixed
+
+- **Version source of truth (#125).** `VERSION` declared `2.0.0` while
+  `ainative.__version__` declared `2.2.0`, and the lifecycle records the
+  `VERSION` file - so a fresh install disagreed with the release it came from.
+  `VERSION`, the package version, the `AGENTS.md` `stack-version` header, the
+  staged payload, the wheel payload and the release bundle now move together,
+  and the build refuses a tree carrying two versions.
+- **Official update integrity (#126).** The updater fell back to the GitHub
+  `zipball_url` with no digest to compare. The official path now consumes only
+  the published lifecycle bundle `ainative-dev-stack-<version>.zip`, requires
+  its published SHA-256, and fails closed with
+  `UPDATE_INTEGRITY_METADATA_MISSING` when the metadata is missing (no bundle,
+  no digest, malformed digest). `verify_archive` refuses a missing digest
+  outright; the `releases.json` mirror obeys the same contract.
+- **Anti-Debt scanner execution (#127).** Scanners run from native argument
+  vectors with `shell=False` (documented `cmd /c` routing for Windows `.cmd`
+  shims); the clippy parser reads the integer `line_start` instead of treating
+  it as a mapping, so clippy findings are normalized instead of silently
+  degrading to a warning.
+- **Complexity budget source (#39).** `check_complexity_budget.py` reads
+  `cyclomatic_complexity.blocking` from `conventions.json` instead of
+  re-declaring the number; a missing or malformed budget refuses the check.
+
+### Added
+
+- Lifecycle bundle `ainative-dev-stack-<version>.zip` published with every
+  release beside the wheel, the sdist and `SHA256SUMS`.
+- Release workflow hardening: the tag must equal the current `main`, and
+  assets are never silently replaced (no `--clobber`).
+- CI coverage: the 14 root test suites no workflow executed now run
+  (new `knowledge-b2` job plus explicit steps; #53).
+- Version-invariant tests (checkout, staged payload, lifecycle bundle, wheel
+  payload and metadata, `AGENTS.md` header) and official-update integrity
+  tests (release-shaped document, flipped-byte refusal with zero project
+  writes, missing-digest refusal, zipball-only refusal, full update
+  transaction with rollback available).
+
+### Changed
+
+- `_payload_staging.py` owns payload staging and the version-consistency gate,
+  shared by the PEP 517 backend and `scripts/build_lifecycle_bundle.py`.
+
+
+## [2.2.0] - 2026-09-12
+
+### Added
+
+- **Knowledge / Auto-Memory convergence** on the current architecture (K1-K4 owners;
+  legacy parity 18/18 - 13 PORTED, 2 SUPERSEDED, 3 INTENTIONALLY DROPPED, no UNKNOWN):
+  - advisory classifier, cross-harness import (preview/apply, identity via the current
+    grammar, secret quarantine), owner-composed maintenance (dry-run default), dependency
+    staleness with ranking-only decay, advisory consolidation, review queue and conflicts
+    surface, and the full bounded working-memory fields in `continuity.py`;
+  - `ainative context checkpoint|save|restore|status|clear` (working continuity CLI);
+  - `ainative doctor` gains an honest Knowledge section (ABSENT/OK/FAIL, providers
+    ABSENT = degraded, promotion GATE_CLOSED, trust UNVERIFIED);
+  - thin session hooks (SessionStart restore/status, PreCompact checkpoint, SessionEnd
+    checkpoint + advisory consolidation, PostEdit staleness) that shell out to the CLI.
+
+- Behavioural E2E A-J for the whole system (restart persistence, dedup, conflict without
+  auto-resolution, checkpoint/restore, divergence surfacing, secret quarantine with zero
+  persistence, deterministic context without recall providers, isolation, staleness
+  without rewrite, advisory-only consolidation) and knowledge isolation E2E (cross-project
+  refusal, ambient-environment immunity, universal approval-gate closure).
+
+### Fixed
+
+- `python -m ainative` module entry point added (hook robustness).
+
+### Notes
+
+- **K5 = STOP**: canonical auto-promotion is intentionally not shipped. The measurement
+  gate (docs/knowledge/K1-K4-MEASUREMENT-GATE.md) documents the decision: K1-K4 are
+  correct and fail-closed, but benefit metrics require a real usage window before any
+  NARROW proposal. Promotion is GATE_CLOSED; trust is UNVERIFIED under the standard
+  operator ceremony. This is a measured decision, not missing debt.
+
 ## [2.1.1] - 2026-09-12
 
 ### Fixed
