@@ -6,6 +6,40 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-12
+
+### Added
+
+- **Knowledge / Auto-Memory convergence** on the current architecture (K1-K4 owners;
+  legacy parity 18/18 - 13 PORTED, 2 SUPERSEDED, 3 INTENTIONALLY DROPPED, no UNKNOWN):
+  - advisory classifier, cross-harness import (preview/apply, identity via the current
+    grammar, secret quarantine), owner-composed maintenance (dry-run default), dependency
+    staleness with ranking-only decay, advisory consolidation, review queue and conflicts
+    surface, and the full bounded working-memory fields in `continuity.py`;
+  - `ainative context checkpoint|save|restore|status|clear` (working continuity CLI);
+  - `ainative doctor` gains an honest Knowledge section (ABSENT/OK/FAIL, providers
+    ABSENT = degraded, promotion GATE_CLOSED, trust UNVERIFIED);
+  - thin session hooks (SessionStart restore/status, PreCompact checkpoint, SessionEnd
+    checkpoint + advisory consolidation, PostEdit staleness) that shell out to the CLI.
+
+- Behavioural E2E A-J for the whole system (restart persistence, dedup, conflict without
+  auto-resolution, checkpoint/restore, divergence surfacing, secret quarantine with zero
+  persistence, deterministic context without recall providers, isolation, staleness
+  without rewrite, advisory-only consolidation) and knowledge isolation E2E (cross-project
+  refusal, ambient-environment immunity, universal approval-gate closure).
+
+### Fixed
+
+- `python -m ainative` module entry point added (hook robustness).
+
+### Notes
+
+- **K5 = STOP**: canonical auto-promotion is intentionally not shipped. The measurement
+  gate (docs/knowledge/K1-K4-MEASUREMENT-GATE.md) documents the decision: K1-K4 are
+  correct and fail-closed, but benefit metrics require a real usage window before any
+  NARROW proposal. Promotion is GATE_CLOSED; trust is UNVERIFIED under the standard
+  operator ceremony. This is a measured decision, not missing debt.
+
 ## [2.1.1] - 2026-09-12
 
 ### Fixed
