@@ -324,3 +324,29 @@ class SensitivePhaseGate:
         if current.policy_digest != self._phase_a.policy_digest or current.applicable_surfaces != self._phase_a.applicable_surfaces:
             return _replace(current, decision="DENY_NOT_DISABLEABLE", reason_code=CLAUDE_INSTRUCTIONS_REASON_CODE)
         return current
+
+
+QUALIFICATION_FLAGS = ("provider_ok", "model_ok", "endpoint_ok", "auth_store_ok", "containment_ok")
+
+
+def measurement_from_probe_evidence(evidence) -> dict[str, str]:
+    """Sanitized gate measurement from real probe evidence; absent stays absent.
+
+    Pure materialization of recorded evidence: unknown keys are ignored, a
+    qualification flag passes only on an explicit true, and a missing field is
+    never filled in - the gate then denies observation incomplete.
+    """
+    measured: dict[str, str] = {}
+    if not hasattr(evidence, "get"):
+        return measured
+    for field in _CONTRACT_FIELDS + QUALIFICATION_FLAGS:
+        value = evidence.get(field)
+        if value is None:
+            continue
+        if field in QUALIFICATION_FLAGS:
+            measured[field] = "true" if value is True or str(value).lower() == "true" else "false"
+            continue
+        text = str(value)
+        if text:
+            measured[field] = text
+    return measured

@@ -204,6 +204,23 @@ def persistence_namespace(domain: SecurityDomain, exposure_digest: str, memory_d
     return digest({"schema_version": SCHEMA_VERSION, "domain": domain.identity_digest(), "exposure": exposure_digest, "memory": memory_digest, "assurance": assurance_digest})
 
 
+def allowed_context_envelope_from_authoritative_roots(
+    repository_roots: tuple[str, ...],
+    vault_memory_roots: tuple[str, ...],
+) -> AllowedContextEnvelope:
+    """Materialize the operator envelope from authoritative roots only.
+
+    Pure materialization: the exact authoritative values go in and come out;
+    it selects nothing and fails closed when an authoritative root is absent.
+    """
+    if not repository_roots or not vault_memory_roots:
+        raise ValueError("authoritative repository and vault roots are both required")
+    return AllowedContextEnvelope(
+        repository_roots=tuple(repository_roots),
+        vault_memory_roots=tuple(vault_memory_roots),
+    )
+
+
 def policy_digest(policy: dict[str, Any]) -> str:
     """Policy callers supply the full normalized object; subsets are not accepted here.
 

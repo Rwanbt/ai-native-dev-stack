@@ -139,3 +139,58 @@ class RuntimeAuthority:
         with self._lock:
             self._issued.clear()
         return Revocation(reason=reason, security_epoch_digest=self._state.security_epoch.digest())
+
+
+def authority_from_operator_state(
+    *,
+    security_domain_id: str,
+    vault_identity: str,
+    checkout_identity: str,
+    project_security_id: str,
+    classification: str,
+    allowed_context_envelope: AllowedContextEnvelope,
+    security_epoch: SecurityEpoch,
+    approved_model_egress_digest: str,
+    memory_policy_digest: str,
+    persistence_assurance_digest: str,
+    execution_profile: str,
+    runtime_observation_policy_digest: str,
+    authority_instance_id: str | None = None,
+) -> RuntimeAuthority:
+    """Materialize the runtime authority from operator-authoritative values.
+
+    Pure materialization: it reads no repository content, decides no
+    classification and invents no digest; an incomplete operator state fails
+    closed instead of being completed here.
+    """
+    authoritative = (
+        security_domain_id,
+        vault_identity,
+        checkout_identity,
+        project_security_id,
+        classification,
+        approved_model_egress_digest,
+        memory_policy_digest,
+        persistence_assurance_digest,
+        execution_profile,
+        runtime_observation_policy_digest,
+    )
+    if not all(authoritative):
+        raise ValueError("every authoritative identity and digest is required")
+    return RuntimeAuthority(
+        ImmutableAuthoritativeSecurityState(
+            security_domain_id=security_domain_id,
+            security_epoch=security_epoch,
+            vault_identity=vault_identity,
+            checkout_identity=checkout_identity,
+            project_security_id=project_security_id,
+            classification=classification,
+            allowed_context_envelope=allowed_context_envelope,
+            approved_model_egress_digest=approved_model_egress_digest,
+            memory_policy_digest=memory_policy_digest,
+            persistence_assurance_digest=persistence_assurance_digest,
+            execution_profile=execution_profile,
+            runtime_observation_policy_digest=runtime_observation_policy_digest,
+            authority_instance_id=authority_instance_id or secrets.token_urlsafe(16),
+        )
+    )
