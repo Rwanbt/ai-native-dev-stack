@@ -60,6 +60,21 @@ def add_knowledge_parser(commands) -> None:
     _add_common(reject)
 
 
+    import_parser = sub.add_parser("import", help="Stage foreign harness learnings as candidates.")
+    import_parser.add_argument("source", help="path to a memory export (.md bullets or .json array)")
+    import_parser.add_argument("--harness", required=True)
+    import_parser.add_argument("--format", choices=("auto", "md", "json"), default="auto")
+    import_parser.add_argument("--apply", action="store_true",
+                               help="stage candidates; without it this is a preview (zero writes)")
+    import_parser.add_argument("--project-slug", default=None)
+    import_parser.add_argument("--module", action="append", default=[])
+    import_parser.add_argument("--shared-root", action="append", default=[])
+    import_parser.add_argument("--actor", default="operator")
+    import_parser.add_argument("--origin-project", default=None)
+    import_parser.add_argument("--origin-repository", default=None)
+    import_parser.add_argument("--origin-session", default=None)
+
+
 def _project(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "project", None) or Path.cwd())
 
@@ -227,6 +242,39 @@ _HANDLERS = {
     "inspect": _cmd_knowledge_inspect,
     "reject": _cmd_knowledge_reject,
 }
+
+
+def _cmd_knowledge_import(args: argparse.Namespace) -> int:
+    from ainative.knowledge import imports as importslib
+    from ainative.knowledge.errors import KnowledgeError
+
+    project = _project(args)
+    slug = args.project_slug or project.resolve().name
+    source = Path(args.source)
+    try:
+        if args.apply:
+            report = importslib.apply(
+                project, source, harness=args.harness, project_slug=slug,
+                modules=args.module, shared_roots=args.shared_root,
+                actor=args.actor, origin_project=args.origin_project,
+                origin_repository=args.origin_repository,
+                origin_session=args.origin_session, format=args.format)
+            return _report(args, report,
+                           f"import: staged {len(report['created'])} candidate(s) "
+                           f"from {report['harness']}; refused {len(report['refused'])}")
+        report = importslib.preview(
+            source, harness=args.harness, project_slug=slug,
+            modules=args.module, shared_roots=args.shared_root,
+            actor=args.actor, format=args.format)
+        return _report(args, report,
+                       f"import preview: {len(report['staged'])} item(s) resolvable, "
+                       f"{len(report['refused'])} refused; no write performed")
+    except KnowledgeError as error:
+        return _report(args, {"error": error.code, "message": error.message},
+                       f"import refused: {error.code}: {error.message}")
+
+
+_HANDLERS["import"] = _cmd_knowledge_import
 
 
 def cmd_knowledge(args: argparse.Namespace) -> int:
