@@ -35,6 +35,7 @@ from .contracts import ContractError, canonical_digest, generate_uid, validate_a
 from .predicates import predicate_refusal, predicate_requirements
 from .provenance import UNOBSERVED, commit_count, observe_artifact, observe_artifacts
 from .trust import approval_root_commitment, policy_commitment
+from .trust_schema import require_matching_predicate, validate_approval_root, validate_policy
 
 # Repository-relative, and deliberately beside the work directories rather
 # than inside any one of them.
@@ -113,8 +114,13 @@ def bootstrap(repository_root: str | os.PathLike[str], *, approval_root: Mapping
     target = root / TRUST_RELATIVE
     if target.exists():
         raise BootstrapError("PROJECT_TRUST_ALREADY_INITIALIZED")
+    # Validated before anything is read from them: an empty document used to
+    # raise a bare KeyError from the line below (AUD-204).
+    approval_root = validate_approval_root(approval_root)
+    policy = validate_policy(policy)
     if predicate_requirements(predicate_id) is None:
         raise BootstrapError(f"PROJECT_TRUST_INVALID:UNKNOWN_PREDICATE:{predicate_id}")
+    require_matching_predicate(policy, predicate_id)
     anchor: dict[str, Any] = {
         "schema_name": "project_trust",
         "schema_version": 1,

@@ -135,6 +135,9 @@ jobs:
       - name: CLI, integrations and local pilot harnesses
         run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix tests.test_workplane_historical_case -v
 
+      - name: Trust onboarding - scaffold, validation and refusals
+        run: python -m unittest tests.test_trust_onboarding -v
+
       - name: The package installs and exposes its console entry point
         shell: bash
         run: |
@@ -240,6 +243,26 @@ jobs:
       # need to exhibit.
       - name: Build two real wheels and cross the transition as a user would
         run: python scripts/lifecycle_upgrade_e2e.py
+
+  verified-first-run:
+    name: Verified first run (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      # A stranger's Verified first run through the CLI only: fresh wheel,
+      # fresh venv, fresh git project, init, trust init, bootstrap, work,
+      # verify, converge. If a step needed a file no command produced, this
+      # fails - that is the property (AUD-204/205).
+      - name: Fresh wheel, fresh project, governed workflow to CONVERGED
+        run: python scripts/verified_first_run_e2e.py
 
   knowledge-b1:
     name: Knowledge B1 schemas (${{ matrix.os }}, py${{ matrix.python-version }})
