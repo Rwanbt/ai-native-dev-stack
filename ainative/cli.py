@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -114,6 +115,65 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(update)
     update.add_argument("--force", action="store_true",
                         help="apply even when the check reports no newer release")
+
+    machine = commands.add_parser(
+        "machine", help="Machine-wide integration: init, status, doctor, repair, uninstall.")
+    machine_commands = machine.add_subparsers(dest="machine_command", required=True)
+    machine_init = machine_commands.add_parser(
+        "init", help="Install the shared method for every detected AI harness, "
+                     "recording ownership in ~/.ai-native/machine.json.")
+    machine_init.add_argument("--home", type=Path, default=None,
+                              help="target home directory (default: your home)")
+    machine_init.add_argument("--dry-run", action="store_true",
+                              help="print the change plan; touch nothing")
+    machine_init.add_argument("--vault", type=Path, default=None,
+                              help="v4 Obsidian vault path (default: $OBSIDIAN_VAULT)")
+    machine_init.add_argument("--project-slug", default=None,
+                              help="v4 project slug (default: $OBSIDIAN_PROJECT_SLUG)")
+    machine_init.add_argument("--remove-vault-block", action="store_true",
+                              help="remove the vault governance block where present")
+    machine_init.add_argument("--json", action="store_true", help="machine-readable output")
+
+    machine_status = machine_commands.add_parser(
+        "status", help="What the machine manifest records, and each asset's state.")
+    machine_status.add_argument("--home", type=Path, default=None)
+    machine_status.add_argument("--json", action="store_true")
+
+    machine_doctor = machine_commands.add_parser(
+        "doctor", help="Verdict on the recorded machine integration. Changes nothing.")
+    machine_doctor.add_argument("--home", type=Path, default=None)
+    machine_doctor.add_argument("--json", action="store_true")
+
+    machine_repair = machine_commands.add_parser(
+        "repair", help="Re-create what the manifest proves this stack installed.")
+    machine_repair.add_argument("--home", type=Path, default=None)
+    machine_repair.add_argument("--dry-run", action="store_true")
+    machine_repair.add_argument("--json", action="store_true")
+
+    machine_uninstall = machine_commands.add_parser(
+        "uninstall", help="Remove only the recorded integration; keep everything else.")
+    machine_uninstall.add_argument("--home", type=Path, default=None)
+    machine_uninstall.add_argument("--dry-run", action="store_true")
+    machine_uninstall.add_argument("--json", action="store_true")
+
+    setup = commands.add_parser(
+        "setup", help="Guided first run: project profile, machine integration, doctor.")
+    setup.add_argument("--profile", choices=("standard", "verified"), default=None,
+                       help="choose without the interactive prompt")
+    setup.add_argument("--project", type=Path, default=None,
+                       help="project root (default: the current directory)")
+    setup.add_argument("--home", type=Path, default=None,
+                       help="home for the machine integration (default: your home)")
+    setup.add_argument("--machine", action="store_true",
+                       help="consent to the machine-wide install without a prompt")
+    setup.add_argument("--vault", type=Path, default=None,
+                       help="v4 Obsidian vault path (default: $OBSIDIAN_VAULT)")
+    setup.add_argument("--project-slug", default=None,
+                       help="v4 project slug (default: $OBSIDIAN_PROJECT_SLUG)")
+    setup.add_argument("--dry-run", action="store_true")
+    setup.add_argument("--json", action="store_true")
+    setup.add_argument("--non-interactive", action="store_true",
+                       help="never prompt; choices come from flags only")
 
     from ainative.knowledge.cli import add_context_parser, add_knowledge_parser
     add_knowledge_parser(commands)
@@ -292,19 +352,30 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK if report.healthy else EXIT_FAILED
 
 
-def _cmd_doctor(args: argparse.Namespace) -> int:
-    from .lifecycle import environment
-    from .lifecycle import recovery, updater
+def _doctor_collect(project: Path, check_updates: bool):
+    """One whole-stack diagnosis, shared by `doctor` and `setup`."""
+
+    from .lifecycle import environment, recovery
     from .knowledge import doctor as knowledgedoctor
 
-    project = _project(args)
-    diagnosis = recovery.diagnose(project, check_updates=args.check_updates)
+    diagnosis = recovery.diagnose(project, check_updates=check_updates)
     knowledge = knowledgedoctor.knowledge_status(project)
-    knowledge_failed = knowledge["status"] == knowledgedoctor.STATUS_FAIL
     checks = environment.environment_checks(
         project, installed=diagnosis.installed,
         verified=diagnosis.active_profile == "verified")
-    environment_failed = bool(environment.failing(checks))
+    healthy = (diagnosis.healthy
+               and knowledge["status"] != knowledgedoctor.STATUS_FAIL
+               and not environment.failing(checks))
+    return diagnosis, knowledge, checks, healthy
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from .lifecycle import environment, recovery, updater
+    from .knowledge import doctor as knowledgedoctor
+
+    project = _project(args)
+    diagnosis, knowledge, checks, healthy = _doctor_collect(
+        project, args.check_updates)
     if args.json:
         record = diagnosis.to_record()
         record["knowledge"] = knowledge
@@ -348,8 +419,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  {marker:<16} {check['name']}: {check['detail']}")
             if check["impact"] and check["status"] != environment.OK:
                 print(f"  {'':<16} -> {check['impact']}")
-    return EXIT_OK if (diagnosis.healthy and not knowledge_failed
-                       and not environment_failed) else EXIT_FAILED
+    return EXIT_OK if healthy else EXIT_FAILED
 
 
 def _cmd_repair(args: argparse.Namespace) -> int:
@@ -450,6 +520,151 @@ def _cmd_context(args: argparse.Namespace) -> int:
     return cmd_context(args)
 
 
+def _machine_home(args: argparse.Namespace) -> Path:
+    home = getattr(args, "home", None)
+    return Path(home).expanduser() if home else Path.home()
+
+
+def _machine_status_text(report: dict) -> str:
+    if not report.get("present"):
+        return report.get("detail") or "no machine manifest"
+    lines = [f"Machine integration: {report['manifest']}",
+             f"  stack version: {report.get('stack_version')}   "
+             f"schema: {report.get('schema_version')}",
+             f"  assets: {len(report.get('assets', []))}"]
+    for state, count in sorted(report.get("counts", {}).items()):
+        lines.append(f"  {state}: {count}")
+    for asset in report.get("assets", []):
+        if asset["state"] != "OK":
+            detail = f"  {asset.get('detail', '')}".rstrip()
+            lines.append(f"  {asset['state']:<10} {asset['path']}{detail}")
+    lines.append("  healthy" if report.get("healthy")
+                 else "  needs attention (`ainative machine repair`, then `machine doctor`)")
+    return "\n".join(lines)
+
+
+def _cmd_machine(args: argparse.Namespace) -> int:
+    from .lifecycle import machine as machinelib
+
+    home = _machine_home(args)
+    command = args.machine_command
+
+    if command == "init":
+        from .lifecycle import machine_install
+        from .lifecycle import source as sourcelib
+
+        stack = sourcelib.resolve().root
+        raw_vault = getattr(args, "vault", None) or os.environ.get("OBSIDIAN_VAULT")
+        slug = getattr(args, "project_slug", None) or os.environ.get("OBSIDIAN_PROJECT_SLUG")
+        vault = Path(raw_vault).expanduser() if raw_vault else None
+        if (vault is None) != (slug is None):
+            raise LifecycleError(
+                "MACHINE_VAULT_PAIR_REQUIRED",
+                "--vault and --project-slug must be given together (or both "
+                "configured through OBSIDIAN_VAULT and OBSIDIAN_PROJECT_SLUG)")
+        if slug is not None and not machine_install.SLUG_RE.match(slug):
+            raise LifecycleError("MACHINE_SLUG_INVALID",
+                                 f"{slug!r} does not match the v4 slug grammar")
+        if vault is not None and not (vault / "AGENTS.md").is_file():
+            raise LifecycleError("MACHINE_VAULT_UNREADABLE",
+                                 f"{vault} does not look like a vault (no AGENTS.md); "
+                                 "nothing was written")
+        report = machine_install.install(
+            home, stack, vault=vault, slug=slug,
+            remove_vault_block=args.remove_vault_block,
+            dry_run=args.dry_run,
+            printer=(lambda *_a, **_k: None) if args.json else print)
+        if args.json:
+            _emit({"operation": "machine init", "home": str(home),
+                   "stack_root": report.stack_root, "changes": report.changes,
+                   "errors": report.errors, "assets": report.assets,
+                   "dry_run": report.dry_run,
+                   "manifest": str(report.manifest) if report.manifest else None})
+        else:
+            mode = "(dry-run) " if report.dry_run else ""
+            print(f"{mode}machine init: {report.changes} change(s), "
+                  f"{report.errors} issue(s), {report.assets} asset(s) recorded")
+            if report.manifest:
+                print(f"manifest: {report.manifest}")
+        return EXIT_OK if report.errors == 0 else EXIT_FAILED
+
+    if command in ("status", "doctor"):
+        from .lifecycle import machine_health
+
+        try:
+            report = machine_health.status(home)
+        except machinelib.MachineLifecycleError as refusal:
+            if args.json:
+                _emit({"operation": f"machine {command}", "ok": False,
+                       "error": str(refusal)})
+            else:
+                print(f"refused: {refusal}", file=sys.stderr)
+            return EXIT_INVALID_REQUEST
+        if args.json:
+            _emit({"operation": f"machine {command}", **report})
+        else:
+            print(_machine_status_text(report))
+        if command == "status":
+            return EXIT_OK
+        return EXIT_OK if report["healthy"] else EXIT_FAILED
+
+    if command == "repair":
+        from .lifecycle import machine_health
+
+        try:
+            record = machine_health.repair(home, dry_run=args.dry_run)
+        except machinelib.MachineLifecycleError as refusal:
+            if args.json:
+                _emit({"operation": "machine repair", "ok": False,
+                       "error": str(refusal)})
+            else:
+                print(f"refused: {refusal}", file=sys.stderr)
+            return EXIT_INVALID_REQUEST
+        if args.json:
+            _emit({"operation": "machine repair", **record})
+        else:
+            print("(dry-run ? nothing was written)" if record["dry_run"]
+                  else "repair complete")
+            print(f"  repaired:     {len(record['repaired'])}")
+            print(f"  unrepairable: {len(record['unrepairable'])}")
+            print(f"  preserved:    {len(record['preserved'])}")
+            for item in record["unrepairable"]:
+                print(f"  UNREPAIRABLE  {item['path']}  {item['detail']}")
+            for item in record["preserved"]:
+                print(f"  PRESERVED     {item['path']}  ({item['state']})")
+        return EXIT_FAILED if record["unrepairable"] else EXIT_OK
+
+    try:
+        record = machinelib.uninstall(home, dry_run=args.dry_run)
+    except machinelib.MachineLifecycleError as refusal:
+        if args.json:
+            _emit({"operation": "machine uninstall", "ok": False,
+                   "error": str(refusal)})
+        else:
+            print(f"refused: {refusal}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    if args.json:
+        _emit(record)
+    else:
+        mode = "(dry-run ? nothing was written) " if record["dry_run"] else ""
+        print(f"{mode}Machine uninstall: {len(record['removed'])} removal(s), "
+              f"{len(record['preserved'])} preserved, "
+              f"{len(record['missing'])} already absent.")
+        for path in record["removed"]:
+            print(f"  REMOVE     {path}")
+        for path in record["preserved"]:
+            print(f"  PRESERVE   {path}")
+        if record.get("detail"):
+            print(f"  note: {record['detail']}")
+    return EXIT_OK
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    from .lifecycle import setup_wizard
+
+    return setup_wizard.run(args)
+
+
 LIFECYCLE_COMMANDS = {
     "init": _cmd_init,
     "knowledge": _cmd_knowledge,
@@ -460,6 +675,8 @@ LIFECYCLE_COMMANDS = {
     "repair": _cmd_repair,
     "uninstall": _cmd_uninstall,
     "update": _cmd_update,
+    "machine": _cmd_machine,
+    "setup": _cmd_setup,
 }
 
 

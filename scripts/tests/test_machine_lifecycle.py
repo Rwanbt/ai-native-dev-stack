@@ -47,7 +47,9 @@ class MachineLifecycle(unittest.TestCase):
         kinds = {asset["kind"] for asset in record["assets"]}
         self.assertTrue({"link", "block", "rendered"} <= kinds, kinds)
         self.assertGreater(len(record["assets"]), 20)
-        self.assertEqual(record["schema_version"], 1)
+        # Schema 2 adds the repair fields (heading, vault/slug, template,
+        # stack_root); schema-1 manifests stay readable.
+        self.assertEqual(record["schema_version"], 2)
 
     def test_a_dry_run_changes_nothing(self):
         manifest = (self.home / ".ai-native" / "machine.json").read_bytes()

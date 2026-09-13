@@ -6,6 +6,63 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-13
+
+Minor release: the machine-wide surface becomes a first-class product, a
+guided first run composes the documented steps, and the release pipeline is
+qualified end to end. No breaking changes to the documented flow.
+
+### Added
+
+- **`ainative machine`** — `init`, `status`, `doctor`, `repair` and
+  `uninstall` over the canonical `~/.ai-native/machine.json` manifest
+  (schema 2). Installation records what it wrote (links with their source,
+  blocks with their heading or vault pair, rendered files with template and
+  digest); `status` classifies every asset (OK / MISSING / MODIFIED / DRIFTED /
+  MALFORMED); `doctor` exits non-zero on any problem; `repair` re-creates
+  only what the manifest proves — a user-modified file, a retargeted link or a
+  malformed block is preserved and reported, never overwritten; `uninstall`
+  removes only recorded, unmodified assets. A corrupt manifest fails closed
+  (exit 2, zero writes), and schema-1 manifests stay readable.
+- **`ainative setup`** — the guided first run: it detects the harnesses,
+  explains Standard vs Verified, offers the project install, offers the
+  machine-wide integration, reports the optional vault and Graphify, and
+  finishes with the same doctor every other command runs. Every step asks
+  before it mutates and is skippable; `--non-interactive` (or `--json`) takes
+  its choices from `--profile` and `--machine`, so CI and scripts never block.
+- **The machine installer is packaged.** The ownership rules, managed blocks
+  and the manifest write now live in `ainative.lifecycle.machine` /
+  `machine_install` / `machine_health`; `scripts/install_agents.py` and
+  `scripts/machine_lifecycle.py` are thin frontends over the same code, so a
+  checkout and the installed CLI cannot drift apart. The payload lacking an
+  asset (the anti-debt agent, the adapter files) is skipped with a visible
+  `SKIP`, never turned into a broken link.
+
+### Changed
+
+- **CI blocking is one gate.** `Production Gate` is the single aggregate job
+  the branch protection requires: it needs every blocking job in `ci.yml` and
+  fails on `failure`, `cancelled`, an unexpected `skipped`, or a job missing
+  from its payload (`tests/test_ci_production_gate.py` proves each case — a
+  new job cannot silently stay outside the gate). Python 3.8 moves to its own
+  best-effort job, deliberately outside the gate, matching the documented
+  contract.
+- **The colleague run is a gate.** `scripts/colleague_e2e.py` builds the wheel,
+  installs it in a fresh venv, and executes the README literally — init,
+  status, doctor, knowledge, context, the template, `generate_all`, an edit
+  through the configured PostToolUse command, `update check`, `uninstall
+  --dry-run`. It caught real defects while being written; it now runs on every
+  PR (`colleague-e2e`).
+
+### Fixed
+
+- `ainative doctor` no longer crashes when the environment check reports a
+  non-OK status after project installs (found by the colleague run on a fresh
+  wheel).
+- `UPDATING.md` and both READMEs name the current pinned release and the v2
+  protocol bundle; the old manual hook-registration step is replaced by the
+  commands that configure it.
+
 ## [2.3.0] - 2026-09-13
 
 Minor release: the product surface grows (Verified onboarding, machine
