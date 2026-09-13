@@ -6,6 +6,47 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-09-14
+
+Patch release: the OpenCode plugin is runtime-compatible and ships in the
+published distribution, so `ainative machine init` renders a working plugin
+from an installed wheel instead of skipping it.
+
+### Fixed
+
+- **The OpenCode LOC-gate plugin no longer depends on a Bun runtime** (#153):
+  the template read the edited file through `Bun.file` — init crashed with
+  `Bun.file is not defined`, so every edit and write failed — and ran
+  `update_on_edit.py` through the Bun shell — `$ is not a function` after every
+  successful edit, so AI summaries were never regenerated. It now uses
+  `readFile` from `node:fs/promises` and `spawn` from `node:child_process`;
+  semantics are unchanged (LOC gate, Python probe, summary regeneration).
+- **The published distribution carries the harness adapters**: the staged
+  payload shipped no `adapters/` tree, so a wheel install skipped the plugin
+  with a visible `SKIP` and the documented OpenCode integration existed for
+  checkout users only. The wheel and the lifecycle bundle now render the
+  OpenCode plugin (and the Claude Code adapter) from their own payload.
+
+### Added
+
+- **A durable OpenCode runtime gate** (the `opencode-plugin` CI job, inside the
+  Production Gate): it renders the plugin, loads it in a real runtime with no
+  global `Bun`, drives the `tool.execute.before` / `tool.execute.after` hooks
+  for edit and write, proves the blocking LOC limit comes from
+  `conventions.json`, and asserts `AI_SUMMARY.md` is regenerated. A second step
+  installs the built wheel in a fresh venv and runs the same gate against the
+  plugin `ainative machine init` rendered from the installed payload.
+
+### Documentation
+
+- The Multi-Vault operator guide's real-machine procedure names the pinned
+  release, and the install pins in both READMEs, `UPDATING.md` and
+  `docs/RELEASING.md` move to v2.4.3.
+
+### Maintenance
+
+- `actions/setup-python` moves to its current major in the CI workflows (#135).
+
 ## [2.4.2] - 2026-09-13
 
 Patch release: the governed Multi-Vault push path now enforces the approved

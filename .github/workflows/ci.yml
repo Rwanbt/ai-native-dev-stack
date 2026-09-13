@@ -738,6 +738,34 @@ jobs:
         # Job Object probe skips itself on other platforms.
         run: python -m unittest discover -s tests/mv00 -p "test_*.py" -v
 
+  opencode-plugin:
+    name: OpenCode plugin runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      # #153 was a runtime incompatibility — a global `Bun.file` and a callable
+      # Bun shell the opencode runtime does not provide — so reading the
+      # template proves nothing. The first step renders it and drives the real
+      # hooks (edit/write, LOC refusal, AI_SUMMARY regeneration); the second
+      # builds the wheel, installs it in a fresh venv, and proves the published
+      # distribution renders the same working plugin from its own payload.
+      - name: The rendered plugin loads, gates edit/write and regenerates AI_SUMMARY
+        run: python scripts/opencode_plugin_runtime_e2e.py
+
+      - name: A wheel install renders a working plugin from its own payload
+        run: python scripts/opencode_plugin_published_e2e.py
+
   production-gate:
     name: Production Gate
     # The one required status on main. It runs even when a needed job failed —
@@ -749,7 +777,7 @@ jobs:
     needs: [test, conventions, loc-gate, vault-v4-protocol, workplane-v2,
             lifecycle, upgrade-e2e, verified-first-run, knowledge-b1,
             knowledge-b2, clean-install, installers, colleague-e2e,
-            vault-sync, hooks, multivault-unit]
+            vault-sync, hooks, multivault-unit, opencode-plugin]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -759,5 +787,5 @@ jobs:
       - name: Every blocking job must have succeeded
         env:
           PRODUCTION_GATE_NEEDS: ${{ toJSON(needs) }}
-          PRODUCTION_GATE_EXPECTED: test conventions loc-gate vault-v4-protocol workplane-v2 lifecycle upgrade-e2e verified-first-run knowledge-b1 knowledge-b2 clean-install installers colleague-e2e vault-sync hooks multivault-unit
+          PRODUCTION_GATE_EXPECTED: test conventions loc-gate vault-v4-protocol workplane-v2 lifecycle upgrade-e2e verified-first-run knowledge-b1 knowledge-b2 clean-install installers colleague-e2e vault-sync hooks multivault-unit opencode-plugin
         run: python scripts/ci_production_gate.py

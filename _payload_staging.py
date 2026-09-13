@@ -25,9 +25,13 @@ from pathlib import Path
 
 PAYLOAD_DIRNAME = Path("ainative") / "_payload"
 
-# What a project install needs, and nothing more. The wheel does not carry the
-# test suite, the docs archive or the anti-debt agent.
-PAYLOAD_TREES = ("skills", "tools/ai_docs", "templates")
+# What a project install needs, plus the harness adapters `ainative machine
+# init` renders. The adapters belong in the distribution: when the payload did
+# not carry them, a wheel install skipped the OpenCode plugin with a visible
+# SKIP, so the documented machine integration existed for checkout users only
+# (#153 follow-up). The wheel still does not carry the test suite, the docs
+# archive or the anti-debt agent.
+PAYLOAD_TREES = ("skills", "adapters", "tools/ai_docs", "templates")
 PAYLOAD_FILES = ("AGENTS.md", "VERSION", "conventions.json",
                  "docs/VERIFIED-WORK-PLANE.md")
 

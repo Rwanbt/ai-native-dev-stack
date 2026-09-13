@@ -1,5 +1,5 @@
 # Universal Engineering Rules
-<!-- stack-version: 2.4.2 -->
+<!-- stack-version: 2.4.3 -->
 <!-- Cross-tool: Claude Code (@AGENTS.md in CLAUDE.md), Cursor (reads AGENTS.md natively at root + nested dirs), Codex (auto-loaded AGENTS.md) -->
 <!-- Keep this file at the project root. Customize per project as needed. -->
 <!-- Canonical source — reference this file (@AGENTS.md), do not copy it. Updates flow via `git pull` + /stack-upgrade. See UPDATING.md. -->
@@ -225,16 +225,16 @@ Central unread modules (>5 incoming imports): none
 
 ### This project — ai-native-dev-stack
 
-Measured 2026-09-13 (v2.3.0: Verified onboarding, hook wiring, machine lifecycle, protocol v2, whole-stack doctor) via `git ls-files` (image excluded). Re-measure
+Measured 2026-09-14 (v2.4.3: OpenCode plugin runtime fix, adapters in the published payload, opencode-plugin CI gate) via `git ls-files` (image excluded). Re-measure
 with `python3 scripts/measure_scope.py`; CI fails when these figures drift.
 
 | Scope | Tokens (÷4) | Files | Strategy |
 |---|---|---|---|
-| Core stack (excl. anti-debt) | ~787 077 | 462 | **Layered read** — cartography first  then targeted reads |
+| Core stack (excl. anti-debt) | ~824 494 | 477 | **Layered read** — cartography first  then targeted reads |
 | Anti-debt agent | ~133 902 | 117 | Read its `AI_CONTEXT.md` and ADRs before its sources |
-| Whole repo | ~920 980 | 579 | **Multi-phase workflow** — never a single direct read |
+| Whole repo | ~958 397 | 594 | **Multi-phase workflow** — never a single direct read |
 
-Do **not** read the whole repo in one pass: at ~920k tokens it does not fit,
+Do **not** read the whole repo in one pass: at ~958k tokens it does not fit,
 and the strategy table above applies in full. Pick the scope the task needs —
 most work touches only one of the three halves below.
 

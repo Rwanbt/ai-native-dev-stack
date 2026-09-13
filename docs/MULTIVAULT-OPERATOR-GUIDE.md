@@ -59,7 +59,7 @@ history only. ENFORCED-DIAGNOSTIC and ENFORCED-AUTHENTICATED are not available.
 1. Install and initialize the stack (pinned release; see README for the current version):
 
    ```powershell
-   pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.2"
+   pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.3"
    ainative machine init      # installs the method and assets for every harness
    ainative machine doctor    # healthy, or exit 1 naming the failing asset
    ```
@@ -92,8 +92,8 @@ history only. ENFORCED-DIAGNOSTIC and ENFORCED-AUTHENTICATED are not available.
    invalidates the binding (`DENY_ROOT_STALE` / `DENY_CHECKOUT_STALE`): re-bind after the move.
 
 4. Governed `exec` and `sync` (usage notes):
-   - `exec`: place the approved command after the options **without** a `--` separator; with
-     2.4.2 the separator is captured by argv and the spawn fails with a file-not-found error.
+   - `exec`: place the approved command after the options **without** a `--` separator; the
+     current CLI captures the separator into argv and the spawn fails with a file-not-found error.
    - `sync`: the Git environment is positive-only (no ambient credentials or proxies). A fetch
      from a private remote without dedicated credential material is denied by design
      (`AINATIVE_FETCH_FAILED`); `file://` and public remotes work. Force pushes and ref
