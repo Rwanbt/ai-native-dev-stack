@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-Vault governed push enforces the approved remote's `allowed_refs`**
+  (#147): `begin_push()` denies a target ref outside the allowlist, and a
+  refspec destination that does not equal the push intent's `target_ref`,
+  before any candidate scan or push capability issuance, with the stable code
+  `AINATIVE_PUSH_REF_DENIED`.
+
 ## [2.4.1] - 2026-09-13
 
 Patch release: the machine ownership record becomes complete and fail-safe.

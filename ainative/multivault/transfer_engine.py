@@ -24,6 +24,7 @@ from .git_authority import (
     build_fetch_evidence,
     compare_repository_state,
     normalize_remote_url,
+    ref_is_allowed,
     unapproved_remotes,
     validate_remote,
     validate_transport,
@@ -49,6 +50,7 @@ SECONDARY_NETWORK_DENIED = "AINATIVE_SECONDARY_GIT_NETWORK_DENIED"
 LFS_NETWORK_DENIED = "AINATIVE_LFS_NETWORK_DENIED"
 FORCE_PUSH_DENIED = "AINATIVE_FORCE_PUSH_DENIED"
 REF_DELETION_DENIED = "AINATIVE_REF_DELETION_DENIED"
+PUSH_REF_DENIED = "AINATIVE_PUSH_REF_DENIED"
 PUSH_LOCK_HELD = "AINATIVE_PUSH_LOCK_HELD"
 PUSH_SCAN_LEAK = "AINATIVE_PUSH_SCAN_LEAK"
 PUSH_SCAN_INCOMPLETE = "AINATIVE_PUSH_SCAN_INCOMPLETE"
@@ -204,6 +206,19 @@ class GovernedTransferEngine:
         source_ref = exact_refspec.split(":", 1)[0].lstrip("+")
         if ":" not in exact_refspec or not source_ref:
             return TransferOutcome("DENY", REF_DELETION_DENIED, "remote ref deletion is denied by default")
+        destination_ref = exact_refspec.split(":", 1)[1]
+        if destination_ref != target_ref:
+            return TransferOutcome(
+                "DENY",
+                PUSH_REF_DENIED,
+                "the refspec destination does not match the push intent target ref",
+            )
+        if not ref_is_allowed(self._approved_remote, target_ref):
+            return TransferOutcome(
+                "DENY",
+                PUSH_REF_DENIED,
+                "the push intent target ref is not in the approved remote allowed refs",
+            )
         guard = self._sensitive_network_error()
         if guard is not None:
             return TransferOutcome("DENY", guard[0], guard[1])
