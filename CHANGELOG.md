@@ -6,6 +6,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-09-13
+
+Patch release: the governed Multi-Vault push path now enforces the approved
+remote's `allowed_refs`, closing the authorization asymmetry with fetch (#147).
+
 ### Fixed
 
 - **Multi-Vault governed push enforces the approved remote's `allowed_refs`**
