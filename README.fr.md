@@ -588,15 +588,23 @@ d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
 OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
-# 1. Installez (ou mettez a niveau) la CLI, puis choisissez un profil dans votre projet.
-#    Relancez la ligne d'upgrade quand une release change le runtime du lifecycle ;
-#    `ainative update` vous le dira (CLI_UPDATE_REQUIRED).
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"   # release epinglee (reproductible)
+# 1. Installez (ou mettez a niveau) la CLI, puis configurez le projet.
+#    Relancez la ligne d'installation quand une release change le runtime du
+#    lifecycle ; `ainative update` vous le dira (CLI_UPDATE_REQUIRED).
+#
+#    PyPI (ainative-dev-stack==2.4.0) est cable mais pas encore publie : il
+#    manque une configuration Trusted Publisher unique sur le compte PyPI
+#    (docs/RELEASING.md). D'ici la, la release GitHub epinglee ci-dessous est
+#    l'installation supportee.
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.0"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
-ainative init                          # demande Standard ou Verified
-ainative init --profile standard       # non interactif
-ainative init --profile verified
+ainative setup                         # guide : profil, integration machine, doctor
+#   non interactif :
+ainative setup --non-interactive --profile standard --machine
+#   ou etape par etape :
+ainative init --profile standard       # installe le profil du projet
+ainative machine init                  # installe la methode pour chaque harnais IA
 ```
 
 Pas encore de `pip` ? Le bootstrap fait la même chose depuis un clone :
@@ -673,12 +681,14 @@ préservés, `--dry-run` pour prévisualiser. L'installation est idempotente —
 relancez-la pour mettre à jour.
 
 ```bash
-bash scripts/setup-agents.sh                    # Linux / macOS / Git Bash
-pwsh -NoProfile -File scripts/setup-agents.ps1  # Windows
-python scripts/install_agents.py                # n'importe quel OS
+ainative machine init                    # installe ; enregistre ~/.ai-native/machine.json
+ainative machine status                  # chaque asset enregistre, classe
+ainative machine doctor                  # verdict ; code 1 si quelque chose ne va pas
+ainative machine repair                  # recree uniquement ce que le manifeste prouve
+ainative machine uninstall --dry-run     # previsualise le retrait exact
 
-python scripts/install_agents.py --check        # vérifier une installation
-python scripts/install_agents.py --dry-run      # prévisualiser
+# Depuis un checkout sans CLI installee, le meme chemin de code :
+python scripts/install_agents.py [--check|--dry-run|--uninstall]
 ```
 
 Idempotent : une seconde exécution affiche `0 change(s)`. L'installeur ne

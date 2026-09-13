@@ -201,11 +201,27 @@ def _graphify_check(project: Path) -> dict:
 
 
 def _machine_check(home: Path) -> dict:
+    from . import machine as machinelib
+    from . import machine_health
+
     manifest = home / MACHINE_MANIFEST
-    if manifest.is_file():
-        return _check("machine_integration", OK, str(manifest))
-    return _check("machine_integration", ABSENT_OPTIONAL, "no machine manifest",
-                  "run `python scripts/install_agents.py` from a stack checkout")
+    if not manifest.is_file():
+        return _check("machine_integration", ABSENT_OPTIONAL, "no machine manifest",
+                      "machine-wide integration is separate: run `ainative machine init`")
+    try:
+        report = machine_health.status(home)
+    except machinelib.MachineLifecycleError as error:
+        return _check("machine_integration", FAIL, str(error),
+                      "the recorded integration cannot be verified; "
+                      "run `ainative machine status`")
+    if report["healthy"]:
+        return _check("machine_integration", OK,
+                      f"{len(report.get('assets', []))} recorded asset(s) verified")
+    problems = ", ".join(f"{count} {state}"
+                         for state, count in sorted(report["counts"].items())
+                         if state in machinelib.PROBLEM_STATES)
+    return _check("machine_integration", DEGRADED, problems or "recorded issues",
+                  "run `ainative machine doctor`; repair with `ainative machine repair`")
 
 
 def _workplane_check(project: Path) -> dict:
