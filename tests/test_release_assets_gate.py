@@ -114,6 +114,18 @@ class PublishedAssets(unittest.TestCase):
         with self.assertRaises(published.PublishedAssetMismatch):
             published.compare(dist, assets)
 
+    def test_a_report_file_inside_dist_is_not_counted_as_an_asset(self):
+        directory, dist = self.dist()
+        self.addCleanup(directory.cleanup)
+        board = self.published(dist)          # computed before the report exists
+        report = dist / "assets.json"
+        report.write_text("{}", encoding="utf-8")
+        # Without the exclusion this raised "assets on the release that were
+        # not built: ['assets.json']" - the v2.3.0 release abort.
+        checked = published.compare(dist, board, assets_json=report)
+        self.assertEqual(len(checked), 2)
+        self.assertNotIn("assets.json", checked)
+
     def test_a_size_or_digest_mismatch_is_refused(self):
         directory, dist = self.dist()
         self.addCleanup(directory.cleanup)

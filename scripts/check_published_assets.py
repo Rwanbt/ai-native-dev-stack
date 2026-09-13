@@ -27,10 +27,18 @@ class PublishedAssetMismatch(RuntimeError):
     """The published set does not match the built set."""
 
 
-def local_assets(dist: Path) -> dict[str, dict]:
+def local_assets(dist: Path, *, ignored: Path | None = None) -> dict[str, dict]:
+    """Every file in dist that could be an asset.
+
+    `ignored` is the report file this check itself may have been pointed at;
+    when a workflow writes it inside dist, counting it as a built artifact
+    failed the release after every asset had been uploaded correctly.
+    """
+
+    ignored_name = ignored.name if ignored is not None else None
     assets: dict[str, dict] = {}
     for path in sorted(dist.iterdir()):
-        if not path.is_file():
+        if not path.is_file() or path.name == ignored_name:
             continue
         payload = path.read_bytes()
         assets[path.name] = {"size": len(payload),
@@ -40,8 +48,9 @@ def local_assets(dist: Path) -> dict[str, dict]:
     return assets
 
 
-def compare(dist: Path, published: list) -> list[str]:
-    expected = local_assets(dist)
+def compare(dist: Path, published: list, *,
+            assets_json: Path | None = None) -> list[str]:
+    expected = local_assets(dist, ignored=assets_json)
     seen: dict[str, dict] = {}
     for asset in published:
         if not isinstance(asset, dict) or not isinstance(asset.get("name"), str):
@@ -85,7 +94,7 @@ def main() -> int:
         print("PUBLISHED_ASSETS_INVALID: no asset list in the JSON", file=sys.stderr)
         return 1
     try:
-        checked = compare(args.dist, published)
+        checked = compare(args.dist, published, assets_json=args.assets_json)
     except PublishedAssetMismatch as refusal:
         print(f"PUBLISHED_ASSETS_MISMATCH: {refusal}", file=sys.stderr)
         return 1
