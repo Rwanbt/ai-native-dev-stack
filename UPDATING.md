@@ -20,15 +20,20 @@ The full model — ownership, transactions, rollback, security boundaries — is
 
 ## Updating or removing the machine integration
 
-Global integration (method blocks, skill links, hooks, plugins) is updated by
-re-running the installer from a stack checkout — it is idempotent, and it
-records what it wrote in `~/.ai-native/machine.json`:
+Global integration (method blocks, skill links, hooks, plugins) is owned by
+`ainative machine`. It is idempotent, and it records what it wrote — source or
+digest per asset — in `~/.ai-native/machine.json`:
 
 ```bash
-python scripts/install_agents.py                    # install or update
-python scripts/install_agents.py --check            # verify
-python scripts/install_agents.py --uninstall --dry-run   # preview removal
-python scripts/install_agents.py --uninstall         # remove only what it owns
+ainative machine init                    # install or update (idempotent)
+ainative machine status                  # every recorded asset, classified
+ainative machine doctor                  # verdict; exit 1 when something is wrong
+ainative machine repair                  # re-create only what the manifest proves
+ainative machine uninstall --dry-run     # preview the exact reversal
+ainative machine uninstall               # remove only what it owns
+
+# From a checkout without the CLI installed, the same code path:
+python scripts/install_agents.py [--check|--dry-run|--uninstall]
 ```
 
 The uninstall removes recorded, unmodified assets and preserves everything
@@ -44,7 +49,7 @@ update each project. `ainative update` refuses the other order with
 
 ```bash
 # 1. the CLI / runtime
-pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.0"
 
 # 2. each project
 ainative update check      # is there anything newer? (works with any runtime)

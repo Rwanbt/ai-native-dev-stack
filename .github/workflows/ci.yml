@@ -16,18 +16,31 @@ jobs:
         # job runs the AI-docs and scripts suites, which the installed tooling
         # claims at 3.8+ (docs/DISTRIBUTION-LIFECYCLE.md).
         python-version: ["3.9", "3.11", "3.13"]
-        include:
-          # 3.8 is best-effort, as the docs state — and best-effort is wired
-          # through here rather than declared in an inert matrix property.
-          - python-version: "3.8"
-            continue-on-error: true
-    continue-on-error: ${{ matrix.continue-on-error || false }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Run test suite (stdlib unittest — zero dependencies)
+        run: |
+          python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
+          python -m unittest discover -s scripts/tests -p "test_*.py" -v
+
+  test-legacy-python:
+    name: Tests (Python 3.8, best-effort)
+    runs-on: ubuntu-latest
+    # 3.8 support is best-effort, as docs/DISTRIBUTION-LIFECYCLE.md states.
+    # Best-effort is wired through here rather than declared in an inert matrix
+    # property, and it is deliberately outside the Production Gate: a failing
+    # 3.8 leg must not block a merge.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python 3.8
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.8"
       - name: Run test suite (stdlib unittest — zero dependencies)
         run: |
           python -m unittest discover -s tools/ai_docs/tests -p "test_*.py" -v
@@ -58,6 +71,9 @@ jobs:
         # allowlist for historical evidence and its mutation test runs in the
         # lifecycle job.
         run: python scripts/check_personal_paths.py
+
+      - name: The Production Gate covers every blocking job, and cannot be vacuous
+        run: python -m unittest tests.test_ci_production_gate -v
 
   loc-gate:
     name: LOC budget gate
@@ -266,6 +282,24 @@ jobs:
       # fails - that is the property (AUD-204/205).
       - name: Fresh wheel, fresh project, governed workflow to CONVERGED
         run: python scripts/verified_first_run_e2e.py
+
+  colleague-e2e:
+    name: Colleague first run (README, executed literally)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      # A stranger with Python, Git and a network: build the wheel, fresh venv,
+      # fresh Git project, then only the commands README.md documents — init,
+      # status, doctor, knowledge, context, the template, generate_all, an edit
+      # through the configured PostToolUse command, update check, uninstall
+      # preview. If a documented step needs anything the README does not give,
+      # this fails; that is the property.
+      - name: The documented first run, end to end, against a real wheel
+        run: python scripts/colleague_e2e.py
 
   knowledge-b1:
     name: Knowledge B1 schemas (${{ matrix.os }}, py${{ matrix.python-version }})
@@ -517,6 +551,10 @@ jobs:
             --vault "$FAKEVAULT" --project-slug demo --check \
             | grep -q "0 issue(s)"
 
+      - name: Machine lifecycle and setup wizard CLIs (three platforms)
+        shell: bash
+        run: python -m unittest tests.test_machine_cli tests.test_setup_wizard -v
+
   vault-sync:
     name: Vault sync (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -699,3 +737,27 @@ jobs:
         # executed them; a probe regression shipped unnoticed. The Windows
         # Job Object probe skips itself on other platforms.
         run: python -m unittest discover -s tests/mv00 -p "test_*.py" -v
+
+  production-gate:
+    name: Production Gate
+    # The one required status on main. It runs even when a needed job failed —
+    # `if: always()` is what lets it report the failure — and fails unless every
+    # blocking job succeeded. `scripts/ci_production_gate.py` owns the rule;
+    # tests/test_ci_production_gate.py pins this list to the jobs above and
+    # proves a failed, cancelled, skipped or missing job fails the gate.
+    if: always()
+    needs: [test, conventions, loc-gate, vault-v4-protocol, workplane-v2,
+            lifecycle, upgrade-e2e, verified-first-run, knowledge-b1,
+            knowledge-b2, clean-install, installers, colleague-e2e,
+            vault-sync, hooks, multivault-unit]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - name: Every blocking job must have succeeded
+        env:
+          PRODUCTION_GATE_NEEDS: ${{ toJSON(needs) }}
+          PRODUCTION_GATE_EXPECTED: test conventions loc-gate vault-v4-protocol workplane-v2 lifecycle upgrade-e2e verified-first-run knowledge-b1 knowledge-b2 clean-install installers colleague-e2e vault-sync hooks multivault-unit
+        run: python scripts/ci_production_gate.py

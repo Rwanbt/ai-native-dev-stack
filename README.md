@@ -583,14 +583,23 @@ ainative doctor                     # includes the Knowledge section
 ### For an existing project
 
 ```bash
-# 1. Install (or upgrade) the CLI, then choose a profile in your project.
-#    Re-run the upgrade line when a release changes the lifecycle runtime;
+# 1. Install (or upgrade) the CLI, then set the project up.
+#    Re-run the install line when a release changes the lifecycle runtime;
 #    `ainative update` tells you when (CLI_UPDATE_REQUIRED).
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"   # pinned release (reproducible)
+#
+#    PyPI (ainative-dev-stack==2.4.0) is wired but not yet published: it needs
+#    a one-time Trusted Publisher setup on the PyPI account (docs/RELEASING.md,
+#    "PyPI"), so until then the pinned GitHub release below is the supported
+#    install.
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.0"   # pinned release (reproducible)
 cd your-project
-ainative init                          # asks Standard or Verified
-#   or, non-interactively:
-ainative init --profile standard
+
+ainative setup                         # guided: profile, machine integration, doctor
+#   non-interactively:
+ainative setup --non-interactive --profile standard --machine
+#   or step by step:
+ainative init --profile standard       # installs the project profile
+ainative machine init                  # installs the method for every AI harness
 ainative init --profile standard --dry-run   # see the plan first, change nothing
 
 # No pip yet? The bootstrap does the same thing from a clone:
@@ -634,14 +643,15 @@ bash tools/ai_docs/find_python.sh
 cp tools/ai_docs/config.sh.example tools/ai_docs/config.sh
 # Fill in Obsidian vault path, Python path, graphify binary
 
-# 4. Register the hook (once)
-# Add to .claude/settings.json → hooks.PostToolUse → Edit|Write:
-# { "type": "command", "command": "bash /absolute-path/tools/ai_docs/run_hook.sh" }
+# 4. Install the CLI; it configures the hook — no hand-edited JSON:
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.0"
+ainative init --profile standard   # merges ONE owned PostToolUse entry into .claude/settings.json
+#    (hand-registered before the lifecycle existed? init adopts it idempotently.)
 
 # 5. Generate summaries
 python tools/ai_docs/generate_all.py
 
-# 6. Verify → /verify-ai-docs should display OPERATIONAL
+# 6. Verify → `ainative doctor`; /verify-ai-docs should display OPERATIONAL
 ```
 
 ### Whole-stack transfer (method + hooks + agents, any LLM)
@@ -651,15 +661,15 @@ method** to a new machine or wire a new AI agent (Claude Code, MiniMax/Mavis,
 Cursor, Codex) to the same rules, hooks, and the anti-debt agent:
 
 ```bash
-# Install rules, skills and agents into every detected AI CLI
-# (idempotent; one Python implementation, same behaviour on every OS)
-bash scripts/setup-agents.sh                          # Linux / macOS / Git Bash
-pwsh -NoProfile -File scripts/setup-agents.ps1        # Windows, no Git Bash needed
-python scripts/install_agents.py                      # any OS, direct
+# Machine-wide: rules, skills and agents for every detected AI CLI.
+ainative machine init                    # install; records ~/.ai-native/machine.json
+ainative machine status                  # every recorded asset, classified
+ainative machine doctor                  # verdict; exit 1 when something is wrong
+ainative machine repair                  # re-creates only what the manifest proves
+ainative machine uninstall --dry-run     # preview the exact reversal
 
-# Verify, or preview without writing:
-python scripts/install_agents.py --check
-python scripts/install_agents.py --dry-run
+# From a checkout without the CLI installed, the same code path:
+python scripts/install_agents.py [--check|--dry-run|--uninstall]
 
 # Then wire the engineering method (@AGENTS.md include) + hooks per agent:
 #   → see PORTABILITY.md
@@ -670,9 +680,9 @@ Skills are installed into every agent root the stack knows about — Claude Code
 OpenCode and Cursor — as links, not copies, so a `git pull` updates every CLI
 at once. The installer records everything it writes in
 `~/.ai-native/machine.json` (source or digest per asset), and
-`python scripts/install_agents.py --uninstall` reverses exactly that record:
-user files and user-edited files are preserved, and `--dry-run` shows the plan
-first. The install itself is idempotent — re-run it to update.
+`ainative machine uninstall` — or `python scripts/install_agents.py --uninstall`
+from a checkout — reverses exactly that record: user files and user-edited
+files are preserved, and `--dry-run` shows the plan first. The install itself is idempotent — re-run it to update.
 
 The single source of the engineering method is [`AGENTS.md`](AGENTS.md) — every
 tool config references it instead of re-stating the rules, so the configs never

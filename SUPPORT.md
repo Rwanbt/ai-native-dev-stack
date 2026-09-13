@@ -4,7 +4,7 @@
 
 | Surface | Supported |
 |---|---|
-| Installation | PyPI (`pip install ainative-dev-stack==<version>`), pinned git tag, or a checkout + `install.py` |
+| Installation | The pinned GitHub release tag (current), or a checkout + `install.py`. PyPI is wired and gated but not yet published: it needs a one-time Trusted Publisher setup on the PyPI account (`docs/RELEASING.md`). |
 | Python | 3.11+ for the lifecycle CLI; the AI-docs tooling installed into a project runs on 3.8+ |
 | Operating systems | Linux, macOS and Windows (CI exercises all three) |
 | Profiles | Standard; Verified (adds governed Work Contracts and deterministic verification) |
@@ -26,13 +26,19 @@ Only the latest release is supported; fixes ship as a new patch version.
 
 ## Reporting a bug
 
-Open a GitHub issue with:
+Open a GitHub issue with **exactly this**, and nothing else:
 
-- the exact command you ran and its output (`ainative doctor --json` if the
-  command involves the lifecycle);
-- your OS, Python version and the installed stack version
-  (`ainative --version`);
-- what you expected and what happened.
+```
+ainative --version            # version(s)
+OS:                           # e.g. Windows 11, Ubuntu 24.04, macOS 15
+Python:                       # e.g. 3.11.9
+ainative doctor --json        # paste the JSON (redact paths that contain your name)
+the exact command you ran
+its output, with any token or credential replaced by <redacted>
+```
+
+For a machine-wide install, add `ainative machine status --json`; for a project,
+the command and output above are enough.
 
 Do **not** include secrets, tokens, credentials, personal file contents or the
 contents of `~/.claude/`, your vault, or `.ai-native/` directories beyond what
@@ -55,4 +61,7 @@ security or data-loss defect takes precedence over features.
 - Multi-Vault is **GUARDED**, not ENFORCED: it does not claim protection from a
   malicious process running as the same OS user outside governed paths.
 - Knowledge canonical auto-promotion is intentionally not shipped (K5 = STOP).
+- Machine-wide integration is repaired from what the manifest records: a
+  schema-1 manifest (written by releases before v2.4.0) repairs links, and
+  reports blocks and rendered files as unrepairable rather than guessing.
 - Workspace/global multi-user machine ACL isolation is not claimed or tested.
