@@ -34,7 +34,8 @@ STEP_TIMEOUT_SECONDS = 900
 # are per-transaction.
 VOLATILE = (".ai-native/lifecycle/state.json",
             ".ai-native/lifecycle/transactions",
-            ".ai-native/lifecycle/backups")
+            ".ai-native/lifecycle/backups",
+            ".git")
 
 
 class Failure(SystemExit):
