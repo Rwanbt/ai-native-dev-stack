@@ -58,7 +58,7 @@ class LocalReleaseFixture(LifecycleTestCase):
         # The mirror contract names archives exactly as the official release
         # does; a shorter name is a different release this stack refuses.
         self.archive = make_release_archive(
-            self.v2_tree, self.releases / "ainative-dev-stack-2.0.0.zip")
+            self.v2_tree, self.releases / "ainative-lifecycle-v2-2.0.0.zip")
         self.publish("2.0.0", self.archive)
         self.set_env(providerlib.PROVIDER_ENV, "local")
         self.set_env(providerlib.LOCAL_SOURCE_ENV, str(self.releases))
@@ -68,7 +68,7 @@ class LocalReleaseFixture(LifecycleTestCase):
         """A v1 bundle the current v1 project would be *at*, not moving to."""
 
         tree = build_distribution_tree(self.root / "dist-v1b", "1.0.0")
-        return make_release_archive(tree, self.releases / "ainative-dev-stack-1.0.0.zip")
+        return make_release_archive(tree, self.releases / "ainative-lifecycle-v2-1.0.0.zip")
 
     def publish(self, version: str, archive: Path, digest: str | None = None) -> None:
         payload = {"channels": {"stable": {
@@ -289,7 +289,7 @@ class UpdateRecovery(LocalReleaseFixture):
         newer = build_distribution_tree(self.root / "dist-v2b", "2.0.0",
                                         extra_skill="brand-new")
         archive = make_release_archive(
-            newer, self.releases / "ainative-dev-stack-2.0.0.zip")
+            newer, self.releases / "ainative-lifecycle-v2-2.0.0.zip")
         self.publish("2.0.0", archive)
 
         self.install("standard")

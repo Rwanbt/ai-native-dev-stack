@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     update_commands = update.add_subparsers(dest="update_command")
     update_check = update_commands.add_parser("check", help="Is a newer release available?")
     update_check.add_argument("--force", action="store_true", help="ignore the cache")
+    update_check.add_argument("--strict", action="store_true",
+                              help="exit non-zero when the source could not be consulted "
+                                   "(OFFLINE / CHECK_FAILED); for CI gates")
     _add_common(update_check, dry_run=False)
     update_rollback = update_commands.add_parser(
         "rollback", help="Restore the project assets the last update replaced.")
@@ -404,6 +407,10 @@ def _cmd_update(args: argparse.Namespace) -> int:
             _emit(outcome.to_record())
         else:
             print(outcome.message())
+        if args.strict and outcome.status in (updater.OFFLINE, updater.CHECK_FAILED):
+            # Exit 0 means "the answer is what it is", never "the source was
+            # reachable"; a CI gate that needs the second statement asks for it.
+            return EXIT_FAILED
         return EXIT_OK
     if args.update_command == "rollback":
         record = updater.rollback(project, dry_run=args.dry_run)

@@ -39,10 +39,12 @@ every technical detail out of it.
 
 Read these before reporting; several properties are deliberate and documented:
 
-- `docs/DISTRIBUTION-LIFECYCLE.md` and `docs/adr/0009` - what the lifecycle
-  defends against, and what SHA-256 integrity does and does not prove. Release
-  artifacts are integrity-verified, not cryptographically authenticated by a
-  maintainer signature (unless issue #24 changes that).
+- `docs/DISTRIBUTION-LIFECYCLE.md`, `docs/RELEASING.md` and `docs/adr/0009` -
+  what the lifecycle defends against, and what SHA-256 integrity does and does
+  not prove. Release artifacts carry a GitHub **build provenance attestation**
+  (`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`), which binds
+  them to the workflow, repository and commit that produced them; they are still
+  not signed by a human maintainer identity, and #24 tracks that distinction.
 - `stack/agents/anti-debt/docs/security-boundaries.md` - the anti-debt agent
   sandboxing and egress boundaries.
 - `docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md` - Knowledge/Auto-Memory

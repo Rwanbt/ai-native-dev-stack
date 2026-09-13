@@ -420,6 +420,13 @@ chain - git tag, `VERSION`, package metadata, wheel/sdist, bundle filename and
 bundle internal `VERSION` - is fail-closed: a tag that does not name the tree it
 points at cannot publish.
 
+Releases speak a versioned update protocol (v2): the lifecycle bundle is
+`ainative-lifecycle-v2-<version>.zip` and a runtime older than v2.2.2 cannot
+consume one even when a mirror hands it the file - the format itself refuses it.
+Every published artifact also carries a GitHub build-provenance attestation
+(`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`); SHA-256 alone
+still means integrity, not a human signature (see docs/RELEASING.md).
+
 ---
 
 ## Which profile should I choose?

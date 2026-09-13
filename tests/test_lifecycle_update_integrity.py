@@ -35,8 +35,8 @@ from ainative.lifecycle import state as statelib
 from ainative.lifecycle import updater as updaterlib
 from ainative.lifecycle.errors import LifecycleError
 
-BUNDLE_NAME = "ainative-dev-stack-2.0.0.zip"
-BUNDLE_URL = "https://example.invalid/ainative-dev-stack-2.0.0.zip"
+BUNDLE_NAME = "ainative-lifecycle-v2-2.0.0.zip"
+BUNDLE_URL = "https://example.invalid/ainative-lifecycle-v2-2.0.0.zip"
 RELEASE_URL = "https://example.invalid/releases/latest"
 
 

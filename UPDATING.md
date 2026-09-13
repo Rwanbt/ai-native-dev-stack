@@ -41,6 +41,13 @@ The refusal names both versions and prints the exact upgrade command.
 `ainative status --check-updates` and `ainative doctor --check-updates` still
 report what is available and say when the runtime must be upgraded first.
 
+Releases from the protocol v2 line cannot be consumed by a runtime older than
+v2.2.2 at all: the bundle is named `ainative-lifecycle-v2-<version>.zip` and its
+payload sits under `stack/`, which the old selector and the old extractor both
+refuse. That containment is deliberate - an old runtime must never apply a
+policy it does not know - and the only path forward is upgrading the CLI, then
+running `ainative update` in each project.
+
 ### What it guarantees
 
 1. **Your edits survive.** Every managed file carries the SHA-256 it had when

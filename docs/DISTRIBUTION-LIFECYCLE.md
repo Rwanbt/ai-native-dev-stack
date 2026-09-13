@@ -364,7 +364,16 @@ Preferences live in the install state:
 ```
 
 `AINATIVE_NO_UPDATE_CHECK=1` disables every network check — for CI and offline
-machines.
+machines. When `GITHUB_TOKEN` or `GH_TOKEN` is present in the environment, the
+check sends it as a bearer token (many users share one NAT address and hit the
+anonymous rate limit); the token is never logged, never written to the cache,
+and never included in an error message. A 403/429 answer is reported as a
+rate-limit diagnosis with the same remedy.
+
+`ainative update check` exits 0 whatever the answer: `exit 0` means "the answer
+is what it is", never "the source was reachable". A CI gate that needs the
+second statement runs `ainative update check --strict`, which exits 1 on
+`OFFLINE` / `CHECK_FAILED`.
 
 ### No network inside an authority command
 
@@ -390,8 +399,19 @@ wrong runtime, wrong version, bad digest, bad archive - leaves the project
 byte-identical, cache included.
 
 **The artifact, stated precisely.** The official provider consumes exactly one
-asset: the lifecycle bundle `ainative-dev-stack-<version>.zip` published beside
-the wheel and the sdist, named for the release's own version. A release whose
+asset: the lifecycle bundle `ainative-lifecycle-v2-<version>.zip` published
+beside the wheel and the sdist, named for the release's own version. Inside,
+a `lifecycle-protocol.json` document names the protocol version, the release
+version and the payload root (`stack/`), and the payload's `VERSION` is compared
+with the release again.
+
+**Containment of pre-2.2.2 runtimes, stated precisely.** Runtimes up to v2.2.2
+looked for `ainative-dev-stack-*.zip` and found their payload by taking the
+single top-level directory that held a `VERSION` file. A protocol v2 bundle
+matches neither rule, so such a runtime refuses it with zero project writes even
+when a mirror hands it the file directly. v2.2.2 itself refuses a v2 release at
+the runtime gate (`CLI_UPDATE_REQUIRED`) before the download. The documented
+path is always the same: upgrade the CLI first, then update each project. A release whose
 tag says 2.2.2 and whose bundle says 2.2.1 is refused with
 `UPDATE_VERSION_MISMATCH` before any download; so is a bundle whose internal
 `VERSION` file disagrees with the release it declared, and so is a local
@@ -562,6 +582,7 @@ Files the stack never wrote are in the "kept" column of every row.
 | Number | Source of truth | Changes when |
 |---|---|---|
 | Stack release | `VERSION` | a release is cut |
+| Update protocol | `provider.UPDATE_PROTOCOL_VERSION` | the bundle format changes (currently 2) |
 | Lifecycle state schema | `state.SCHEMA_VERSION` | `state.json`'s shape changes |
 | Work Plane runtime | `ainative_workplane.__version__` | the verdict engine is released |
 | Artifact schema | `contracts.SUPPORTED_SCHEMA_VERSIONS` | a Work Plane artifact changes shape |
