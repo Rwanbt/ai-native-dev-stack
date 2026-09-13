@@ -217,6 +217,9 @@ jobs:
       - name: Hook configuration, first-run policy and the machine-path gate
         run: python -m unittest tests.test_lifecycle_hook_config tests.test_lifecycle_permissions tests.test_personal_paths_gate -v
 
+      - name: Update transport, protocol v2 and the release gates
+        run: python -m unittest tests.test_lifecycle_update_transport tests.test_release_assets_gate -v
+
       - name: Non-vacuity — each guard must actually block
         # A protection nobody has seen refuse is a comment. This reverts each
         # guard in a scratch copy and asserts the matching test then fails.

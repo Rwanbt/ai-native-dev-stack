@@ -154,13 +154,11 @@ CASES = (
         guards="reversing an update must remove what it created, not only restore "
                "what it replaced",
         edits=(Edit("ainative/lifecycle/transaction.py",
-                    "        elif record.get(\"action\") == plannerlib.CREATE and target.is_file():\n"
-                    "            # Created by this transaction, so there is nothing to restore: the\n"
-                    "            # previous state did not have it. Leaving it behind is what made\n"
-                    "            # `update rollback` produce a v1 project holding v2's new files.\n"
-                    "            target.unlink(missing_ok=True)\n"
-                    "            removed.append(path)\n",
-                    "        elif False:\n            pass\n"),),
+                    "        elif (record.get(\"action\") in (plannerlib.CREATE, "
+                    "plannerlib.REGION_WRITE,\n"
+                    "                                       plannerlib.HOOK_WRITE)\n"
+                    "              and target.is_file()):\n",
+                    "        elif False:\n"),),
         test=("tests.test_lifecycle_update.UpdateRecovery"
               ".test_rollback_also_removes_the_files_the_update_created"),
     ),

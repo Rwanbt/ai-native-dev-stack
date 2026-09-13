@@ -229,6 +229,11 @@ class DogfoodWork:
 
     def commit(self, message: str) -> None:
         git(self.repo, "add", "-A")
+        # The repository ignores `.ai-native/` (its own local lifecycle state);
+        # in this scratch clone that state IS the governed material, so it is
+        # force-added. Without this the anchor was never committed and
+        # `verified_anchor` counted zero commits touching it (#137).
+        git(self.repo, "add", "-f", "-A", ".ai-native")
         pending = subprocess.run(["git", "-C", str(self.repo), "status", "--porcelain"],
                                  check=True, capture_output=True, text=True)
         if pending.stdout.strip():
