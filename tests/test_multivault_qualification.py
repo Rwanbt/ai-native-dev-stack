@@ -14,9 +14,21 @@ from ainative.multivault.authority_store import AuthorityStore
 from ainative.multivault.binding import WorkspaceDeclaration
 from ainative.multivault.capability import ControlLevel, Observation, ObservationMode
 from ainative.multivault.confinement import ResultConfinement
+from ainative.multivault.git_authority import (
+    ApprovedGitRemote,
+    GitTransportPolicy,
+    ObservedRepositoryIdentity,
+    ObservedTransport,
+    Visibility,
+)
 from ainative.multivault.mcp_adapter import McpOperation, ThinMcpAdapter
 from ainative.multivault.persistence import StoreHeader, admit_load, namespace_for
 from ainative.multivault.push_guard import DOMAIN_MISMATCH, GovernedPushAuthority
+from ainative.multivault.transfer_engine import (
+    PUSH_REF_DENIED,
+    GovernedTransferEngine,
+    TransferOutcome,
+)
 from ainative.multivault.resolver import resolve
 from ainative.multivault.runtime_authority import (
     ImmutableAuthoritativeSecurityState,
@@ -122,6 +134,58 @@ class GuardedQualificationMatrix(unittest.TestCase):
         first = authority_a.authorize(capability, "refs/heads/main aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n")
         self.assertEqual("ALLOW", first.decision)
         self.assertEqual("DENY", authority_a.authorize(capability, "refs/heads/main aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n").decision)
+
+    def test_out_of_allowlist_push_is_denied_before_any_repository_access(self):
+        engine = GovernedTransferEngine(
+            Path(tempfile.gettempdir()) / "mv21-missing-repository",
+            approved_remote=ApprovedGitRemote(
+                canonical_fetch_url="https://github.com/company/repo.git",
+                canonical_push_url="https://github.com/company/repo.git",
+                provider_type="github",
+                stable_repository_id="R_kgDOAAAAAA",
+                required_owner_org="company",
+                required_visibility_for_push=Visibility.PRIVATE,
+                allowed_refs=("refs/heads/main",),
+            ),
+            transport_policy=GitTransportPolicy(
+                protocol_allowlist=("https",),
+                transport_executable_identity="git",
+                proxy=None,
+                ssh_command=None,
+                credential_helper=None,
+                ssh_peer_policy="pinned",
+                tls_peer_policy="verified",
+                effective_transport_config_digest="digest",
+            ),
+            push_authority=GovernedPushAuthority("company-a", "checkout-company-a"),
+            classification=SecurityClassification.CONFIDENTIAL,
+        )
+        outcome = engine.begin_push(
+            source_oid="a" * 40,
+            expected_remote_base_oid="b" * 40,
+            target_ref="refs/heads/not-authorized",
+            exact_refspec="refs/heads/main:refs/heads/not-authorized",
+            observed_remote=ObservedRepositoryIdentity(
+                provider_type="github",
+                stable_repository_id="R_kgDOAAAAAA",
+                owner_org="company",
+                visibility=Visibility.PRIVATE,
+                effective_fetch_url="https://github.com/company/repo.git",
+                effective_push_url="https://github.com/company/repo.git",
+            ),
+            observed_transport=ObservedTransport(
+                protocol="https",
+                transport_executable_identity="git",
+                proxy=None,
+                ssh_command=None,
+                credential_helper=None,
+                effective_transport_config_digest="digest",
+            ),
+            expected_git_identity="Maintainer <maintainer@example.invalid>",
+        )
+        self.assertIsInstance(outcome, TransferOutcome)
+        self.assertEqual("DENY", outcome.decision)
+        self.assertEqual(PUSH_REF_DENIED, outcome.code)
 
     def test_repository_and_semantic_admission_deny_without_probe_evidence(self):
         surfaces = ()

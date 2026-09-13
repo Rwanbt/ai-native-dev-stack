@@ -195,6 +195,33 @@ class CliExecSyncProductTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("ALLOW OK", output)
 
+    def test_sync_push_outside_allowed_refs_is_denied_without_any_transfer(self):
+        restricted = self.base / "git-state-restricted.json"
+        state = json.loads(self.git_state.read_text(encoding="utf-8"))
+        state["approved_remote"]["allowed_refs"] = ["refs/heads/main"]
+        restricted.write_text(json.dumps(state), encoding="utf-8")
+        observed = self.base / "observed-push.json"
+        observed.write_text(self.observed_document(), encoding="utf-8")
+        source = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        base = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "refs/remotes/origin/main"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        code, output = self.run_cli([
+            "sync", "--store", str(self.store.path), "--domain", "company-a",
+            "--vault-id", "vault-a", "--checkout-id", "checkout-a",
+            "--vault", str(self.vault), "--checkout", str(self.checkout), "--repo", str(self.repo),
+            "--git-state", str(restricted), "--observed", str(observed),
+            "--push", "--source-oid", source, "--expected-base-oid", base,
+            "--target-ref", "refs/heads/not-authorized",
+            "--refspec", "HEAD:refs/heads/not-authorized",
+            "--git-identity", "Maintainer <maintainer@example.invalid>",
+        ])
+        self.assertEqual(1, code)
+        self.assertIn("AINATIVE_PUSH_REF_DENIED", output)
+        refs = subprocess.run(["git", "-C", str(self.origin), "for-each-ref", "--format=%(refname)"],
+                              capture_output=True, text=True, check=True).stdout
+        self.assertNotIn("refs/heads/not-authorized", refs)
+
     def test_sync_mismatched_remote_is_denied_by_the_engine(self):
         observed = self.base / "observed-bad.json"
         observed.write_text(self.observed_document(url="file:///C:/elsewhere/repo"), encoding="utf-8")
