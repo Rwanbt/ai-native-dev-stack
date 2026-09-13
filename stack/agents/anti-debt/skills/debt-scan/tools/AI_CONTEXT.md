@@ -21,7 +21,14 @@ linters but degrade gracefully (warnings, not crashes) when a tool is absent.
   (e.g. rule code, AST hash, import name) — otherwise they collide and dedup drops one.
 - `SECRET_PATTERNS` is centralized in `finding_common` — add a pattern ONCE there,
   every scanner inherits it.
+- Secret values are identified by `finding_common.secret_fingerprint` (SHA-256,
+  12 hex digits). Never persist a preview, a prefix or the raw value in an id,
+  description, evidence or warning: reports are expected to be shareable and
+  committed (AUD-203).
 - A missing external tool must return a `{"warning": ...}` entry, never raise.
+  The subprocess call and the parser call are separate: missing binary,
+  timeout and non-zero exit degrade to warnings; a defect in a parser raises
+  and fails the scan (#127 class).
 
 ## Forbidden
 - Never silently narrow scope: a "complete" scan covers code+security+dependencies
@@ -32,8 +39,11 @@ linters but degrade gracefully (warnings, not crashes) when a tool is absent.
 ## Common failure modes
 - Secret detection only runs in the heuristic path (linter absent) — if ruff is
   installed, provider-key detection comes from `scan_security` (trufflehog), not here.
-- On Windows + `shell=True`, a missing binary returns rc=1 (not FileNotFound) —
-  `run_scanner` does an explicit `shutil.which` check first.
+- Execution is `shell=False` with native argv (#127). On Windows, a
+  `.cmd`/`.bat` shim (npx, mvn, gradle) cannot be handed to CreateProcess, so
+  `scan_code.executable_argv` routes exactly those through `cmd /c` with the
+  resolved path, every argument still a separate argv element. Missing
+  binaries are caught by the explicit `shutil.which` check before the spawn.
 
 ## See also
 - `../../../tools/finding_common.py`, `../../../taxonomy/debt-categories.yaml`,

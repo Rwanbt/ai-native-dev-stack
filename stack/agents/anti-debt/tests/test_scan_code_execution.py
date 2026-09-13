@@ -64,7 +64,10 @@ def test_run_scanner_uses_native_argv_and_no_shell():
 def test_every_declared_scanner_passes_its_argv_unchanged():
     root = Path(__file__).parent
     for parser, argv in SCANNER_ARGS.items():
-        calls, fake_run = _capture_run(returncode=1, stdout="[]")
+        # Empty stdout: this test is about argv, and a JSON array is not a
+        # line-oriented clippy output - feeding it one on purpose is the
+        # parser-defect test below, which now (correctly) raises.
+        calls, fake_run = _capture_run(returncode=1, stdout="")
         with mock.patch.object(scan_code.subprocess, "run", fake_run), \
              mock.patch.object(scan_code.shutil, "which", lambda name: f"/usr/bin/{name}"):
             scan_code.run_scanner(root, argv, parser)
@@ -96,6 +99,52 @@ def test_a_timeout_degrades_to_a_warning():
          mock.patch.object(scan_code.shutil, "which", lambda name: f"/usr/bin/{name}"):
         findings = scan_code.run_scanner(Path("."), SCANNER_ARGS["ruff"], "ruff")
     assert findings == [{"warning": "scanner timed out after 300s"}], findings
+
+
+def test_a_parser_defect_fails_the_scan_instead_of_degrading():
+    """The #127 class: a parser bug must not read as a scanner warning.
+
+    `line_start` read as a mapping raised AttributeError and the broad except
+    turned every clippy finding into a warning. The boundary is explicit now:
+    external failures degrade above, parser defects raise here.
+    """
+
+    root = Path(__file__).parent
+    calls, fake_run = _capture_run(returncode=0, stdout='["not-an-object"]')
+    with mock.patch.object(scan_code.subprocess, "run", fake_run), \
+         mock.patch.object(scan_code.shutil, "which", lambda name: f"/usr/bin/{name}"):
+        try:
+            scan_code.run_scanner(root, SCANNER_ARGS["ruff"], "ruff")
+        except AttributeError:
+            return
+    raise AssertionError("a parser defect was converted into a scanner warning")
+
+
+def test_an_unrunnable_binary_still_degrades_to_a_warning():
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    with mock.patch.object(scan_code.subprocess, "run", fake_run), \
+         mock.patch.object(scan_code.shutil, "which", lambda name: f"/usr/bin/{name}"):
+        findings = scan_code.run_scanner(Path("."), SCANNER_ARGS["ruff"], "ruff")
+    assert findings and "could not run" in findings[0]["warning"], findings
+
+
+def test_a_clippy_line_start_that_is_not_an_int_is_skipped_not_raised():
+    """The exact #127 regression input: a non-integer line_start."""
+
+    line = json.dumps({
+        "reason": "compiler-message",
+        "message": {
+            "code": {"code": "clippy::x"},
+            "message": "y",
+            "spans": [{"file_name": "f.rs", "line_start": {"unexpected": True},
+                       "is_primary": True}],
+        },
+    })
+    findings = scan_code.normalize_clippy(line, Path("."))
+    assert len(findings) == 1, findings
+    assert findings[0]["location"]["lines"] == "?", findings[0]["location"]
 
 
 def test_windows_cmd_shims_go_through_cmd_without_a_shell_string():

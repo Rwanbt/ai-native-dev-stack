@@ -256,25 +256,26 @@ def run_scanner(root: Path, argv, parser: str) -> list[dict]:
             timeout=300,
             shell=False,
         )
-        # ruff + clippy return nonzero when issues found — that's OK
-        if result.returncode not in (0, 1):
-            return [{
-                "warning": f"scanner exited with code {result.returncode}",
-                "stderr_tail": (result.stderr or "")[-500:],
-            }]
-        normalize = PARSERS.get(parser)
-        if normalize is None:
-            return [{"warning": f"no parser for {parser}"}]
-        return normalize(result.stdout, root)
     except subprocess.TimeoutExpired:
-        return [{"warning": f"scanner timed out after 300s"}]
-    except FileNotFoundError as e:
+        return [{"warning": "scanner timed out after 300s"}]
+    except OSError as error:
         return [{
-            "warning": f"scanner binary not found: {e.filename}",
+            "warning": f"scanner could not run: {error}",
             "recommendation": f"install the scanner to enable {parser} support",
         }]
-    except Exception as e:
-        return [{"warning": f"scanner failed: {type(e).__name__}: {e}"}]
+    # ruff + clippy return nonzero when issues found — that's OK
+    if result.returncode not in (0, 1):
+        return [{
+            "warning": f"scanner exited with code {result.returncode}",
+            "stderr_tail": (result.stderr or "")[-500:],
+        }]
+    normalize = PARSERS.get(parser)
+    if normalize is None:
+        return [{"warning": f"no parser for {parser}"}]
+    # Deliberately unguarded: a parser defect (the clippy line_start
+    # AttributeError of #127) must surface as a failed scan, not as a
+    # per-scanner warning that reads like a missing tool.
+    return normalize(result.stdout, root)
 
 
 def _augment_python(root: Path, findings: list) -> list:
