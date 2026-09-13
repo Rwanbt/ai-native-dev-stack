@@ -543,96 +543,105 @@ def _machine_status_text(report: dict) -> str:
     return "\n".join(lines)
 
 
-def _cmd_machine(args: argparse.Namespace) -> int:
+def _machine_vault_pair(args: argparse.Namespace) -> tuple[Path | None, str | None]:
+    from .lifecycle import machine_install
+
+    raw_vault = getattr(args, "vault", None) or os.environ.get("OBSIDIAN_VAULT")
+    slug = getattr(args, "project_slug", None) or os.environ.get("OBSIDIAN_PROJECT_SLUG")
+    vault = Path(raw_vault).expanduser() if raw_vault else None
+    if (vault is None) != (slug is None):
+        raise LifecycleError(
+            "MACHINE_VAULT_PAIR_REQUIRED",
+            "--vault and --project-slug must be given together (or both "
+            "configured through OBSIDIAN_VAULT and OBSIDIAN_PROJECT_SLUG)")
+    if slug is not None and not machine_install.SLUG_RE.match(slug):
+        raise LifecycleError("MACHINE_SLUG_INVALID",
+                             f"{slug!r} does not match the v4 slug grammar")
+    if vault is not None and not (vault / "AGENTS.md").is_file():
+        raise LifecycleError("MACHINE_VAULT_UNREADABLE",
+                             f"{vault} does not look like a vault (no AGENTS.md); "
+                             "nothing was written")
+    return vault, slug
+
+
+def _machine_init(args: argparse.Namespace, home: Path) -> int:
+    from .lifecycle import machine_install
+    from .lifecycle import source as sourcelib
+
+    stack = sourcelib.resolve().root
+    vault, slug = _machine_vault_pair(args)
+    report = machine_install.install(
+        home, stack, vault=vault, slug=slug,
+        remove_vault_block=args.remove_vault_block,
+        dry_run=args.dry_run,
+        printer=(lambda *_a, **_k: None) if args.json else print)
+    if args.json:
+        _emit({"operation": "machine init", "home": str(home),
+               "stack_root": report.stack_root, "changes": report.changes,
+               "errors": report.errors, "assets": report.assets,
+               "dry_run": report.dry_run,
+               "manifest": str(report.manifest) if report.manifest else None})
+    else:
+        mode = "(dry-run) " if report.dry_run else ""
+        print(f"{mode}machine init: {report.changes} change(s), "
+              f"{report.errors} issue(s), {report.assets} asset(s) recorded")
+        if report.manifest:
+            print(f"manifest: {report.manifest}")
+    return EXIT_OK if report.errors == 0 else EXIT_FAILED
+
+
+def _machine_status(args: argparse.Namespace, home: Path, command: str) -> int:
     from .lifecycle import machine as machinelib
+    from .lifecycle import machine_health
 
-    home = _machine_home(args)
-    command = args.machine_command
-
-    if command == "init":
-        from .lifecycle import machine_install
-        from .lifecycle import source as sourcelib
-
-        stack = sourcelib.resolve().root
-        raw_vault = getattr(args, "vault", None) or os.environ.get("OBSIDIAN_VAULT")
-        slug = getattr(args, "project_slug", None) or os.environ.get("OBSIDIAN_PROJECT_SLUG")
-        vault = Path(raw_vault).expanduser() if raw_vault else None
-        if (vault is None) != (slug is None):
-            raise LifecycleError(
-                "MACHINE_VAULT_PAIR_REQUIRED",
-                "--vault and --project-slug must be given together (or both "
-                "configured through OBSIDIAN_VAULT and OBSIDIAN_PROJECT_SLUG)")
-        if slug is not None and not machine_install.SLUG_RE.match(slug):
-            raise LifecycleError("MACHINE_SLUG_INVALID",
-                                 f"{slug!r} does not match the v4 slug grammar")
-        if vault is not None and not (vault / "AGENTS.md").is_file():
-            raise LifecycleError("MACHINE_VAULT_UNREADABLE",
-                                 f"{vault} does not look like a vault (no AGENTS.md); "
-                                 "nothing was written")
-        report = machine_install.install(
-            home, stack, vault=vault, slug=slug,
-            remove_vault_block=args.remove_vault_block,
-            dry_run=args.dry_run,
-            printer=(lambda *_a, **_k: None) if args.json else print)
+    try:
+        report = machine_health.status(home)
+    except machinelib.MachineLifecycleError as refusal:
         if args.json:
-            _emit({"operation": "machine init", "home": str(home),
-                   "stack_root": report.stack_root, "changes": report.changes,
-                   "errors": report.errors, "assets": report.assets,
-                   "dry_run": report.dry_run,
-                   "manifest": str(report.manifest) if report.manifest else None})
+            _emit({"operation": f"machine {command}", "ok": False,
+                   "error": str(refusal)})
         else:
-            mode = "(dry-run) " if report.dry_run else ""
-            print(f"{mode}machine init: {report.changes} change(s), "
-                  f"{report.errors} issue(s), {report.assets} asset(s) recorded")
-            if report.manifest:
-                print(f"manifest: {report.manifest}")
-        return EXIT_OK if report.errors == 0 else EXIT_FAILED
+            print(f"refused: {refusal}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    if args.json:
+        _emit({"operation": f"machine {command}", **report})
+    else:
+        print(_machine_status_text(report))
+    if command == "status":
+        return EXIT_OK
+    return EXIT_OK if report["healthy"] else EXIT_FAILED
 
-    if command in ("status", "doctor"):
-        from .lifecycle import machine_health
 
-        try:
-            report = machine_health.status(home)
-        except machinelib.MachineLifecycleError as refusal:
-            if args.json:
-                _emit({"operation": f"machine {command}", "ok": False,
-                       "error": str(refusal)})
-            else:
-                print(f"refused: {refusal}", file=sys.stderr)
-            return EXIT_INVALID_REQUEST
+def _machine_repair(args: argparse.Namespace, home: Path) -> int:
+    from .lifecycle import machine as machinelib
+    from .lifecycle import machine_health
+
+    try:
+        record = machine_health.repair(home, dry_run=args.dry_run)
+    except machinelib.MachineLifecycleError as refusal:
         if args.json:
-            _emit({"operation": f"machine {command}", **report})
+            _emit({"operation": "machine repair", "ok": False,
+                   "error": str(refusal)})
         else:
-            print(_machine_status_text(report))
-        if command == "status":
-            return EXIT_OK
-        return EXIT_OK if report["healthy"] else EXIT_FAILED
+            print(f"refused: {refusal}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    if args.json:
+        _emit({"operation": "machine repair", **record})
+    else:
+        print("(dry-run — nothing was written)" if record["dry_run"]
+              else "repair complete")
+        print(f"  repaired:     {len(record['repaired'])}")
+        print(f"  unrepairable: {len(record['unrepairable'])}")
+        print(f"  preserved:    {len(record['preserved'])}")
+        for item in record["unrepairable"]:
+            print(f"  UNREPAIRABLE  {item['path']}  {item['detail']}")
+        for item in record["preserved"]:
+            print(f"  PRESERVED     {item['path']}  ({item['state']})")
+    return EXIT_FAILED if record["unrepairable"] else EXIT_OK
 
-    if command == "repair":
-        from .lifecycle import machine_health
 
-        try:
-            record = machine_health.repair(home, dry_run=args.dry_run)
-        except machinelib.MachineLifecycleError as refusal:
-            if args.json:
-                _emit({"operation": "machine repair", "ok": False,
-                       "error": str(refusal)})
-            else:
-                print(f"refused: {refusal}", file=sys.stderr)
-            return EXIT_INVALID_REQUEST
-        if args.json:
-            _emit({"operation": "machine repair", **record})
-        else:
-            print("(dry-run ? nothing was written)" if record["dry_run"]
-                  else "repair complete")
-            print(f"  repaired:     {len(record['repaired'])}")
-            print(f"  unrepairable: {len(record['unrepairable'])}")
-            print(f"  preserved:    {len(record['preserved'])}")
-            for item in record["unrepairable"]:
-                print(f"  UNREPAIRABLE  {item['path']}  {item['detail']}")
-            for item in record["preserved"]:
-                print(f"  PRESERVED     {item['path']}  ({item['state']})")
-        return EXIT_FAILED if record["unrepairable"] else EXIT_OK
+def _machine_uninstall(args: argparse.Namespace, home: Path) -> int:
+    from .lifecycle import machine as machinelib
 
     try:
         record = machinelib.uninstall(home, dry_run=args.dry_run)
@@ -646,7 +655,7 @@ def _cmd_machine(args: argparse.Namespace) -> int:
     if args.json:
         _emit(record)
     else:
-        mode = "(dry-run ? nothing was written) " if record["dry_run"] else ""
+        mode = "(dry-run — nothing was written) " if record["dry_run"] else ""
         print(f"{mode}Machine uninstall: {len(record['removed'])} removal(s), "
               f"{len(record['preserved'])} preserved, "
               f"{len(record['missing'])} already absent.")
@@ -657,6 +666,18 @@ def _cmd_machine(args: argparse.Namespace) -> int:
         if record.get("detail"):
             print(f"  note: {record['detail']}")
     return EXIT_OK
+
+
+def _cmd_machine(args: argparse.Namespace) -> int:
+    home = _machine_home(args)
+    command = args.machine_command
+    if command == "init":
+        return _machine_init(args, home)
+    if command in ("status", "doctor"):
+        return _machine_status(args, home, command)
+    if command == "repair":
+        return _machine_repair(args, home)
+    return _machine_uninstall(args, home)
 
 
 def _cmd_setup(args: argparse.Namespace) -> int:

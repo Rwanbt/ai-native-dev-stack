@@ -122,6 +122,96 @@ def _render_bytes(template: Path, stack_root: Path) -> bytes:
     wanted = wanted.replace("{{STACK_ROOT}}", str(stack_root))
     return wanted.encode("utf-8")
 
+def _repair_missing_link(target: Path, asset: dict, dry_run: bool) -> tuple[str, str]:
+    source = Path(str(asset.get("source", "")))
+    if not source.exists() and not source.is_symlink():
+        return "unrepairable", f"the recorded source is gone: {source}"
+    if dry_run:
+        return "repaired", ""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        ok, why = _create_link(source, target)
+    except OSError as error:
+        ok, why = False, str(error)
+    return ("repaired", "") if ok else ("unrepairable", why)
+
+
+def _repair_missing_rendered(target: Path, asset: dict,
+                             stack_root: Path | None, dry_run: bool) -> tuple[str, str]:
+    if stack_root is None:
+        return "unrepairable", "manifest recorded no stack root"
+    template, why = _template_reference(stack_root, asset.get("template"))
+    if template is None:
+        return "unrepairable", why
+    payload = _render_bytes(template, stack_root)
+    recorded = asset.get("digest")
+    if recorded and _digest_bytes(payload) != recorded:
+        return "unrepairable", ("the distribution's template no longer produces "
+                                "the recorded digest; refusing to write a "
+                                "different file")
+    if dry_run:
+        return "repaired", ""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+        return "repaired", ""
+    except OSError as error:
+        return "unrepairable", str(error)
+
+
+def _block_text_for(asset: dict, stack_root: Path) -> tuple[str | None, str]:
+    begin = str(asset.get("begin", ""))
+    if begin == METHOD_BEGIN and asset.get("label") == "method block":
+        heading = asset.get("heading")
+        if not isinstance(heading, str) or not heading:
+            return None, "no heading recorded by an older schema"
+        return method_block_text(stack_root, heading), ""
+    if begin == VAULT_BEGIN and asset.get("label") == "vault block":
+        vault, slug = asset.get("vault"), asset.get("slug")
+        if not isinstance(vault, str) or not isinstance(slug, str):
+            return None, "vault pair not recorded by an older schema"
+        return vault_block_text(Path(vault), slug), ""
+    return None, f"unrecognized block record {begin!r}"
+
+
+def _repair_missing_block(target: Path, asset: dict,
+                          stack_root: Path | None, dry_run: bool) -> tuple[str, str]:
+    if stack_root is None:
+        return "unrepairable", "manifest recorded no stack root"
+    block, why = _block_text_for(asset, stack_root)
+    if block is None:
+        return "unrepairable", why
+    if dry_run:
+        return "repaired", ""
+    try:
+        current = target.read_text(encoding="utf-8") if target.is_file() else ""
+        preamble = asset.get("preamble")
+        if not current and isinstance(preamble, str) and preamble:
+            current = preamble.rstrip() + "\n"
+        separator = "\n\n" if current.strip() else ""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(current.rstrip() + separator + block + "\n",
+                          encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        return "unrepairable", str(error)
+    begin, end = str(asset.get("begin", "")), str(asset.get("end", ""))
+    if _block_state(target, begin, end)[0] == STATE_OK:
+        return "repaired", ""
+    return "unrepairable", "the block did not verify after the write"
+
+
+def _repair_missing(target: Path, asset: dict, stack_root: Path | None,
+                    dry_run: bool) -> tuple[str, str]:
+    kind = asset.get("kind")
+    if kind == "link":
+        return _repair_missing_link(target, asset, dry_run)
+    if kind == "rendered":
+        return _repair_missing_rendered(target, asset, stack_root, dry_run)
+    if kind == "block":
+        return _repair_missing_block(target, asset, stack_root, dry_run)
+    return "unrepairable", f"cannot repair kind {kind!r}"
+
+
 def repair(home: Path, *, dry_run: bool = False) -> dict:
     """Re-create what the manifest proves this stack installed, and only that.
 
@@ -146,112 +236,23 @@ def repair(home: Path, *, dry_run: bool = False) -> dict:
     preserved: list[dict] = []
     for asset in manifest["assets"]:
         target = _asset_path(home, asset)
-        relative = _relative(home, target) if target is not None else str(asset.get("path"))
+        relative = (_relative(home, target) if target is not None
+                    else str(asset.get("path")))
         if target is None:
-            unrepairable.append({"path": relative, "detail": "record has no usable path"})
+            unrepairable.append({"path": relative,
+                                 "detail": "record has no usable path"})
             continue
         state, detail = asset_state(home, asset)
-        kind = asset.get("kind")
         if state == STATE_OK:
             continue
         if state != STATE_MISSING:
             preserved.append({"path": relative, "state": state, "detail": detail})
             continue
-
-        if kind == "link":
-            source = Path(str(asset.get("source", "")))
-            if not source.exists() and not source.is_symlink():
-                unrepairable.append({"path": relative,
-                                     "detail": f"the recorded source is gone: {source}"})
-                continue
-            if dry_run:
-                repaired.append(relative)
-                continue
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                ok, why = _create_link(source, target)
-            except OSError as error:
-                ok, why = False, str(error)
-            (repaired.append(relative) if ok
-             else unrepairable.append({"path": relative, "detail": why}))
-            continue
-
-        if kind == "rendered":
-            if stack_root is None:
-                unrepairable.append({"path": relative,
-                                     "detail": "manifest recorded no stack root"})
-                continue
-            template, why = _template_reference(stack_root, asset.get("template"))
-            if template is None:
-                unrepairable.append({"path": relative, "detail": why})
-                continue
-            payload = _render_bytes(template, stack_root)
-            recorded = asset.get("digest")
-            if recorded and _digest_bytes(payload) != recorded:
-                unrepairable.append(
-                    {"path": relative,
-                     "detail": "the distribution's template no longer produces the "
-                               "recorded digest; refusing to write a different file"})
-                continue
-            if dry_run:
-                repaired.append(relative)
-                continue
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(payload)
-                repaired.append(relative)
-            except OSError as error:
-                unrepairable.append({"path": relative, "detail": str(error)})
-            continue
-
-        if kind == "block":
-            if stack_root is None:
-                unrepairable.append({"path": relative,
-                                     "detail": "manifest recorded no stack root"})
-                continue
-            begin = str(asset.get("begin", ""))
-            end = str(asset.get("end", ""))
-            if begin == METHOD_BEGIN and asset.get("label") == "method block":
-                heading = asset.get("heading")
-                if not isinstance(heading, str) or not heading:
-                    unrepairable.append({"path": relative,
-                                         "detail": "no heading recorded by an older schema"})
-                    continue
-                block = method_block_text(stack_root, heading)
-            elif begin == VAULT_BEGIN and asset.get("label") == "vault block":
-                vault, slug = asset.get("vault"), asset.get("slug")
-                if not isinstance(vault, str) or not isinstance(slug, str):
-                    unrepairable.append({"path": relative,
-                                         "detail": "vault pair not recorded by an older schema"})
-                    continue
-                block = vault_block_text(Path(vault), slug)
-            else:
-                unrepairable.append({"path": relative,
-                                     "detail": f"unrecognized block record {begin!r}"})
-                continue
-            if dry_run:
-                repaired.append(relative)
-                continue
-            try:
-                current = target.read_text(encoding="utf-8") if target.is_file() else ""
-                preamble = asset.get("preamble")
-                if not current and isinstance(preamble, str) and preamble:
-                    current = preamble.rstrip() + "\n"
-                separator = "\n\n" if current.strip() else ""
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(current.rstrip() + separator + block + "\n",
-                                  encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as error:
-                unrepairable.append({"path": relative, "detail": str(error)})
-                continue
-            if _block_state(target, begin, end)[0] == STATE_OK:
-                repaired.append(relative)
-            else:
-                unrepairable.append({"path": relative,
-                                     "detail": "the block did not verify after the write"})
-            continue
-
-        unrepairable.append({"path": relative, "detail": f"cannot repair kind {kind!r}"})
+        outcome, why = _repair_missing(target, asset, stack_root, dry_run)
+        if outcome == "repaired":
+            repaired.append(relative)
+        else:
+            unrepairable.append({"path": relative, "detail": why})
 
     record = {"operation": "machine repair", "dry_run": dry_run,
               "repaired": sorted(repaired), "unrepairable": unrepairable,
