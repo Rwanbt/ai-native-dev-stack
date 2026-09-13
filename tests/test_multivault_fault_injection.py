@@ -19,6 +19,8 @@ FAULT_MATRIX = {
     "semantic observer unavailable": ("test_multivault_semantic", "unavailable_observer"),
     "unapproved secondary remote": ("test_multivault_transfer_engine", "unapproved_secondary_remote"),
     "hooks path drift mid-push": ("test_multivault_transfer_engine", "hooks_path_change"),
+    "push target outside allowed refs": ("test_multivault_transfer_engine", "outside_allowed_refs"),
+    "push refspec destination mismatch": ("test_multivault_transfer_engine", "destination_must_match"),
     "unauthorized hook never executes": ("test_multivault_transfer_engine", "hook_is_never_executed"),
     "ambient git vector injection": ("test_multivault_git_scanner", "forbidden_ambient"),
     "submodule network attempt": ("test_multivault_transfer_engine", "submodule"),

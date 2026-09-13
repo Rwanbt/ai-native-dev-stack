@@ -14,6 +14,7 @@ outcomes. Never bypass them to "make it work".
 | AINATIVE_PUSH_LOCK_HELD | another governed push is in progress | wait; if stale, inspect the common git dir lock file |
 | AINATIVE_PUSH_SCAN_LEAK / SCAN_INCOMPLETE | candidate scan found policy findings or could not complete | remove the finding or investigate; INCOMPLETE means deny |
 | AINATIVE_FORCE_PUSH_DENIED / REF_DELETION_DENIED | force or delete refspec | explicit trusted policy + interactive approval |
+| AINATIVE_PUSH_REF_DENIED | target ref outside the approved remote's `allowed_refs`, or the refspec destination does not equal the push intent's `target_ref` | fix the approved declaration or push the approved ref; never widen the push to bypass it |
 | AINATIVE_FETCH/PUSH_DESTINATION_DENIED | remote identity/transport mismatch | fix the approved declaration or the repository remote |
 | AINATIVE_SECONDARY_GIT_NETWORK_DENIED | promisor/partial configuration | remove the configuration; lazy fetch stays denied |
 | AINATIVE_LFS_NETWORK_DENIED | LFS configuration or .lfsconfig | sensitive V1 never permits LFS network |

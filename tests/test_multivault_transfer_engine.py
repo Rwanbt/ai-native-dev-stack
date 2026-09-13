@@ -19,6 +19,7 @@ from ainative.multivault.transfer_engine import (
     LFS_NETWORK_DENIED,
     PUSH_DESTINATION_DENIED,
     PUSH_LOCK_HELD,
+    PUSH_REF_DENIED,
     PUSH_SCAN_LEAK,
     REF_DELETION_DENIED,
     SECONDARY_NETWORK_DENIED,
@@ -59,7 +60,7 @@ def build_fixture(tmp: Path):
     return origin, work, seed
 
 
-def approved_remote(url: str) -> ApprovedGitRemote:
+def approved_remote(url: str, *, allowed_refs: tuple[str, ...] = ("refs/heads/*",)) -> ApprovedGitRemote:
     return ApprovedGitRemote(
         canonical_fetch_url=url,
         canonical_push_url=url,
@@ -67,7 +68,7 @@ def approved_remote(url: str) -> ApprovedGitRemote:
         stable_repository_id="repo-1",
         required_owner_org="company",
         required_visibility_for_push=Visibility.PRIVATE,
-        allowed_refs=("refs/heads/*",),
+        allowed_refs=allowed_refs,
     )
 
 
@@ -120,11 +121,12 @@ class TransferEngineTests(unittest.TestCase):
     def tearDown(self):
         self._temporary.cleanup()
 
-    def engine(self, *, url=None, classification=SecurityClassification.CONFIDENTIAL) -> GovernedTransferEngine:
+    def engine(self, *, url=None, classification=SecurityClassification.CONFIDENTIAL,
+               allowed_refs=("refs/heads/*",)) -> GovernedTransferEngine:
         remote_url = url or self.url
         return GovernedTransferEngine(
             self.work,
-            approved_remote=approved_remote(remote_url),
+            approved_remote=approved_remote(remote_url, allowed_refs=allowed_refs),
             transport_policy=transport_policy(),
             push_authority=GovernedPushAuthority("company-a", "checkout-a"),
             classification=classification,
@@ -139,13 +141,14 @@ class TransferEngineTests(unittest.TestCase):
             verified_at="2026-09-11T12:00:00Z",
         )
 
-    def begin_push(self, engine, *, refspec="refs/heads/main:refs/heads/main", observed=None, transport=None):
+    def begin_push(self, engine, *, refspec="refs/heads/main:refs/heads/main", target_ref="refs/heads/main",
+                   observed=None, transport=None):
         source = run_git(self.work, "rev-parse", "HEAD").stdout.strip().decode()
         base = run_git(self.work, "rev-parse", "refs/remotes/origin/main").stdout.strip().decode()
         return engine.begin_push(
             source_oid=source,
             expected_remote_base_oid=base,
-            target_ref="refs/heads/main",
+            target_ref=target_ref,
             exact_refspec=refspec,
             observed_remote=observed if observed is not None else observed_remote(self.url),
             observed_transport=transport if transport is not None else observed_transport(),
@@ -212,6 +215,42 @@ class TransferEngineTests(unittest.TestCase):
         self.assertEqual(FORCE_PUSH_DENIED, force.code)
         deletion = self.begin_push(self.engine(), refspec=":refs/heads/main")
         self.assertEqual(REF_DELETION_DENIED, deletion.code)
+
+    def test_push_outside_allowed_refs_is_denied_before_any_transfer(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        outcome = self.begin_push(
+            self.engine(allowed_refs=("refs/heads/main",)),
+            refspec="refs/heads/main:refs/heads/not-authorized",
+            target_ref="refs/heads/not-authorized",
+        )
+        self.assertEqual("DENY", outcome.decision)
+        self.assertEqual(PUSH_REF_DENIED, outcome.code)
+        refs = run_git(self.origin, "for-each-ref", "--format=%(refname)").stdout.decode()
+        self.assertNotIn("refs/heads/not-authorized", refs)
+        self.assertFalse((self.work / ".git" / "ainative-push.lock").exists())
+
+    def test_refspec_destination_must_match_the_intent_target_ref(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        outcome = self.begin_push(
+            self.engine(),
+            refspec="refs/heads/main:refs/heads/not-authorized",
+            target_ref="refs/heads/main",
+        )
+        self.assertEqual("DENY", outcome.decision)
+        self.assertEqual(PUSH_REF_DENIED, outcome.code)
+        refs = run_git(self.origin, "for-each-ref", "--format=%(refname)").stdout.decode()
+        self.assertNotIn("refs/heads/not-authorized", refs)
+
+    def test_exact_allowed_ref_push_still_completes(self):
+        commit_file(self.work, "feature.txt", b"feature\n")
+        engine = self.engine(allowed_refs=("refs/heads/main",))
+        preparation = self.begin_push(engine)
+        self.assertIsInstance(preparation, PushPreparation)
+        outcome = preparation.execute()
+        self.assertEqual("ALLOW", outcome.decision)
+        source = run_git(self.work, "rev-parse", "HEAD").stdout.strip().decode()
+        origin_head = run_git(self.origin, "rev-parse", "refs/heads/main").stdout.strip().decode()
+        self.assertEqual(source, origin_head)
 
     def test_push_scan_leak_is_denied_before_any_transfer(self):
         commit_file(self.work, "secret.txt", b"token = ghp_abcdefghijklmnop\n")
