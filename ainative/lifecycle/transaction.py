@@ -26,6 +26,8 @@ from typing import Callable, Sequence
 
 from . import digest as digestlib
 from . import external
+from . import external_json
+from . import hooks as hookslib
 from . import manifest as manifestlib
 from . import planner as plannerlib
 from . import state as statelib
@@ -298,11 +300,34 @@ class Applier:
             return self._file_payload(change)
         if change.action == plannerlib.REMOVE:
             return self.DELETED
-        if change.action == plannerlib.BLOCK_WRITE:
+        if change.action in (plannerlib.REGION_WRITE, plannerlib.BLOCK_WRITE):
             return self._block_outcome(change, target, remove=False)
-        if change.action == plannerlib.BLOCK_REMOVE:
+        if change.action in (plannerlib.REGION_REMOVE, plannerlib.BLOCK_REMOVE):
             return self._block_outcome(change, target, remove=True)
+        if change.action == plannerlib.HOOK_WRITE:
+            return self._hook_outcome(change, target, remove=False)
+        if change.action == plannerlib.HOOK_REMOVE:
+            return self._hook_outcome(change, target, remove=True)
         return None
+
+    def _hook_outcome(self, change: Change, target: Path, *, remove: bool):
+        """The merged document bytes, or DELETED / None as for any other change."""
+
+        component = self.distribution.component(change.component)
+        selected = plannerlib.hook_spec(self.project, component)
+        operation = external_json.remove if remove else external_json.apply
+        content, changed, error = operation(target, selected)
+        if error is not None:
+            # The plan refused an unparsable document; reaching here means the
+            # file changed between planning and applying, so the transaction
+            # fails and rolls back instead of guessing.
+            raise LifecycleError("APPLY_FAILED",
+                                 f"{change.path} cannot be merged: {error}")
+        if not changed:
+            return None
+        if content is None:
+            return self.DELETED
+        return content.encode("utf-8")
 
     def _perform(self, change: Change, target: Path, outcome) -> None:
         if change.action == plannerlib.REMOVE:
@@ -388,6 +413,9 @@ class Applier:
                                          "after being written")
             elif change.action == plannerlib.REMOVE and target.exists():
                 raise LifecycleError("APPLY_FAILED", f"{change.path} still exists after removal")
+            elif change.action == plannerlib.HOOK_WRITE and not target.is_file():
+                raise LifecycleError("APPLY_FAILED",
+                                     f"{change.path} was not written with the hook entry")
 
     def _backup_install_state(self) -> None:
         """Save the install state this transaction is about to replace.
@@ -505,10 +533,13 @@ def undo(project: Path, journal: Journal) -> dict:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(saved, target)
             restored.append(path)
-        elif record.get("action") == plannerlib.CREATE and target.is_file():
+        elif (record.get("action") in (plannerlib.CREATE, plannerlib.REGION_WRITE,
+                                       plannerlib.HOOK_WRITE)
+              and target.is_file()):
             # Created by this transaction, so there is nothing to restore: the
             # previous state did not have it. Leaving it behind is what made
             # `update rollback` produce a v1 project holding v2's new files.
+            # Region and hook writes that created their file behave the same.
             target.unlink(missing_ok=True)
             removed.append(path)
 

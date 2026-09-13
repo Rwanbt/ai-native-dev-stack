@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import digest as digestlib
+from . import hooks as hookslib
 from . import legacy as legacylib
 from . import lock as locklib
 from . import manifest as manifestlib
@@ -104,6 +105,16 @@ def _file_finding(project: Path, entry: statelib.ManagedFile,
         return {"path": entry.path, "component": entry.component, "status": OK,
                 "detail": "user data root (present)" if target.exists()
                 else "user data root (none yet)"}
+
+    if entry.kind == "json_hook":
+        report = hookslib.hook_status(project)
+        status = {hookslib.CONFIGURED: OK,
+                  hookslib.CONFIG_INVALID: CORRUPTED,
+                  hookslib.COMMAND_INVALID: CORRUPTED,
+                  hookslib.VERSION_MISMATCH: CORRUPTED}.get(report["status"], MISSING)
+        detail = report["detail"] or report["status"]
+        return {"path": entry.path, "component": entry.component,
+                "status": status, "detail": detail}
 
     if entry.kind == "external_block":
         spec = BlockSpec(component.marker or component.identifier,

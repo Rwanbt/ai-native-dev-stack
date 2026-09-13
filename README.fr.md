@@ -887,7 +887,7 @@ Copier `tools/ai_docs/config.sh.example` vers `config.sh` et renseigner :
 - `CLAUDE_MEMORY_KEY` — nom du sous-dossier dans `~/.claude/projects/`
 
 ### 3. `AI_CONTEXT.md`
-Écrire un fichier par module en utilisant `templates/AI_CONTEXT_template.md`. Se concentrer sur :
+Écrire un fichier par module en utilisant `.ai-native/templates/AI_CONTEXT_template.md`. Se concentrer sur :
 - Ce que fait le module (2-3 phrases)
 - Quelles fonctions s'exécutent sur quel thread
 - Ce qui est interdit ici

@@ -45,7 +45,7 @@ DEFAULT_UPDATE_PREFERENCES = {
 # state module depend on the catalogue it is meant to outlive; the two are kept
 # equal by `test_lifecycle_security.py`.
 OWNERSHIPS = ("MANAGED_IMMUTABLE", "MANAGED_MUTABLE", "USER_DATA", "EXTERNAL_CONFIG")
-MANAGED_KINDS = ("file", "external_block", "data_root")
+MANAGED_KINDS = ("file", "external_block", "json_hook", "data_root")
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -295,6 +295,33 @@ def write_bytes_atomic(path: Path, payload: bytes) -> None:
         raise
 
 
+def restrict_to_owner(path: Path) -> None:
+    """Make one file owner-only where the platform has POSIX modes.
+
+    Private state (the trust anchor, the Knowledge store) is not a secret in
+    the cryptographic sense, but on a shared machine another account has no
+    reason to read a user's memory or authority material. Windows has no
+    equivalent mode bit here; ACLs are a separate, larger surface and nothing
+    in this stack claims them.
+    """
+
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        # A filesystem without POSIX modes (some network mounts) accepts the
+        # write; refusing the operation over the mode would be worse.
+        return
+
+
+def write_atomic_private(path: Path, payload: str) -> None:
+    """`write_atomic`, then owner-only on POSIX. Used for private state."""
+
+    write_atomic(path, payload)
+    restrict_to_owner(path)
+
+
 def save(project: Path, state: InstallState) -> Path:
     state.updated_at = now()
     path = state_path(project)
@@ -310,6 +337,7 @@ __all__ = [
     "SCHEMA_VERSION", "LIFECYCLE_DIRNAME", "STATE_RELATIVE", "TRANSACTIONS_RELATIVE",
     "BACKUPS_RELATIVE", "UPDATE_CACHE_RELATIVE", "DEFAULT_UPDATE_PREFERENCES",
     "ManagedFile", "InstallState", "state_path", "exists", "load", "save", "remove",
-    "write_atomic", "write_bytes_atomic", "now", "new_identifier",
+    "write_atomic", "write_bytes_atomic", "write_atomic_private", "restrict_to_owner",
+    "now", "new_identifier",
     "OWNERSHIPS", "MANAGED_KINDS",
 ]

@@ -130,6 +130,13 @@ def bootstrap(repository_root: str | os.PathLike[str], *, approval_root: Mapping
     validate_artifact(anchor)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(anchor, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    if os.name != "nt":
+        # The anchor is authority material on a shared machine; owner-only
+        # where the platform has POSIX modes. Windows ACLs are not claimed.
+        try:
+            os.chmod(target, 0o600)
+        except OSError:
+            pass
     return target
 
 

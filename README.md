@@ -879,7 +879,7 @@ Copy `tools/ai_docs/config.sh.example` to `config.sh` and fill in:
 - `CLAUDE_MEMORY_KEY` — subfolder name in `~/.claude/projects/`
 
 ### 3. `AI_CONTEXT.md`
-Write one file per module using `templates/AI_CONTEXT_template.md`. Focus on:
+Write one file per module using `.ai-native/templates/AI_CONTEXT_template.md`. Focus on:
 - What the module does (2-3 sentences)
 - Which functions run on which thread
 - What is forbidden here

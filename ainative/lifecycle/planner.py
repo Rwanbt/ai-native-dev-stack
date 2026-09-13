@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from . import digest as digestlib
+from . import external_json
+from . import hooks as hookslib
 from . import manifest as manifestlib
 from .errors import LifecycleError
 from .external import BlockSpec
@@ -29,14 +31,25 @@ REMOVE = "REMOVE"
 SKIP = "SKIP"
 PRESERVE = "PRESERVE"
 CONFLICT = "CONFLICT"
+# Write/remove the managed region of a file the stack does not own.
+REGION_WRITE = "REGION_WRITE"
+REGION_REMOVE = "REGION_REMOVE"
+# Configure/remove the managed hook entry inside a JSON file the user owns.
+HOOK_WRITE = "HOOK_WRITE"
+HOOK_REMOVE = "HOOK_REMOVE"
+# Legacy names: v2.2.2 and earlier wrote BLOCK_WRITE/BLOCK_REMOVE for region
+# operations. They are read back for undo but never emitted again - "BLOCK"
+# read to users as "blocked" while the operation actually proceeded.
 BLOCK_WRITE = "BLOCK_WRITE"
 BLOCK_REMOVE = "BLOCK_REMOVE"
+LEGACY_ACTIONS = (BLOCK_WRITE, BLOCK_REMOVE)
 
-MUTATING_ACTIONS = (CREATE, REPLACE, REMOVE, BLOCK_WRITE, BLOCK_REMOVE)
-# Every action this code writes into a journal. Anything else read back
-# from one was not written by this code and is ignored.
+MUTATING_ACTIONS = (CREATE, REPLACE, REMOVE, REGION_WRITE, REGION_REMOVE,
+                    HOOK_WRITE, HOOK_REMOVE)
+# Every action this code writes into a journal, plus the legacy names it can
+# still read from older journals. Anything else was not written by this code.
 ACTIONS = (CREATE, REPLACE, REMOVE, SKIP, PRESERVE, CONFLICT,
-           BLOCK_WRITE, BLOCK_REMOVE)
+           REGION_WRITE, REGION_REMOVE, HOOK_WRITE, HOOK_REMOVE, *LEGACY_ACTIONS)
 
 
 @dataclass(frozen=True)
@@ -256,10 +269,28 @@ def plan_component_install(project: Path, component: Component, source: Distribu
         destination = component.destination or ""
         target = resolve_within(project, destination)
         _, changed = _external_preview(target, component)
-        action = BLOCK_WRITE if changed else SKIP
+        action = REGION_WRITE if changed else SKIP
         return [Change(action, destination, component.identifier, component.ownership,
                        "managed region in a file the stack does not own",
                        kind="external_block")]
+
+    if component.kind == manifestlib.KIND_JSON_HOOK:
+        destination = component.destination or ""
+        target = resolve_within(project, destination)
+        selected = hook_spec(project, component)
+        _, changed, error = external_json.apply(target, selected)
+        if error is not None:
+            # Never rewrite a document we cannot parse: the user fixes it, then
+            # re-runs. Preferring the fix over the install is the fail-safe.
+            return [Change(CONFLICT, destination, component.identifier,
+                           component.ownership,
+                           f"existing file cannot be merged ({error}); fix or remove "
+                           "it, then re-run",
+                           kind="json_hook")]
+        action = HOOK_WRITE if changed else SKIP
+        return [Change(action, destination, component.identifier, component.ownership,
+                       "managed hook entry in a file the stack does not own",
+                       kind="json_hook")]
 
     changes: list[Change] = []
     wanted: list[str] = []
@@ -281,6 +312,15 @@ def _external_preview(target: Path, component: Component) -> tuple[str, bool]:
     return external.apply(target, block_spec(component))
 
 
+def hook_spec(project: Path, component: Component) -> external_json.HookSpec:
+    """The one hook entry this component owns, for this project."""
+
+    return external_json.HookSpec(
+        event=component.hook_event or hookslib.EVENT,
+        matcher=component.hook_matcher or hookslib.MATCHER,
+        command=hookslib.hook_command(project))
+
+
 def removal_change(project: Path, entry: ManagedFile, *, purge: bool,
                    note: str = "") -> Change:
     """What removing one recorded path would do. The single decision point.
@@ -298,8 +338,15 @@ def removal_change(project: Path, entry: ManagedFile, *, purge: bool,
         # The region is delimited by markers this stack writes, and only the
         # bytes between them are taken back. The markers are the ownership
         # proof, which is why `created_by_ainative` does not gate this.
-        return Change(BLOCK_REMOVE, entry.path, entry.component, entry.ownership,
+        return Change(REGION_REMOVE, entry.path, entry.component, entry.ownership,
                       f"remove only the managed region{suffix}", kind="external_block")
+
+    if entry.kind == "json_hook":
+        # Only entries whose command targets this project's wrapper are ours;
+        # an entry the user rewrote to run something else is not matched and
+        # not touched.
+        return Change(HOOK_REMOVE, entry.path, entry.component, entry.ownership,
+                      f"remove only the managed hook entry{suffix}", kind="json_hook")
 
     if entry.kind == "data_root":
         return Change(REMOVE if purge else PRESERVE, entry.path, entry.component,
@@ -429,6 +476,12 @@ def managed_entries(component: Component, changes: Sequence[Change]) -> list[Man
             entries.append(ManagedFile(change.path, component.identifier, component.ownership,
                                        None, created_by_ainative=True, kind="external_block"))
             continue
+        if change.kind == "json_hook":
+            # Same posture for the hook entry: the file is the user's, the one
+            # entry that names our wrapper is ours.
+            entries.append(ManagedFile(change.path, component.identifier, component.ownership,
+                                       None, created_by_ainative=True, kind="json_hook"))
+            continue
         if change.action == CONFLICT:
             continue
         entries.append(ManagedFile(change.path, component.identifier, component.ownership,
@@ -438,8 +491,10 @@ def managed_entries(component: Component, changes: Sequence[Change]) -> list[Man
 
 __all__ = [
     "CREATE", "REPLACE", "REMOVE", "SKIP", "PRESERVE", "CONFLICT",
-    "BLOCK_WRITE", "BLOCK_REMOVE", "MUTATING_ACTIONS", "ACTIONS",
+    "REGION_WRITE", "REGION_REMOVE", "HOOK_WRITE", "HOOK_REMOVE",
+    "BLOCK_WRITE", "BLOCK_REMOVE", "LEGACY_ACTIONS",
+    "MUTATING_ACTIONS", "ACTIONS",
     "Change", "Plan", "block_spec", "marker_payload", "component_files",
     "plan_component_install", "plan_component_removal",
-    "build_install_plan", "build_uninstall_plan", "managed_entries",
+    "build_install_plan", "build_uninstall_plan", "managed_entries", "hook_spec",
 ]

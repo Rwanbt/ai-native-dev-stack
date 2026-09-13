@@ -88,17 +88,26 @@ def require_policy(project: Path) -> dict[str, Any]:
     root = Path(project)
     report = ensure_policy(root)
     if report["enforced"] is not True:
-        raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
-                             f"control path policy unverified ({report['reason']}); "
-                             "refusing write")
+        raise KnowledgeError(
+            "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
+            f"Knowledge persistence needs a Git repository to verify its "
+            f"control paths ({report['reason']}).\n"
+            "Remedy: run `git init` in the project, then re-run the command.")
     if report["state_ignored"] is not True:
-        raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
-                             f"{STATE_DIRNAME.as_posix()} MUST be Git-ignored; "
-                             "refusing Local Control write")
+        raise KnowledgeError(
+            "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
+            f"Refusing to persist local memory state that Git would commit: "
+            f"{STATE_DIRNAME.as_posix()} is not ignored.\n"
+            "Remedy: run `ainative init` (it updates the managed .gitignore "
+            "region), or add this line to .gitignore:\n"
+            f"  {STATE_DIRNAME.as_posix()}/")
     if report["audit_ignored"] is not False:
-        raise KnowledgeError("KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
-                             f"{AUDIT_DIRNAME.as_posix()} MUST NOT be Git-ignored; "
-                             "refusing audit write")
+        raise KnowledgeError(
+            "KNOWLEDGE_CONTROL_PATH_POLICY_INVALID",
+            f"Refusing a write whose audit trail would be invisible to Git: "
+            f"{AUDIT_DIRNAME.as_posix()} is ignored.\n"
+            "Remedy: remove the rule that ignores it from .gitignore, or run "
+            "`ainative init` to restore the managed region.")
     return report
 
 

@@ -215,7 +215,7 @@ def _rewrite(path: Path, kind: str, records: list[dict]) -> None:
     payload = "".join(json.dumps(wrap(kind, _record_id(item, kind),
                                       item), sort_keys=True) + "\n"
                       for item in records)
-    statelib.write_atomic(path, payload)
+    statelib.write_atomic_private(path, payload)
 
 
 def _record_id(item: dict, kind: str) -> str:
@@ -313,7 +313,7 @@ def _rewrite_supports(path: Path, supports: list[dict], tombstones: list[dict]) 
                                  sort_keys=True) + "\n" for item in supports)
     payload += "".join(json.dumps(wrap("tombstone", item["assertion_hash"], item),
                                   sort_keys=True) + "\n" for item in tombstones)
-    statelib.write_atomic(path, payload)
+    statelib.write_atomic_private(path, payload)
 
 
 def append_tombstone(project: Path, assertion_hash_value: str, *, reason: str,

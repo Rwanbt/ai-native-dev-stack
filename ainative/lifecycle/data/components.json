@@ -30,6 +30,7 @@
         "generate_metrics.py",
         "assemble_context.py",
         "run_hook.sh",
+        "run_hook.ps1",
         "find_python.sh",
         "config.sh.example"
       ],
@@ -112,12 +113,24 @@
       "lines": [
         "tools/ai_docs/config.sh",
         ".ai-native/lifecycle/backups/",
-        ".ai-native/lifecycle/update-cache.json"
+        ".ai-native/lifecycle/update-cache.json",
+        ".ai-native/state/"
       ],
       "ownership": "EXTERNAL_CONFIG",
       "required": false,
       "title": "Git ignore entries",
       "description": "Machine-local paths that must never be committed."
+    },
+    "claude-hook": {
+      "version": 1,
+      "kind": "json_hook",
+      "destination": ".claude/settings.json",
+      "hook_event": "PostToolUse",
+      "hook_matcher": "Edit|Write",
+      "ownership": "EXTERNAL_CONFIG",
+      "required": false,
+      "title": "Claude Code PostToolUse hook",
+      "description": "The one owned hook entry that regenerates AI_SUMMARY.md after every edit. Merged into the user's settings.json, never replacing it."
     },
     "github-templates": {
       "version": 1,

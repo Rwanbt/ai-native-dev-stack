@@ -191,5 +191,5 @@ def intent_stub():
         ),
         candidate_object_set_digest="candidates",
         scan_result_digest="scan",
-        expected_git_identity="Rwanbt <barat.erwan@gmail.com>",
+        expected_git_identity="Maintainer <maintainer@example.invalid>",
     )

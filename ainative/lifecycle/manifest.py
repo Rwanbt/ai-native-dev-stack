@@ -22,9 +22,11 @@ KIND_TREE = "tree"
 KIND_FILE = "file"
 KIND_TEMPLATE = "template"
 KIND_EXTERNAL_BLOCK = "external_block"
+KIND_JSON_HOOK = "json_hook"
 KIND_MARKER = "marker"
 KIND_DATA_ROOT = "data_root"
-KINDS = (KIND_TREE, KIND_FILE, KIND_TEMPLATE, KIND_EXTERNAL_BLOCK, KIND_MARKER, KIND_DATA_ROOT)
+KINDS = (KIND_TREE, KIND_FILE, KIND_TEMPLATE, KIND_EXTERNAL_BLOCK, KIND_JSON_HOOK,
+         KIND_MARKER, KIND_DATA_ROOT)
 
 MANAGED_IMMUTABLE = "MANAGED_IMMUTABLE"
 MANAGED_MUTABLE = "MANAGED_MUTABLE"
@@ -39,6 +41,7 @@ _REQUIRED_FIELDS = {
     KIND_FILE: ("source", "destination"),
     KIND_TEMPLATE: ("source", "destination"),
     KIND_EXTERNAL_BLOCK: ("destination", "marker", "lines"),
+    KIND_JSON_HOOK: ("destination", "hook_event", "hook_matcher"),
     KIND_MARKER: ("destination",),
     KIND_DATA_ROOT: ("paths",),
 }
@@ -61,6 +64,8 @@ class Component:
     marker: str | None = None
     comment_prefix: str = "#"
     lines: tuple[str, ...] = ()
+    hook_event: str | None = None
+    hook_matcher: str = ""
     platforms: tuple[str, ...] = ()
 
     def applies_to(self, platform: str) -> bool:
@@ -195,6 +200,8 @@ def _build_component(identifier: str, raw: Any) -> Component:
         marker=raw.get("marker"),
         comment_prefix=str(raw.get("comment_prefix", "#")),
         lines=_strings(raw.get("lines"), "lines", identifier),
+        hook_event=str(raw["hook_event"]) if raw.get("hook_event") else None,
+        hook_matcher=str(raw.get("hook_matcher", "")),
         platforms=_strings(raw.get("platforms"), "platforms", identifier),
     )
 
@@ -269,6 +276,6 @@ def load(data_dir: Path | None = None) -> Distribution:
 __all__ = [
     "Component", "Profile", "Distribution", "load", "DATA_DIR",
     "KIND_TREE", "KIND_FILE", "KIND_TEMPLATE", "KIND_EXTERNAL_BLOCK",
-    "KIND_MARKER", "KIND_DATA_ROOT", "KINDS",
+    "KIND_JSON_HOOK", "KIND_MARKER", "KIND_DATA_ROOT", "KINDS",
     "MANAGED_IMMUTABLE", "MANAGED_MUTABLE", "USER_DATA", "EXTERNAL_CONFIG", "OWNERSHIPS",
 ]

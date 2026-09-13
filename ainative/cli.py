@@ -169,17 +169,40 @@ def _report(args: argparse.Namespace, record: dict, text: str) -> int:
     return EXIT_OK
 
 
+# What the plan says, as opposed to what the journal records. `BLOCK_WRITE`
+# read to a user as "blocked" while the operation actually proceeded; the
+# internal names stay stable for journals, the labels must not lie.
+ACTION_LABELS = {
+    "CREATE": "create",
+    "REPLACE": "replace",
+    "REMOVE": "remove",
+    "SKIP": "skip",
+    "PRESERVE": "preserve",
+    "CONFLICT": "conflict",
+    "REGION_WRITE": "configure-region",
+    "REGION_REMOVE": "remove-region",
+    "HOOK_WRITE": "configure-hook",
+    "HOOK_REMOVE": "remove-hook",
+    "BLOCK_WRITE": "configure-region",
+    "BLOCK_REMOVE": "remove-region",
+}
+
+
+def _action_label(action: str) -> str:
+    return ACTION_LABELS.get(action, action.lower())
+
+
 def _plan_text(result) -> str:
     plan = result.plan
     header = "(dry-run — nothing was written)\n" if result.dry_run else ""
-    counts = ", ".join(f"{action.lower()} {count}"
+    counts = ", ".join(f"{_action_label(action)} {count}"
                        for action, count in sorted(plan.counts().items())) or "no changes"
     lines = [f"{header}{plan.operation}: {plan.from_profile or 'none'} -> "
              f"{plan.to_profile or 'none'}", f"  {counts}"]
     for change in plan.changes:
         if change.action in ("SKIP",) and not result.dry_run:
             continue
-        lines.append(f"  {change.action:<12} {change.path}"
+        lines.append(f"  {_action_label(change.action):<18} {change.path}"
                      + (f"   ({change.reason})" if change.reason else ""))
     for notice in result.notices:
         lines.append("")
@@ -267,6 +290,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
+    from .lifecycle import environment
     from .lifecycle import recovery, updater
     from .knowledge import doctor as knowledgedoctor
 
@@ -274,9 +298,14 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     diagnosis = recovery.diagnose(project, check_updates=args.check_updates)
     knowledge = knowledgedoctor.knowledge_status(project)
     knowledge_failed = knowledge["status"] == knowledgedoctor.STATUS_FAIL
+    checks = environment.environment_checks(
+        project, installed=diagnosis.installed,
+        verified=diagnosis.active_profile == "verified")
+    environment_failed = bool(environment.failing(checks))
     if args.json:
         record = diagnosis.to_record()
         record["knowledge"] = knowledge
+        record["environment"] = checks
         _emit(record)
     else:
         print(f"Project: {diagnosis.project}")
@@ -310,7 +339,14 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
                   f"trust: {knowledge['trust']}")
         else:
             print(f"  FAIL: {knowledge['detail']}")
-    return EXIT_OK if (diagnosis.healthy and not knowledge_failed) else EXIT_FAILED
+        print("Environment")
+        for check in checks:
+            marker = environment.OK if check["status"] == environment.OK else check["status"]
+            print(f"  {marker:<16} {check['name']}: {check['detail']}")
+            if check["impact"] and check["status"] != environment.OK:
+                print(f"  {'':<16} -> {check['impact']}")
+    return EXIT_OK if (diagnosis.healthy and not knowledge_failed
+                       and not environment_failed) else EXIT_FAILED
 
 
 def _cmd_repair(args: argparse.Namespace) -> int:
