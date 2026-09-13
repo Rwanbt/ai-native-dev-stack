@@ -586,7 +586,7 @@ ainative doctor                     # includes the Knowledge section
 # 1. Install (or upgrade) the CLI, then choose a profile in your project.
 #    Re-run the upgrade line when a release changes the lifecycle runtime;
 #    `ainative update` tells you when (CLI_UPDATE_REQUIRED).
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"   # pinned release (reproducible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"   # pinned release (reproducible)
 cd your-project
 ainative init                          # asks Standard or Verified
 #   or, non-interactively:
