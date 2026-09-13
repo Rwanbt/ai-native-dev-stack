@@ -154,6 +154,15 @@ class ProtocolV2Containment(unittest.TestCase):
 
 class StrictCheck(LifecycleTestCase):
 
+    def setUp(self):
+        super().setUp()
+        # Deterministic: a local provider with no index is unreachable by
+        # construction. The default (GitHub) provider made this test depend on
+        # the live release state - it passed while the API rate-limited the
+        # runner and failed the moment a real release answered.
+        self.set_env(providerlib.PROVIDER_ENV, "local")
+        self.set_env(providerlib.LOCAL_SOURCE_ENV, str(self.root / "no-releases"))
+
     def test_strict_exits_non_zero_when_the_source_cannot_be_consulted(self):
         self.install("standard")
         completed = self.cli("update", "check", "--strict")

@@ -75,6 +75,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          gh release view "${GITHUB_REF_NAME}" --json assets > dist/assets.json
-          python scripts/check_published_assets.py --dist dist --assets-json dist/assets.json
+          # The report lives outside dist: a JSON file written into the
+          # artifact directory was counted as an unbuilt extra asset and
+          # failed the publish after every asset had uploaded correctly.
+          gh release view "${GITHUB_REF_NAME}" --json assets > "${RUNNER_TEMP}/assets.json"
+          python scripts/check_published_assets.py --dist dist --assets-json "${RUNNER_TEMP}/assets.json"
           gh release edit "${GITHUB_REF_NAME}" --draft=false
