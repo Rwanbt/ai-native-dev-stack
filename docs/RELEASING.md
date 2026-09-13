@@ -63,26 +63,35 @@ One-time setup, by the maintainer, outside this repository:
 Until the trusted publisher exists, PyPI rejects the upload with
 `invalid-publisher`. That does not affect the GitHub Release path.
 
+One chaining detail: a release created by `release-assets.yml` uses the
+workflow token, and GitHub does not let one workflow's token trigger another
+— `release: published` will not fire for it. Once the trusted publisher
+exists, upload an already-published release with:
+
+```bash
+gh workflow run publish-pypi.yml -f tag=v2.4.0
+```
+
 ```bash
 # what a user then runs
-pip install ainative-dev-stack==2.3.0
+pip install ainative-dev-stack==2.4.0
 # or, isolated:
-pipx install ainative-dev-stack==2.3.0
+pipx install ainative-dev-stack==2.4.0
 ```
 
 ## Verifying what was published
 
 ```bash
 # integrity: the bytes match the published sums
-gh release download v2.3.0 --dir dist
+gh release download v2.4.0 --dir dist
 cd dist && sha256sum -c SHA256SUMS
 
 # provenance: which workflow, repository and commit produced them
-gh attestation verify dist/ainative_dev_stack-2.3.0-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
+gh attestation verify dist/ainative_dev_stack-2.4.0-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
 
 # PyPI provenance (attestations are published with the files)
 python -m pip install --upgrade pypi-attestations
-python -m pypi_attestations verify dist/ainative_dev_stack-2.3.0-py3-none-any.whl
+python -m pypi_attestations verify dist/ainative_dev_stack-2.4.0-py3-none-any.whl
 ```
 
 `SHA256SUMS` alone proves integrity against the source that published it; it
