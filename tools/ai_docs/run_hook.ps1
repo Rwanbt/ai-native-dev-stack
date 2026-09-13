@@ -1,14 +1,25 @@
-# run_hook.ps1 - Claude Code PostToolUse wrapper (Windows native).
-# Reads one hook payload from redirected stdin and delegates to
-# update_on_edit.py next to this script. Always exits 0 so it never blocks the
-# editor; when no usable Python is found it skips silently rather than failing
-# the tool call.
-# [Console]::In, not Get-Content: PowerShell 5.1's Get-Content has a mandatory
-# -Path and does not read redirected stdin on its own.
+# run_hook.ps1 - PostToolUse wrapper (Windows native).
+# Reads one hook payload from stdin and delegates to update_on_edit.py next to
+# this script. Always exits 0 so it never blocks the editor.
+#
+# stdin read order: the PowerShell pipeline enumerator first, [Console]::In as
+# a fallback. With redirected input the two disagree depending on whether the
+# process has a console (a local terminal vs a CI service): `[Console]::In`
+# returned empty on the runners while `$input` held the payload, and the
+# reverse was observed elsewhere. Whichever has the JSON wins; if neither
+# does, the skip is reported on stderr instead of staying silent.
 $ErrorActionPreference = "SilentlyContinue"
-$PAYLOAD = [Console]::In.ReadToEnd()
+$PAYLOAD = $input | Out-String
+if (-not $PAYLOAD.Trim()) {
+    $PAYLOAD = [Console]::In.ReadToEnd()
+}
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 $UPDATE_SCRIPT = Join-Path $SCRIPT_DIR "update_on_edit.py"
+
+if (-not $PAYLOAD.Trim()) {
+    [Console]::Error.WriteLine("[ai_docs] PostToolUse hook received no payload on stdin")
+    exit 0
+}
 
 $PY = $null
 foreach ($candidate in @("python", "python3", "py")) {
@@ -16,7 +27,7 @@ foreach ($candidate in @("python", "python3", "py")) {
     if ($found) { $PY = $found.Source; break }
 }
 
-if ($PY -and (Test-Path $UPDATE_SCRIPT) -and $PAYLOAD) {
+if ($PY -and (Test-Path $UPDATE_SCRIPT)) {
     $env:PYTHONIOENCODING = "utf-8"
     $PAYLOAD | & $PY $UPDATE_SCRIPT 2>&1 | Out-String | Write-Output
 }
