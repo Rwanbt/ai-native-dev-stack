@@ -204,6 +204,26 @@ def check_uninstall(ainative: Path, project: Path, cwd: Path, env: dict) -> None
     require((project / "src" / "app.py").is_file(), "purge removed user source")
 
 
+def check_non_git_policy(ainative: Path, root: Path, env: dict) -> None:
+    """Standard degrades with a notice; Verified refuses. Both are policies."""
+
+    print("[3c] outside Git: Standard installs with a notice, Verified refuses")
+    plain = root / "plain-project"
+    (plain / "src").mkdir(parents=True)
+    # On a developer machine the temp root can sit inside an enclosing
+    # repository (a home directory under Git); the ceiling makes the child Git
+    # stop looking above `root`, so the test sees a real non-repository.
+    isolated = {**(env or {}), "GIT_CEILING_DIRECTORIES": str(root)}
+    completed = run([ainative, "init", "--profile", "standard", "--project", plain],
+                    env=isolated)
+    require("not inside a Git repository" in completed.stdout,
+            "a non-Git Standard install did not disclose the degradation")
+    run([ainative, "init", "--profile", "verified", "--project", plain],
+        env=isolated, expect=2)
+    require(not (plain / ".ai-native" / "lifecycle" / "verified.json").exists(),
+            "a refused Verified install wrote its marker anyway")
+
+
 def check_multivault_wheel(ainative: Path, project: Path, cwd: Path, env: dict) -> None:
     print("[3b] the wheel ships ainative.multivault and its CLI answers")
     python = ainative.parent / ("python.exe" if sys.platform.startswith("win") else "python")
@@ -352,12 +372,20 @@ def main() -> int:
     (project / "src").mkdir(parents=True)
     (project / "src" / "app.py").write_text("print('hello')\n", encoding="utf-8")
     (project / "NOTES.md").write_text("my own notes\n", encoding="utf-8")
+    # A real project is a Git repository: Verified refuses to install without
+    # one (provenance), and the subprocess environment has to be clean.
 
     try:
         ainative, _ = build_and_install(root)
         env = clean_environment()
+        run(["git", "-C", str(project), "init", "-q"], env=env)
+        run(["git", "-C", str(project), "-c", "user.email=ci@example.invalid",
+             "-c", "user.name=CI", "add", "-A"], env=env)
+        run(["git", "-C", str(project), "-c", "user.email=ci@example.invalid",
+             "-c", "user.name=CI", "commit", "-qm", "init"], env=env)
         check_versions(ainative, root, env)
         check_install(ainative, project, root, env)
+        check_non_git_policy(ainative, root, env)
         check_version_invariants(ainative, project, root, env)
         check_multivault_wheel(ainative, project, root, env)
         check_multivault_exec_sync(ainative, root, root, env)

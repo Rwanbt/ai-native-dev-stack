@@ -257,6 +257,26 @@ def load(project: Path) -> InstallState | None:
     return InstallState.from_record(payload)
 
 
+def _apply_umask_mode(path: Path) -> None:
+    """Give a written file the mode a plain create would have produced.
+
+    `NamedTemporaryFile` creates 0600, and `os.replace` keeps that mode, so
+    every managed project file used to land owner-only on POSIX. Project files
+    are not secrets; a shared checkout expects group/other read (0644 under the
+    usual umask). Private state calls `write_atomic_private` explicitly.
+    Windows has no mode bits here and is left alone.
+    """
+
+    if os.name == "nt":
+        return
+    current = os.umask(0)
+    os.umask(current)
+    try:
+        os.chmod(path, 0o666 & ~current)
+    except OSError:
+        return
+
+
 def write_atomic(path: Path, payload: str) -> None:
     """Write via a same-directory temporary file and one rename.
 
@@ -274,6 +294,7 @@ def write_atomic(path: Path, payload: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(handle.name, path)
+        _apply_umask_mode(path)
     except BaseException:
         Path(handle.name).unlink(missing_ok=True)
         raise
@@ -290,6 +311,7 @@ def write_bytes_atomic(path: Path, payload: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(handle.name, path)
+        _apply_umask_mode(path)
     except BaseException:
         Path(handle.name).unlink(missing_ok=True)
         raise
