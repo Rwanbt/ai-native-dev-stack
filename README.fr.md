@@ -591,7 +591,7 @@ OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 # 1. Installez (ou mettez a niveau) la CLI, puis choisissez un profil dans votre projet.
 #    Relancez la ligne d'upgrade quand une release change le runtime du lifecycle ;
 #    `ainative update` vous le dira (CLI_UPDATE_REQUIRED).
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"   # release epinglee (reproductible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative init                          # demande Standard ou Verified

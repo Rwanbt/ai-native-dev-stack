@@ -253,12 +253,14 @@ does what it always did, now through the lifecycle manager.
 3. Move `CHANGELOG.md` `[Unreleased]` items under `## [x.y.z] - YYYY-MM-DD`.
 4. Tag: `git tag vX.Y.Z && git push --tags`.
 5. Publish the release assets: wheel, sdist and the lifecycle bundle
-   `ainative-dev-stack-x.y.z.zip` (built by `scripts/build_lifecycle_bundle.py`;
-   `.github/workflows/release-assets.yml` does all three and writes
-   `SHA256SUMS`). `ainative update check` resolves the latest release from that
-   source; the bundle's published SHA-256 is verified before any file is
+   `ainative-lifecycle-v2-x.y.z.zip` (built by
+   `scripts/build_lifecycle_bundle.py`; `.github/workflows/release-assets.yml`
+   builds, gates and attests all three, then publishes the release from a
+   verified draft). `ainative update check` resolves the latest release from
+   that source; the bundle's published SHA-256 is verified before any file is
    written, and a release without a published digest for the bundle is refused
-   (`UPDATE_INTEGRITY_METADATA_MISSING`).
+   (`UPDATE_INTEGRITY_METADATA_MISSING`). See `docs/RELEASING.md` for the full
+   sequence, the attestations and the PyPI half.
 
 Users then see `UPDATE_AVAILABLE` and update with one command — no personal
 config, and no edit of theirs, is ever at risk.
