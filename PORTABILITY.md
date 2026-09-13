@@ -116,7 +116,7 @@ Then set the machine-local values:
 
 - **Method** — the Linux installer creates `~/.config/opencode/AGENTS.md`, which OpenCode loads globally.
 - **Skills / agent** — shared skills are linked under `~/.agents/skills/`; the `anti-debt` subagent is linked under `~/.config/opencode/agents/`.
-- **Hooks** — `~/.config/opencode/plugins/ai-native-dev-stack.ts` installs a native plugin. It blocks edits above 1500 LOC and regenerates AI summaries after edits without changing `opencode.json`.
+- **Hooks** — `ainative machine init` renders `~/.config/opencode/plugins/ai-native-dev-stack.ts` from the installed distribution. It blocks edits above the blocking LOC limit in `conventions.json`, and regenerates AI summaries after edits without changing `opencode.json`. The plugin needs no Bun runtime (it uses `node:fs/promises` and `node:child_process`), and the `opencode-plugin` CI gate executes the installed plugin — edit, write, refusal, summary regeneration — on every change.
 - Restart OpenCode after installation because rules, skills, agents, and plugins are loaded at startup.
 
 ---

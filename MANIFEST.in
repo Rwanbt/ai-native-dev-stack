@@ -8,6 +8,7 @@ include _build_backend.py
 include _payload_staging.py
 include conventions.json
 include docs/VERIFIED-WORK-PLANE.md
+recursive-include adapters *
 recursive-include skills *
 recursive-include templates *
 recursive-include tools/ai_docs *
