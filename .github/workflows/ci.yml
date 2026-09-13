@@ -52,6 +52,13 @@ jobs:
         # the whole thing in one pass.
         run: python scripts/measure_scope.py
 
+      - name: No machine-specific path may ship
+        # A committed C:\Users\<someone> ships a home directory to every
+        # clone; the Mavis adapters did exactly that. The gate has a reasoned
+        # allowlist for historical evidence and its mutation test runs in the
+        # lifecycle job.
+        run: python scripts/check_personal_paths.py
+
   loc-gate:
     name: LOC budget gate
     runs-on: ubuntu-latest
@@ -203,6 +210,9 @@ jobs:
 
       - name: Implementation Economy skill contract (#53 - never executed before)
         run: python -m unittest tests.test_implementation_economy_skill -v
+
+      - name: Hook configuration, first-run policy and the machine-path gate
+        run: python -m unittest tests.test_lifecycle_hook_config tests.test_lifecycle_permissions tests.test_personal_paths_gate -v
 
       - name: Non-vacuity — each guard must actually block
         # A protection nobody has seen refuse is a comment. This reverts each
