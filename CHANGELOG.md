@@ -6,6 +6,29 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-13
+
+Patch release: the machine ownership record becomes complete and fail-safe.
+
+### Added
+
+- **`existed_before` on every manifest asset** — whether the target existed
+  before this stack first wrote it, carried forward by re-runs so a path that
+  is now ours is never re-labelled. Pre-existing user content stays
+  distinguishable from AI Native content (#20).
+- **`machine init --dry-run [--json]` projects the full record** it would
+  write, fields included, and writes nothing.
+
+### Changed
+
+- The machine manifest is written beside its target and renamed into place:
+  a crash mid-write can no longer truncate it.
+- An unreadable manifest now refuses `machine init` too (fail closed, exit 2,
+  `MACHINE_MANIFEST_UNREADABLE`), with the exact recovery — installing over a
+  corrupt record would have silently destroyed the ownership answers.
+- `ainative setup` notes an existing installation before offering a refresh
+  and prints next steps after a healthy doctor (#21).
+
 ## [2.4.0] - 2026-09-13
 
 Minor release: the machine-wide surface becomes a first-class product, a
