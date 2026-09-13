@@ -64,7 +64,7 @@ Until the trusted publisher exists, PyPI rejects the upload with
 `invalid-publisher`. That does not affect the GitHub Release path.
 
 One chaining detail: a release created by `release-assets.yml` uses the
-workflow token, and GitHub does not let one workflow''s token trigger another
+workflow token, and GitHub does not let one workflow's token trigger another
 — `release: published` will not fire for it. Once the trusted publisher
 exists, upload an already-published release with:
 
