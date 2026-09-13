@@ -38,6 +38,7 @@ class InstallReport:
     check: bool
     manifest: Path | None
     stack_root: str
+    recorded: list = dataclasses.field(default_factory=list)
 
 
 class Installer:
@@ -52,20 +53,40 @@ class Installer:
         self.vault = vault
         self.slug = slug
         self.printer = printer
+        # Whether each target existed before this stack first wrote it, carried
+        # over from an earlier manifest so a re-run never rewrites history.
+        self.prior_existed: dict[tuple[str, str], bool] = {}
         # What this run established ownership of, for ~/.ai-native/machine.json.
         self.assets: list[dict] = []
 
-    def _record(self, kind: str, target: Path, **fields: object) -> None:
+    def _record(self, kind: str, target: Path, *, existed_before: bool | None = None,
+                **fields: object) -> None:
         """One machine-owned asset. Recorded on OK as well as on write: a
-        re-run must not drop the record of something it still owns."""
+        re-run must not drop the record of something it still owns.
+
+        `existed_before` answers issue #20's question — was this path the
+        user's (or another tool's) before this stack wrote it? Once recorded,
+        a re-run carries the original answer forward rather than overwriting
+        it with the state of a path that is now ours.
+        """
 
         try:
             relative = target.resolve().relative_to(self.home).as_posix()
         except (OSError, ValueError):
             relative = target.as_posix()
-        record = {"kind": kind, "path": relative, **fields}
+        key = (kind, relative)
+        if key in self.prior_existed:
+            existed_before = self.prior_existed[key]
+        if existed_before is None:
+            existed_before = bool(fields.pop("existed_before", False))
+        record = {"kind": kind, "path": relative,
+                  "existed_before": bool(existed_before), **fields}
         if record not in self.assets:
             self.assets.append(record)
+
+    @staticmethod
+    def _pre_existing(target: Path) -> bool:
+        return target.exists() or target.is_symlink()
 
     def report(self, status: str, path: Path, detail: str = "") -> None:
         suffix = f" ({detail})" if detail else ""
@@ -108,7 +129,7 @@ class Installer:
             return
         if self._points_at(target, source):
             self.report("OK", target)
-            self._record("link", target, source=str(source))
+            self._record("link", target, source=str(source), existed_before=True)
             return
         if target.exists() or target.is_symlink():
             self.errors += 1
@@ -122,11 +143,12 @@ class Installer:
         self.changes += 1
         if self.dry_run:
             self.report("LINK", target, str(source))
+            self._record("link", target, source=str(source), existed_before=False)
             return
         ok, why = machine._create_link(source, target)
         if ok:
             self.report("LINKED", target, str(source))
-            self._record("link", target, source=str(source))
+            self._record("link", target, source=str(source), existed_before=False)
         else:
             self.errors += 1
             self.report("FAILED", target, why)
@@ -189,6 +211,7 @@ class Installer:
     def _write_managed_block(self, path: Path, block: str,
                              begin: str, end: str, label: str,
                              preamble: str = "", **extra: object) -> None:
+        existed_before = self._pre_existing(path)
         current = path.read_text(encoding="utf-8") if path.exists() else ""
         begin_count = current.count(begin)
         end_count = current.count(end)
@@ -213,7 +236,7 @@ class Installer:
         if current == wanted:
             self.report("OK", path)
             self._record("block", path, begin=begin, end=end, label=label,
-                         preamble=preamble, **extra)
+                         preamble=preamble, existed_before=True, **extra)
             return
         if self.check:
             self.errors += 1
@@ -223,11 +246,13 @@ class Installer:
         self.changes += 1
         if self.dry_run:
             self.report("UPDATE", path, label)
+            self._record("block", path, begin=begin, end=end, label=label,
+                         preamble=preamble, existed_before=existed_before, **extra)
         else:
             path.write_text(wanted, encoding="utf-8")
             self.report("UPDATED", path)
             self._record("block", path, begin=begin, end=end, label=label,
-                         preamble=preamble, **extra)
+                         preamble=preamble, existed_before=existed_before, **extra)
 
     def remove_managed_block(self, path: Path, begin: str, end: str,
                              label: str) -> None:
@@ -271,11 +296,13 @@ class Installer:
         wanted = template.read_text(encoding="utf-8")
         wanted = wanted.replace("{{STACK_ROOT_JSON}}", json.dumps(str(self.stack)))
         wanted = wanted.replace("{{STACK_ROOT}}", str(self.stack))
+        existed_before = self._pre_existing(target)
         current = target.read_text(encoding="utf-8") if target.is_file() else ""
         if current == wanted:
             self.report("OK", target)
             self._record("rendered", target, template=template_ref,
-                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest())
+                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest(),
+                         existed_before=True)
             return
         if target.exists() and GENERATED not in current:
             self.errors += 1
@@ -289,6 +316,9 @@ class Installer:
         self.changes += 1
         if self.dry_run:
             self.report("RENDER", target, str(template))
+            self._record("rendered", target, template=template_ref,
+                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest(),
+                         existed_before=existed_before)
         else:
             # Bytes, not text mode: `write_text` translates \n to \r\n on
             # Windows, and the recorded digest is of the rendered text, so the
@@ -296,7 +326,8 @@ class Installer:
             target.write_bytes(wanted.encode("utf-8"))
             self.report("RENDERED", target)
             self._record("rendered", target, template=template_ref,
-                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest())
+                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest(),
+                         existed_before=existed_before)
 
 # Shared engineering method targets: every supported harness gets the block.
 CURSOR_PREAMBLE = (
@@ -332,8 +363,13 @@ def install(home: Path, stack: Path, *, vault: Path | None = None,
 
     home = Path(home)
     stack = Path(stack)
+    prior = machine.load(home)  # raises on unreadable: fail closed, never guess
     installer = Installer(stack, home, dry_run, check, vault, slug,
                           printer=printer)
+    if prior is not None:
+        for asset in prior.get("assets", []):
+            key = (str(asset.get("kind")), str(asset.get("path")))
+            installer.prior_existed[key] = bool(asset.get("existed_before", True))
 
     generic_skills = sorted((stack / "skills").glob("*/SKILL.md"))
     debt_skills = sorted((stack / "stack/agents/anti-debt/skills").glob("*/SKILL.md"))
@@ -384,7 +420,8 @@ def install(home: Path, stack: Path, *, vault: Path | None = None,
                                 stack_root=str(stack))
     return InstallReport(changes=installer.changes, errors=installer.errors,
                          assets=len(installer.assets), dry_run=dry_run,
-                         check=check, manifest=manifest, stack_root=str(stack))
+                         check=check, manifest=manifest, stack_root=str(stack),
+                         recorded=installer.assets)
 
 
 __all__ = ["GENERATED", "SLUG_RE", "CURSOR_PREAMBLE", "InstallReport",

@@ -81,6 +81,10 @@ def run(args) -> int:
     record["profile"] = profile
 
     # 3. Project install (skippable; the flag is the consent when scripted).
+    state_file = project / ".ai-native" / "lifecycle" / "state.json"
+    if state_file.is_file() and not args.json:
+        print(f"{project} already has an installation — this refreshes it "
+              f"(`ainative profile status` shows the current one).")
     do_project = True if non_interactive else _yes(
         args, f"Install the {profile} profile into {project}? [y/N]: ")
     record["project_install"] = None
@@ -104,12 +108,18 @@ def run(args) -> int:
                                   f"harness in {home}? [y/N]: "))
     record["machine_install"] = None
     if do_machine:
+        from . import machine as machinelib
         from . import machine_install
         from . import source as sourcelib
         stack = sourcelib.resolve().root
-        report = machine_install.install(
-            home, stack, vault=vault, slug=slug, dry_run=args.dry_run,
-            printer=(lambda *_a, **_k: None) if args.json else print)
+        try:
+            report = machine_install.install(
+                home, stack, vault=vault, slug=slug, dry_run=args.dry_run,
+                printer=(lambda *_a, **_k: None) if args.json else print)
+        except machinelib.MachineLifecycleError as refusal:
+            raise LifecycleError(
+                "MACHINE_MANIFEST_UNREADABLE",
+                f"{refusal} — remove the manifest to start fresh") from refusal
         record["machine_install"] = {
             "changes": report.changes, "errors": report.errors,
             "assets": report.assets,
@@ -139,6 +149,9 @@ def run(args) -> int:
     else:
         print("Doctor: " + ("healthy" if healthy
                             else "needs attention — run `ainative doctor`"))
+        if healthy:
+            print("Next: `ainative status`; `ainative update check`; "
+                  "machine-wide `ainative machine status`.")
     return EXIT_OK if healthy else EXIT_FAILED
 
 

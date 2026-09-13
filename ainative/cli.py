@@ -568,23 +568,32 @@ def _machine_init(args: argparse.Namespace, home: Path) -> int:
     from .lifecycle import machine_install
     from .lifecycle import source as sourcelib
 
+    from .lifecycle import machine as machinelib
+
     stack = sourcelib.resolve().root
     vault, slug = _machine_vault_pair(args)
-    report = machine_install.install(
-        home, stack, vault=vault, slug=slug,
-        remove_vault_block=args.remove_vault_block,
-        dry_run=args.dry_run,
-        printer=(lambda *_a, **_k: None) if args.json else print)
+    try:
+        report = machine_install.install(
+            home, stack, vault=vault, slug=slug,
+            remove_vault_block=args.remove_vault_block,
+            dry_run=args.dry_run,
+            printer=(lambda *_a, **_k: None) if args.json else print)
+    except machinelib.MachineLifecycleError as refusal:
+        raise LifecycleError(
+            "MACHINE_MANIFEST_UNREADABLE",
+            f"{refusal} — remove the manifest to start fresh, or inspect it "
+            "with `ainative machine status`") from refusal
     if args.json:
         _emit({"operation": "machine init", "home": str(home),
                "stack_root": report.stack_root, "changes": report.changes,
                "errors": report.errors, "assets": report.assets,
-               "dry_run": report.dry_run,
+               "dry_run": report.dry_run, "recorded": report.recorded,
                "manifest": str(report.manifest) if report.manifest else None})
     else:
+        verb = "would be recorded" if report.dry_run else "recorded"
         mode = "(dry-run) " if report.dry_run else ""
         print(f"{mode}machine init: {report.changes} change(s), "
-              f"{report.errors} issue(s), {report.assets} asset(s) recorded")
+              f"{report.errors} issue(s), {report.assets} asset(s) {verb}")
         if report.manifest:
             print(f"manifest: {report.manifest}")
     return EXIT_OK if report.errors == 0 else EXIT_FAILED

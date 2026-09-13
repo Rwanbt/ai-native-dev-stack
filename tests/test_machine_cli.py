@@ -65,6 +65,50 @@ class MachineCli(unittest.TestCase):
         rendered = self.asset("rendered")
         self.assertIn("digest", rendered)
         self.assertIn("template", rendered)
+        for asset in record["assets"]:
+            self.assertIsInstance(asset.get("existed_before"), bool, asset)
+
+    def test_existed_before_distinguishes_user_files_from_fresh_ones(self):
+        root = Path(tempfile.mkdtemp(prefix="machine-cli-preexisting-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        home = root / "home"
+        (home / ".claude").mkdir(parents=True)
+        user = "# user rules, written by hand\n"
+        (home / ".claude" / "CLAUDE.md").write_text(user, encoding="utf-8")
+        completed = _run(home, "machine", "init")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        record = json.loads((home / ".ai-native" / "machine.json")
+                            .read_text(encoding="utf-8"))
+        by_path = {asset["path"]: asset for asset in record["assets"]}
+        self.assertTrue(by_path[".claude/CLAUDE.md"]["existed_before"],
+                        "a hand-written file existed before the install")
+        self.assertFalse(by_path[".gemini/GEMINI.md"]["existed_before"],
+                         "a file this install created did not exist before")
+        self.assertIn(user, (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"))
+
+        # A re-run must not rewrite history: the answers survive.
+        rerun = _run(home, "machine", "init")
+        self.assertEqual(rerun.returncode, 0, rerun.stdout)
+        record = json.loads((home / ".ai-native" / "machine.json")
+                            .read_text(encoding="utf-8"))
+        by_path = {asset["path"]: asset for asset in record["assets"]}
+        self.assertTrue(by_path[".claude/CLAUDE.md"]["existed_before"])
+        self.assertFalse(by_path[".gemini/GEMINI.md"]["existed_before"])
+
+    def test_dry_run_json_projects_the_record_without_writing(self):
+        root = Path(tempfile.mkdtemp(prefix="machine-cli-dryjson-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        home = root / "home"
+        home.mkdir()
+        completed = _run(home, "machine", "init", "--dry-run", "--json")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["manifest"], None)
+        self.assertGreater(len(report["recorded"]), 20)
+        self.assertTrue(all(isinstance(asset.get("existed_before"), bool)
+                            for asset in report["recorded"]))
+        self.assertFalse((home / ".ai-native" / "machine.json").exists())
 
     def test_init_dry_run_writes_nothing(self):
         root = Path(tempfile.mkdtemp(prefix="machine-cli-dry-"))
@@ -156,7 +200,7 @@ class MachineCli(unittest.TestCase):
         manifest = self.home / ".ai-native" / "machine.json"
         manifest.write_text("{not json", encoding="utf-8")
         before = (self.home / ".claude" / "CLAUDE.md").read_bytes()
-        for command in ("status", "doctor", "repair", "uninstall"):
+        for command in ("init", "status", "doctor", "repair", "uninstall"):
             completed = _run(self.home, "machine", command)
             self.assertEqual(completed.returncode, 2, command)
             self.assertNotIn("Traceback", completed.stderr)
