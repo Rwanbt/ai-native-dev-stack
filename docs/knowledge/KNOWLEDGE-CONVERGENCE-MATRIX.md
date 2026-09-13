@@ -2,7 +2,7 @@
 
 STATUS: HISTORICAL INITIAL AUDIT + FINAL PARITY RECORD
 
-Current qualified release candidate: v2.2.1
+Current qualified release candidate: v2.2.2
 
 Initial baseline: `dev` @ a4dfe35 (K1-K4 owners). Legacy reference: `knowledge-lifecycle` @ 9eb5422,
 archived as tag `archive/knowledge-lifecycle-final`; the branch was deleted after the convergence.

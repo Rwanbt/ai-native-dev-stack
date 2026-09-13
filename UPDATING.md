@@ -20,12 +20,26 @@ The full model — ownership, transactions, rollback, security boundaries — is
 
 ## Updating a project — `ainative update`
 
+The runtime that applies an update is the policy the release ships: the
+manifests, the planner and the transaction engine all live in the Python
+package. When a release changes the lifecycle, upgrade the CLI **first**, then
+update each project. `ainative update` refuses the other order with
+`CLI_UPDATE_REQUIRED` before downloading anything:
+
 ```bash
-ainative update check      # is there anything newer?
+# 1. the CLI / runtime
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+
+# 2. each project
+ainative update check      # is there anything newer? (works with any runtime)
 ainative update --dry-run  # exactly what would change
-ainative update            # apply it
+ainative update            # apply it (requires runtime == target release)
 ainative update rollback   # undo it
 ```
+
+The refusal names both versions and prints the exact upgrade command.
+`ainative status --check-updates` and `ainative doctor --check-updates` still
+report what is available and say when the runtime must be upgraded first.
 
 ### What it guarantees
 

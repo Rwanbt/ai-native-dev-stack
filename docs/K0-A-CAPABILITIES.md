@@ -1,5 +1,16 @@
 # K0-A Capability Matrix — executed
 
+> [!WARNING]
+> HISTORICAL K0 CAPABILITY PROBE.
+> This document records pre-convergence evidence (2026-09-07) and MUST NOT be
+> used as the current operational capability matrix. Rows such as
+> `knowledge promote --approve`, `ContextPlanner ABSENT`, `locking unused` and
+> `P1 stands` describe the pre-convergence state this project has since
+> replaced; they are kept as the record of what was measured then.
+>
+> Current state:
+> `docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md`
+
 Evidence collected on `knowledge-lifecycle@a3f1a83`, re-verified identical
 on `main@599b765` (`git diff main..a3f1a83` is empty for every cited path:
 `ainative/lifecycle`, `ainative_workplane`, `tools`, `hooks`, `skills`,

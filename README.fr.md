@@ -28,16 +28,42 @@ Les palliatifs habituels (coller des fichiers dans le contexte, écrire de longs
 Un **stack d'optimisation IA auto-maintenu** — un ensemble de documents structurés, scripts et hooks qui garde l'IA perpétuellement orientée sans intervention humaine :
 
 ```
+Méthode d'ingénierie (AGENTS.md)       ←  source canonique unique, partagée à chaque LLM
 Fichiers de contexte IA (par module)   ←  mis à jour à chaque édition de fichier
 Graphe de dépendances (graphify)       ←  réindexé à la demande
 Règles domaine (standalone)            ←  fichier unique injecté pour le code critique
 Coffre-fort mémoire (Obsidian)         ←  second cerveau persistant inter-sessions
 Mémoire Claude Code                    ←  résumés de session auto-générés
 Écosystème de skills                   ←  commandes de vérification domaine-spécifiques
+Hooks universels                       ←  mémoire de session, LOC gate (tout agent)
+Agent anti-dette                       ←  gouvernance déterministe de la dette technique
 Hook PostToolUse                       ←  garde tout en sync automatiquement
 ```
 
-Une seule commande vérifie la santé du stack entier : `/verify-ai-docs`
+Une seule commande vérifie la santé du stack entier : `/verify-ai-docs`. Transférez-la vers n'importe quelle machine ou LLM via **[PORTABILITY.md](PORTABILITY.md)**.
+
+---
+
+## Principe de conception central
+
+Un **module** est un répertoire contenant un `AI_CONTEXT.md`.
+Tout l'outillage (génération de résumés, assemblage de contexte, hooks, métriques) est bâti autour
+de cette définition. Les fichiers source doivent être des **frères directs** de `AI_CONTEXT.md` —
+les fichiers des sous-répertoires ne sont pas scannés. Cette contrainte de modules plats est
+intentionnelle : elle impose une forte cohésion (un répertoire = une préoccupation = un contexte)
+et garde le scanner simple et rapide.
+
+```
+✅ Structure de module valide     ❌ Invalide (fichiers imbriqués ignorés)
+my_module/                        my_module/
+├── AI_CONTEXT.md                 ├── AI_CONTEXT.md
+├── token.rs                      ├── service/
+├── session.rs                    │   └── token.rs   ← NON scanné
+└── utils.rs                      └── utils.rs
+```
+
+Si un sous-répertoire grossit au point d'avoir besoin de son propre contexte, promeuvez-le en
+sous-module avec son propre `AI_CONTEXT.md`.
 
 ---
 
@@ -320,6 +346,86 @@ Répond à « comment sait-on que ça marche ? » avec des mesures objectives d�
 
 `/verify-ai-docs` régénère cet instantané à chaque exécution.
 
+### 13. Méthode d'ingénierie canonique (`AGENTS.md`)
+
+La source unique des règles d'ingénierie que chaque agent IA suit — le noyau toujours actif
+(taille fichiers/fonctions, gestion d'erreurs, nommage, git, direction des dépendances) plus
+le playbook complet des réflexes seniors (ADR/RFC, sanitizers, FFI, hiérarchie de verrous,
+télémétrie temps réel, tests fuzz/propriétés, scans supply-chain, budgets de performance…)
+et la stratégie d'analyse/routage du codebase. Les configs d'outils **référencent** ce fichier
+(`@AGENTS.md`) au lieu de le copier, pour que Claude Code, Cursor, Codex et MiniMax ne divergent
+jamais. Lu nativement par Cursor/Codex ; importé par Claude Code ; inliné-et-synchronisé pour
+les agents sans directive d'import. Voir **[PORTABILITY.md](PORTABILITY.md)**.
+
+### 14. Hooks universels (`hooks/`)
+
+Six hooks cross-agent qui automatisent la méthode quel que soit l'outil : chargement mémoire
+au démarrage de session, sauvegarde en fin de session, régénération AI-summary en PostToolUse,
+LOC gate en PreToolUse, injection graphify, et un garde de permissions en lecture seule sur
+l'environnement. Chacun livre ses notes d'installation par agent ; les secrets sont lus depuis
+l'environnement, jamais commités.
+
+### 15. Agent de gouvernance anti-dette (`stack/agents/anti-debt/`)
+
+Un agent de gouvernance de la dette technique, agnostique au LLM, qui contre le biais
+« ship the MVP » : scanners déterministes + Critic Engine (tiers de confiance) + graphe de
+connaissances SQLite + skills de gouvernance, avec des adaptateurs pour Claude Code, MiniMax
+et les outils génériques. Les findings ont une **identité déterministe** (stable entre scans,
+pour que dedup/historique/calibration fonctionnent), respectent des schémas JSON, et séparent
+le triage déterministe des plans de remédiation LLM. Branché dans chaque agent via
+`scripts/setup-agents.sh`. Les secrets ne sont jamais persistés, même partiellement : les
+findings portent une empreinte `sha256[:12]` non réversible.
+
+### 16. Mises à jour portables et non destructives (`UPDATING.md`)
+
+Tout le stack se transfère sur une nouvelle machine ou un nouveau LLM via un clone +
+`setup-agents.sh`, et reste à jour sans détruire la personnalisation de quiconque.
+`stack-update-check.sh` détecte les changements upstream dans le *clone* partagé (lecture
+seule) ; `/stack-upgrade` le fast-forward. Parce que les configs personnelles *référencent*
+les fichiers partagés, un `git pull` met la méthode à jour pour tout le monde pendant que
+chacun garde ses personnalisations. Pour les cibles inlinées (par ex. MiniMax),
+`sync_inlined_method.py` rafraîchit un bloc géré.
+
+Un projet dans lequel vous avez **installé** le stack est une surface différente, mise à jour
+par `ainative update` avec une propriété enregistrée fichier par fichier. Voir
+**[UPDATING.md](UPDATING.md)** pour les deux.
+
+### 17. Distribution & Lifecycle (`ainative`)
+
+Une seule CLI possède l'installation, le choix de profil, la mise à jour et la suppression,
+et elle enregistre ce qu'elle a écrit pour pouvoir le défaire :
+
+```bash
+ainative init                     # choisir Standard ou Verified
+ainative status                   # ce qui est installé, et sa santé
+ainative profile switch verified  # réversible, non destructif, dans les deux sens
+ainative update check             # la détection est automatique ; l'application jamais
+ainative uninstall                # retire le stack, garde votre travail
+```
+
+Chaque fichier géré porte le SHA-256 qu'il avait quand le stack l'a écrit : une mise à jour
+n'écrase jamais votre modification et une désinstallation ne la supprime jamais. Les mutations
+sont transactionnelles (sauvegarde → application → vérification → état commité *en dernier*),
+donc une interruption laisse l'ancien état valide ou le nouveau, jamais un projet à moitié
+installé. Voir **[docs/DISTRIBUTION-LIFECYCLE.md](docs/DISTRIBUTION-LIFECYCLE.md)** et
+[ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
+
+**Une mise à jour se fait en deux temps quand le lifecycle a changé : la CLI d'abord, puis les
+projets.** Le runtime qui applique une release est le code de cette release, donc `ainative update`
+refuse une cible qui ne vient pas de lui (`CLI_UPDATE_REQUIRED`, avant tout téléchargement et
+toute écriture) :
+
+```bash
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+cd votre-projet && ainative update
+```
+
+`update check`, `status --check-updates` et `doctor --check-updates` fonctionnent avec n'importe
+quel runtime et indiquent quand la CLI doit d'abord être mise à niveau. La chaîne de version
+d'une release — tag git, `VERSION`, métadonnées du paquet, wheel/sdist, nom du bundle et
+`VERSION` interne du bundle — est fail-closed : un tag qui ne nomme pas l'arbre qu'il pointe
+ne peut pas publier.
+
 ---
 
 ## Quel profil choisir ?
@@ -372,6 +478,28 @@ Mavis, et le plugin OpenCode — tout cela s'installe avec
 ci-dessous). Garder les deux séparés, c'est ce qui rend les deux réversibles.
 
 ---
+
+## Le Verified Work Plane
+
+Une porte déterministe entre un agent qui prétend avoir fini et un projet qui le croit.
+Il décide la convergence à partir de contrats commités et de vérifications exécutées —
+jamais à partir d'un récit, et jamais à partir de ce que l'appelant fournit.
+
+    pip install .
+    ainative trust bootstrap --repo . --approval-root root.json --policy policy.json --by "vous"
+    ainative work admit .ai-native/work/w1 --repo . --by "vous" --artifact ...
+    ainative work new   .ai-native/work/w1 --artifact ...
+    ainative converge   --work .ai-native/work/w1 --repo .
+
+Codes de sortie : 0 CONVERGED, 1 NOT_CONVERGED, 2 INVALID, 3 INTERNAL_ERROR.
+
+Son modèle d'autorité a été clos par revue adversariale externe (P0 = 0, P1 = 0) et est gelé.
+La confiance de genèse est une cérémonie privilégiée que le runtime ne peut pas vérifier :
+**bootstrap la confiance avant qu'un agent contrôlé ait accès au dépôt** — c'est une exigence
+de déploiement, pas un détail. Voir ADR-0006.
+
+Documentation complète, résultats empiriques et limitations connues :
+[docs/VERIFIED-WORK-PLANE.md](docs/VERIFIED-WORK-PLANE.md).
 
 ## Multi-Vault (GUARDED - pret pour la production)
 
@@ -442,7 +570,10 @@ d'agent (`.claude/skills` pour Claude Code, `.agents/skills` pour Codex,
 OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 
 ```bash
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.1"   # release epinglee (reproductible)
+# 1. Installez (ou mettez a niveau) la CLI, puis choisissez un profil dans votre projet.
+#    Relancez la ligne d'upgrade quand une release change le runtime du lifecycle ;
+#    `ainative update` vous le dira (CLI_UPDATE_REQUIRED).
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative init                          # demande Standard ou Verified
@@ -488,6 +619,13 @@ une interruption laisse l'ancien état valide ou le nouveau, jamais un projet à
 moitié installé. Voir
 **[docs/DISTRIBUTION-LIFECYCLE.md](docs/DISTRIBUTION-LIFECYCLE.md)** et
 [ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
+
+**Quand le lifecycle change, mettez à jour la CLI d'abord, puis chaque
+projet.** Le runtime qui applique une release est le code de cette release ;
+`ainative update` refuse la cible dans l'autre sens (`CLI_UPDATE_REQUIRED`,
+avant tout téléchargement et toute écriture) et affiche la commande exacte.
+`ainative update check`, `status --check-updates` et `doctor --check-updates`
+fonctionnent avec n'importe quel runtime.
 
 Déjà installé à l'ancienne, avant l'existence du lifecycle ? Rien à migrer à la
 main : `ainative init` détecte les fichiers présents et les adopte sans écraser
@@ -745,7 +883,7 @@ L'auto-découverte est basée sur la présence de `AI_CONTEXT.md`. Aucune liste 
 Copier `tools/ai_docs/config.sh.example` vers `config.sh` et renseigner :
 - `GRAPHIFY_BIN` — chemin vers le binaire graphify
 - `OBSIDIAN_VAULT` — racine de votre coffre Obsidian
-- `OBSIDIAN_PROJECT_DIR` — sous-dossier pour ce projet
+- `OBSIDIAN_PROJECT_SLUG` — slug kebab-case canonique pour ce projet (par exemple `ai-native-dev-stack`)
 - `CLAUDE_MEMORY_KEY` — nom du sous-dossier dans `~/.claude/projects/`
 
 ### 3. `AI_CONTEXT.md`

@@ -6,6 +6,83 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-09-13
+
+Corrective release closing the post-v2.2.1 audit. Two architectural
+invariants replace previously implicit behaviour: a release's version labels
+now form one fail-closed chain from git tag to installed project, and a
+lifecycle runtime that differs from the target release can no longer apply it.
+
+### Fixed
+
+- **Release version chain (AUD-201).** A tag `v2.2.2` could promote a tree
+  whose `VERSION` said 2.2.1, and the published bundle's internal `VERSION`
+  was never compared against the release it came from. The release workflow
+  now refuses `tag != v$(cat VERSION)` and re-checks every built artifact
+  (bundle filename and internal `VERSION`, wheel filename and `METADATA`,
+  sdist filename and `PKG-INFO`) through the reusable
+  `scripts/check_release_versions.py` gate. The official provider accepts only
+  `ainative-dev-stack-<release.version>.zip` - a release publishing another
+  version's bundle is refused with the new stable code
+  `UPDATE_VERSION_MISMATCH`, before any download; the local mirror index obeys
+  the same rule. The updater also refuses a bundle whose internal `VERSION`
+  differs from the release it declared, before any project write.
+- **Runtime freshness (AUD-202, #131).** `ainative update` now requires the
+  installed lifecycle runtime to be exactly the target release version. A
+  mismatch is refused with the new stable code `CLI_UPDATE_REQUIRED` - before
+  the archive is downloaded and before the first write, with the upgrade
+  command in the message and in the JSON `detail`. `update check`,
+  `status --check-updates` and `doctor --check-updates` still report what is
+  available and now say when the CLI must be upgraded first.
+- **Stale update cache (#131).** After a successful update, the cached
+  availability notice could still announce the version the project had just
+  moved to (`2.2.1 is available. Current: 2.2.1`) until the TTL expired. Every
+  read of the cache now compares the cached `latest` against the live project
+  version: a notice that is not newer resolves to `UP_TO_DATE`, a malformed
+  cached version resolves fail-safe, and the cache is never rewritten by a
+  read-only command.
+- **Rollback dry-run wording (#131).** `ainative update rollback --dry-run`
+  printed "rolled back to ..." while writing nothing. It now prints
+  "(dry-run - nothing was written)" and "would roll back to ...", keeps
+  `"dry_run": true` in JSON, and a test captures stdout to pin both.
+- **Anti-debt secret previews (AUD-203).** trufflehog and gitleaks findings no
+  longer persist the first 8 characters of a detected secret in the id or the
+  evidence; they carry a non-reversible `sha256(secret)[:12]` fingerprint,
+  stable for the same input and distinct across secrets.
+- **Anti-debt failure boundary.** A defect in a scanner's own parser
+  (`AttributeError`, `TypeError`, `NameError` - the class of the clippy
+  `line_start` bug of #127) is no longer converted into a `{"warning": ...}`
+  entry; it fails the scan visibly. Missing binaries, timeouts, non-zero exits
+  and invalid external JSON still degrade to structured warnings.
+
+### Added
+
+- Release gate script `scripts/check_release_versions.py`, run before and
+  after the release build: `TAG == VERSION == ainative.__version__ ==
+  wheel/sdist/bundle labels == bundle internal VERSION`.
+- Upgrade E2E `scripts/lifecycle_upgrade_e2e.py` and its CI job: two real
+  wheels are built, one installed into a fresh venv, and the console script
+  crosses the transition for real - old runtime refuses (`CLI_UPDATE_REQUIRED`,
+  zero writes), runtime upgraded, update applies, rollback restores, tampered
+  bundle refuses (`UPDATE_INTEGRITY_FAILED`, zero writes).
+- Version-chain and stale-cache test suites, including mutation cases for
+  tag/asset/internal-VERSION mismatches and zero-write assertions; the
+  lifecycle non-vacuity suite proves each new guard actually blocks.
+- Supply-chain baseline (#129): all GitHub Actions pinned to commit SHAs,
+  `.github/dependabot.yml` (github-actions), a real `SECURITY.md` reporting
+  path, and `.github/CODEOWNERS` for the sensitive zones.
+
+### Changed
+
+- Historical Knowledge documents (`docs/K0-A-CAPABILITIES.md` flagged, K0-B
+  index annotated) now point at `docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md`
+  as the current state instead of reading as current capability claims.
+- CI: the Python 3.8 matrix entry's `continue-on-error` is actually wired
+  (best-effort documented surface); the orphan `tests/mv00` Multi-Vault
+  feasibility suites now run; `docs/AI_CONTEXT` for the anti-debt scanners
+  describes the real `shell=False` execution model of #127.
+
+
 ## [2.2.1] - 2026-09-13
 
 Corrective release. v2.2.0 is rolled back on `main` by revert (`b0c7ffd`,
