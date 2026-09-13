@@ -194,7 +194,10 @@ def main() -> int:
             if not wheel_n.is_file():
                 raise Failure(f"wheel not found: {wheel_n}")
         else:
-            wheel_n = build_wheel(REPO, workspace / "dist-n")
+            # Hermetic: a stale developer build/ cache could both fail the
+            # build and contaminate the artifact under test.
+            source = relabel_tree(REPO, workspace / "source-n", from_version)
+            wheel_n = build_wheel(source, workspace / "dist-n")
         run([venv_python, "-m", "pip", "install", "--disable-pip-version-check",
              "-q", "--no-deps", wheel_n])
         ok(f"runtime N {from_version} installed from {wheel_n.name}")

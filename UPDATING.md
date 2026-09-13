@@ -18,6 +18,22 @@ The full model — ownership, transactions, rollback, security boundaries — is
 
 ---
 
+## Updating or removing the machine integration
+
+Global integration (method blocks, skill links, hooks, plugins) is updated by
+re-running the installer from a stack checkout — it is idempotent, and it
+records what it wrote in `~/.ai-native/machine.json`:
+
+```bash
+python scripts/install_agents.py                    # install or update
+python scripts/install_agents.py --check            # verify
+python scripts/install_agents.py --uninstall --dry-run   # preview removal
+python scripts/install_agents.py --uninstall         # remove only what it owns
+```
+
+The uninstall removes recorded, unmodified assets and preserves everything
+else — including a managed file you edited since the install.
+
 ## Updating a project — `ainative update`
 
 The runtime that applies an update is the policy the release ships: the

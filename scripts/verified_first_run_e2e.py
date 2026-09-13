@@ -137,9 +137,16 @@ def main() -> int:
             if not wheel.is_file():
                 raise Failure(f"wheel not found: {wheel}")
         else:
+            # Build from a hermetic copy: a developer's `build/` cache made
+            # `pip wheel` fail with WinError 183 and, worse, could smuggle
+            # stale artifacts into what "the fresh wheel" means.
+            source = workspace / "source"
+            shutil.copytree(REPO, source, ignore=shutil.ignore_patterns(
+                ".git", "__pycache__", "*.pyc", ".pytest_cache", "build", "dist",
+                "*.egg-info", ".ai-native", ".gstack", "node_modules", ".venv", "venv"))
             dist = workspace / "dist"
             run([sys.executable, "-m", "pip", "wheel", "--disable-pip-version-check",
-                 "--no-deps", "--wheel-dir", dist, REPO])
+                 "--no-deps", "--wheel-dir", dist, source])
             wheels = sorted(dist.glob("*.whl"))
             if len(wheels) != 1:
                 raise Failure(f"expected one wheel, found {wheels}")

@@ -116,6 +116,7 @@ Components shipped today:
 | `skills-agents` | standard | tree | MANAGED_IMMUTABLE | `.agents/skills/` |
 | `machine-config` | standard | template | USER_DATA | `tools/ai_docs/config.sh` |
 | `gitignore-entry` | standard | external_block | EXTERNAL_CONFIG | `.gitignore` |
+| `claude-hook` | standard | json_hook | EXTERNAL_CONFIG | `.claude/settings.json` |
 | `verified-workplane` | verified | marker | MANAGED_IMMUTABLE | `.ai-native/lifecycle/verified.json` |
 | `verified-guide` | verified | file | MANAGED_IMMUTABLE | `.ai-native/docs/VERIFIED-WORK-PLANE.md` |
 | `verified-data` | verified | data_root | USER_DATA | `.ai-native/{trust,work,runs}` |
@@ -643,6 +644,7 @@ reinterpreted by the dispatcher.
 ├── tools/ai_docs/                     MANAGED_IMMUTABLE
 │   └── config.sh                      USER_DATA (never overwritten)
 ├── .claude/skills/                    MANAGED_IMMUTABLE
+├── .claude/settings.json              EXTERNAL_CONFIG (one owned hook entry)
 ├── .agents/skills/                    MANAGED_IMMUTABLE
 └── .ai-native/
     ├── templates/                     MANAGED_IMMUTABLE
@@ -656,3 +658,30 @@ reinterpreted by the dispatcher.
         ├── update-cache.json          the cached check
         └── lifecycle.lock             held only during a mutation
 ```
+
+---
+
+## 17. The machine surface (global integration)
+
+`ainative init` is per project. Installing the shared method, the skills and
+the harness hooks into a *machine* is a different surface, owned by
+`scripts/install_agents.py` from a stack checkout:
+
+```bash
+python scripts/install_agents.py                 # install or update (idempotent)
+python scripts/install_agents.py --check         # verify what exists
+python scripts/install_agents.py --dry-run       # preview
+python scripts/install_agents.py --uninstall [--dry-run]
+```
+
+Every run records what it wrote in `~/.ai-native/machine.json`: each link with
+its source, each managed block with its markers and preamble, each rendered
+file with its digest. The uninstall reverses exactly that record —
+links/junctions are removed and never followed, a rendered file is removed only
+while its bytes match the recorded digest, a block is removed only while its
+markers are present — and everything else (user skills, user agents, user
+edits) is preserved and reported. `ainative doctor` reads the manifest to
+report whether machine integration is present.
+
+The machine surface has no project ownership state and no transaction journal;
+re-running the installer *is* the update path.

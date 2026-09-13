@@ -410,7 +410,7 @@ refuses a target it did not ship with (`CLI_UPDATE_REQUIRED`, before any downloa
 and any write):
 
 ```bash
-pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"
 cd your-project && ainative update
 ```
 
@@ -483,6 +483,12 @@ Mavis, and the OpenCode plugin — all installed by
 `python scripts/install_agents.py` (see *Whole-stack transfer* below). Keeping
 the two apart is what makes both reversible.
 
+Outside a Git repository, Standard installs with a documented degradation —
+Knowledge persistence and provenance are unavailable until `git init` — and
+`ainative doctor` reports it. Verified refuses to install at all
+(`GIT_REPOSITORY_REQUIRED`): its guarantees resolve against a repository that
+would not exist.
+
 ---
 
 ## The Verified Work Plane
@@ -493,9 +499,16 @@ verifications — never from narrative, and never from anything the caller hands
 in.
 
     pip install .
-    ainative trust bootstrap --repo . --approval-root root.json --policy policy.json --by "you"
+    ainative init --profile verified
+    ainative trust init --repo . --by "you"          # writes the scaffold, no authority
+    ainative trust bootstrap --repo . \
+      --approval-root .ai-native/trust/setup/approval-root.json \
+      --policy .ai-native/trust/setup/policy.json --by "you" \
+      --predicate recorded_owner_ack
+    # commit the anchor, then declare and verify work:
     ainative work admit .ai-native/work/w1 --repo . --by "you" --artifact ...
     ainative work new   .ai-native/work/w1 --artifact ...
+    ainative verify     --work .ai-native/work/w1 --repo . --verification <uid>
     ainative converge   --work .ai-native/work/w1 --repo .
 
 Exit codes: 0 CONVERGED, 1 NOT_CONVERGED, 2 INVALID, 3 INTERNAL_ERROR.
@@ -588,8 +601,9 @@ ainative init --profile standard --dry-run   # see the plan first, change nothin
 #    never overwrites it afterwards)
 # Edit tools/ai_docs/config.sh: OBSIDIAN_VAULT, GRAPHIFY_BIN, CLAUDE_MEMORY_KEY
 
-# 3. Register the PostToolUse hook in .claude/settings.json
-# (see .ai-native/templates/settings_hook_example.json)
+# 3. The PostToolUse hook is already configured: `ainative init` merged one
+#    owned entry into .claude/settings.json without touching the rest of the
+#    file, and `ainative doctor` verifies the entry and its target.
 
 # 4. Write AI_CONTEXT.md for each major module
 # (see .ai-native/templates/AI_CONTEXT_template.md)
@@ -654,7 +668,11 @@ python scripts/install_agents.py --dry-run
 Skills are installed into every agent root the stack knows about — Claude Code
 (`~/.claude/skills`) and the cross-CLI `~/.agents/skills` used by Codex,
 OpenCode and Cursor — as links, not copies, so a `git pull` updates every CLI
-at once.
+at once. The installer records everything it writes in
+`~/.ai-native/machine.json` (source or digest per asset), and
+`python scripts/install_agents.py --uninstall` reverses exactly that record:
+user files and user-edited files are preserved, and `--dry-run` shows the plan
+first. The install itself is idempotent — re-run it to update.
 
 The single source of the engineering method is [`AGENTS.md`](AGENTS.md) — every
 tool config references it instead of re-stating the rules, so the configs never

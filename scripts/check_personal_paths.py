@@ -44,6 +44,12 @@ PATTERNS = (
 # Files whose bytes are the historical record. Rewriting the path inside a
 # qualification log would change evidence; the reason is the allowlist entry.
 ALLOWED_FILES = {
+    # The gate itself defines the forbidden patterns; its own source cannot be
+    # expected to avoid quoting them.
+    "scripts/check_personal_paths.py":
+        "defines the forbidden shapes; the literals are regex sources, not paths",
+    "tests/test_personal_paths_gate.py":
+        "mutation fixtures: deliberately invalid paths the gate must refuse",
     "docs/qualification/claude-code.json":
         "historical qualification evidence: the interpreter path is part of the recorded run",
     "docs/qualification/codex-desktop.json":
