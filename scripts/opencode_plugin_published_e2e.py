@@ -96,7 +96,11 @@ def machine_init(ainative: Path, home: Path, env: dict) -> Path:
     report = json.loads(completed.stdout)
     require(report.get("changes", 0) > 0, "the machine init recorded changes")
     require(report.get("errors", 1) == 0, "the machine init reported no error")
-    require(str(home.resolve()) in str(report.get("manifest")),
+    # The manifest path in the report may use the platform's short or long form
+    # (Windows CI runs under RUNNER~1); compare resolved locations, not strings.
+    manifest = report.get("manifest")
+    require(isinstance(manifest, str) and Path(manifest).is_file()
+            and Path(manifest).resolve().parent == (home / ".ai-native").resolve(),
             "the machine manifest was written under the throwaway home")
 
     plugin = home / PLUGIN_RELATIVE
@@ -151,6 +155,9 @@ def main() -> int:
     root = Path(tempfile.mkdtemp(prefix="opencode-published-"))
     home = root / "home"
     home.mkdir()
+    # Resolve once: Windows temp paths can be 8.3 short names, and comparing a
+    # short form with a resolved one made a passing install look wrong on CI.
+    home = home.resolve()
     env = {**clean_environment(), "HOME": str(home), "USERPROFILE": str(home),
            "AINATIVE_NO_UPDATE_CHECK": "1", "PYTHONIOENCODING": "utf-8"}
     try:
