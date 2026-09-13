@@ -46,6 +46,7 @@ class OfficialReleaseDocument(LifecycleTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.install("standard")
+        self.assume_runtime("2.0.0")
         self.v2_tree = build_distribution_tree(self.root / "dist-v2", "2.0.0")
         self.archive = make_release_archive(self.v2_tree, self.root / "bundle-2.0.0.zip")
         self.archive_bytes = self.archive.read_bytes()
@@ -85,13 +86,10 @@ class OfficialReleaseDocument(LifecycleTestCase):
     def snapshot(self) -> dict[str, str]:
         from ainative.lifecycle.digest import digest_file
 
-        # The update check is allowed to record its own cache before a download;
-        # everything else in the project must be untouched by a refused update.
-        excluded = {".ai-native/lifecycle/update-cache.json"}
+        # A refused update writes nothing at all - not a file, not the check
+        # cache (the updater records no cache before the version gates).
         return {path.relative_to(self.project).as_posix(): digest_file(path) or ""
-                for path in self.project.rglob("*")
-                if path.is_file()
-                and path.relative_to(self.project).as_posix() not in excluded}
+                for path in self.project.rglob("*") if path.is_file()}
     # --- selection and refusal ------------------------------------------
 
     def test_the_lifecycle_bundle_and_its_published_digest_are_selected(self):

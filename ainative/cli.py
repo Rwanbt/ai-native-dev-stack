@@ -267,7 +267,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
-    from .lifecycle import recovery
+    from .lifecycle import recovery, updater
     from .knowledge import doctor as knowledgedoctor
 
     project = _project(args)
@@ -289,6 +289,12 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  INTERRUPTED    {item['id']} ({item['operation']}) — run `ainative repair`")
         for note in diagnosis.notes:
             print(f"  note: {note}")
+        if diagnosis.update:
+            # Reported even when it cannot be applied: knowing a release exists
+            # and knowing this runtime cannot apply it are two different facts
+            # (#131 / AUD-202).
+            print("Updates")
+            print(f"  {updater.notice_line(diagnosis.update)}")
         print("Knowledge:")
         print(f"  status: {knowledge['status']}   store: {knowledge['store']}")
         if knowledge["status"] != knowledgedoctor.STATUS_FAIL:
@@ -365,10 +371,19 @@ def _cmd_update(args: argparse.Namespace) -> int:
         return EXIT_OK
     if args.update_command == "rollback":
         record = updater.rollback(project, dry_run=args.dry_run)
-        return _report(args, record,
-                       f"rolled back to {record.get('to_version')} "
-                       f"({len(record.get('restored', record.get('would_restore', [])))} files)"
-                       + f"\nscope: {record.get('scope', '')}")
+        if record.get("dry_run"):
+            # A dry run that says "rolled back" is lying about the only thing
+            # it is allowed to do: describe (#131).
+            text = ("(dry-run — nothing was written)\n"
+                    f"would roll back to {record.get('to_version')} "
+                    f"({len(record.get('would_restore', []))} files to restore, "
+                    f"{len(record.get('would_remove', []))} to remove)\n"
+                    f"scope: {record.get('scope', '')}")
+        else:
+            text = (f"rolled back to {record.get('to_version')} "
+                    f"({len(record.get('restored', []))} files)"
+                    f"\nscope: {record.get('scope', '')}")
+        return _report(args, record, text)
 
     result = updater.apply(project, dry_run=args.dry_run, force=args.force)
     text = (f"{'(dry-run) ' if result.dry_run else ''}"

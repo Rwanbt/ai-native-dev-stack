@@ -55,10 +55,20 @@ class LocalReleaseFixture(LifecycleTestCase):
         self.releases = self.root / "releases"
         self.releases.mkdir()
         self.v2_tree = build_distribution_tree(self.root / "dist-v2", "2.0.0")
-        self.archive = make_release_archive(self.v2_tree, self.releases / "stack-2.0.0.zip")
+        # The mirror contract names archives exactly as the official release
+        # does; a shorter name is a different release this stack refuses.
+        self.archive = make_release_archive(
+            self.v2_tree, self.releases / "ainative-dev-stack-2.0.0.zip")
         self.publish("2.0.0", self.archive)
         self.set_env(providerlib.PROVIDER_ENV, "local")
         self.set_env(providerlib.LOCAL_SOURCE_ENV, str(self.releases))
+        self.assume_runtime("2.0.0")
+
+    def _v1_archive(self) -> Path:
+        """A v1 bundle the current v1 project would be *at*, not moving to."""
+
+        tree = build_distribution_tree(self.root / "dist-v1b", "1.0.0")
+        return make_release_archive(tree, self.releases / "ainative-dev-stack-1.0.0.zip")
 
     def publish(self, version: str, archive: Path, digest: str | None = None) -> None:
         payload = {"channels": {"stable": {
@@ -80,7 +90,7 @@ class UpdateCheck(LocalReleaseFixture):
 
     def test_the_same_version_produces_no_notification(self):
         self.install("standard")
-        self.publish("1.0.0", self.archive)
+        self.publish("1.0.0", self._v1_archive())
         outcome = updaterlib.check(self.project, force=True)
         self.assertEqual(outcome.status, updaterlib.UP_TO_DATE)
         self.assertNotIn("available", outcome.message())
@@ -243,7 +253,7 @@ class UpdateApply(LocalReleaseFixture):
 
     def test_an_update_with_nothing_newer_does_nothing(self):
         self.install("standard")
-        self.publish("1.0.0", self.archive)
+        self.publish("1.0.0", self._v1_archive())
         result = updaterlib.apply(self.project, distribution=self.distribution)
         self.assertFalse(result.applied)
 
@@ -278,7 +288,8 @@ class UpdateRecovery(LocalReleaseFixture):
 
         newer = build_distribution_tree(self.root / "dist-v2b", "2.0.0",
                                         extra_skill="brand-new")
-        archive = make_release_archive(newer, self.releases / "stack-2.0.0b.zip")
+        archive = make_release_archive(
+            newer, self.releases / "ainative-dev-stack-2.0.0.zip")
         self.publish("2.0.0", archive)
 
         self.install("standard")

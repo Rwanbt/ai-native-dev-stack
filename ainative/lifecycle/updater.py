@@ -13,6 +13,16 @@ and works offline.
 *Authority commands never call any of this.* `verify`, `converge`, `trust` and
 `work` are routed by the dispatcher without touching this module: a verdict must
 not depend on what a remote server said (ADR-0009 §6).
+
+*The runtime is the policy.* Applying release N+1 is done by the lifecycle code
+of N+1: the manifests, the planner and the transaction engine all ship inside
+the Python package, so a project whose assets were minted by a newer release
+would be maintained by an older policy that cannot know them. `apply` therefore
+refuses any target whose version differs from the running package
+(`CLI_UPDATE_REQUIRED`), before downloading and before the first write. This is
+strict equality on purpose: a compatibility matrix no release has needed yet
+would be a silent permission system, and a silent permission system is what
+this refusal exists to remove.
 """
 
 from __future__ import annotations
@@ -45,6 +55,9 @@ DISABLED = "DISABLED"
 
 DISABLE_ENV = "AINATIVE_NO_UPDATE_CHECK"
 STAGED_RELATIVE = statelib.LIFECYCLE_DIRNAME / "staged"
+UPGRADE_COMMAND_TEMPLATE = (
+    'pip install --upgrade '
+    '"git+https://github.com/Rwanbt/ai-native-dev-stack.git@v{version}"')
 
 # A zip that expands to more than this, or holds more entries, is refused before
 # a single byte is written. Both are classic archive bombs.
@@ -61,16 +74,29 @@ class CheckResult:
     from_cache: bool = False
     checked_at: str | None = None
     detail: str = ""
+    # Whether THIS runtime could apply `latest`. Recomputed from the running
+    # package at every read - never trusted from a cache written by another
+    # runtime, which is the stale-notice class this avoids (#131).
+    runtime_version: str = ""
+    runtime_ready: bool = True
 
     def to_record(self) -> dict:
         return {"status": self.status, "current": self.current, "latest": self.latest,
                 "from_cache": self.from_cache, "checked_at": self.checked_at,
-                "detail": self.detail}
+                "detail": self.detail, "runtime_version": self.runtime_version,
+                "runtime_ready": self.runtime_ready}
 
     def message(self) -> str:
         if self.status == UPDATE_AVAILABLE:
-            return (f"AI Native {self.latest} is available.\nCurrent: {self.current}\n"
-                    "Run `ainative update`")
+            lines = [f"AI Native {self.latest} is available.",
+                     f"Current: {self.current}"]
+            if self.runtime_ready:
+                lines.append("Run `ainative update`")
+            else:
+                lines.append(f"This CLI runtime is {self.runtime_version}; release "
+                             f"{self.latest} must be applied by runtime {self.latest}.")
+                lines.append(f"Upgrade the CLI first: {upgrade_command(str(self.latest))}")
+            return "\n".join(lines)
         if self.status == UP_TO_DATE:
             return f"Up to date ({self.current})."
         if self.status == DISABLED:
@@ -80,6 +106,62 @@ class CheckResult:
 
 def cache_path(project: Path) -> Path:
     return project / statelib.UPDATE_CACHE_RELATIVE
+
+
+def runtime_version() -> str:
+    """The version of the package executing this code - not of any release."""
+
+    from ainative import __version__
+
+    return __version__
+
+
+def upgrade_command(version: str) -> str:
+    """The exact command that installs the runtime a target release needs."""
+
+    return UPGRADE_COMMAND_TEMPLATE.format(version=version)
+
+
+def _runtime_fields(result: CheckResult) -> CheckResult:
+    """Fill the freshness fields from the running package, every time."""
+
+    runtime = runtime_version()
+    result.runtime_version = runtime
+    result.runtime_ready = (result.status != UPDATE_AVAILABLE
+                            or result.latest is None
+                            or runtime == result.latest)
+    return result
+
+
+def _reconcile_cached(cached: dict, current: str) -> CheckResult:
+    """Read a cached answer without letting it outrank the state it describes.
+
+    A cache written before an update lands still says UPDATE_AVAILABLE for the
+    version the project just moved to, and `update check` then announces
+    "2.2.1 is available. Current: 2.2.1" until the TTL expires (#131). The
+    comparison happens at every read, so the answer is corrected immediately
+    without mutating the cache - some readers are read-only by contract.
+
+    A cached value that is not SemVer cannot establish "newer", and the
+    failure this guards against is announcing an update that is not one, so it
+    resolves to UP_TO_DATE with the reason stated in `detail`.
+    """
+
+    status = str(cached.get("status", CHECK_FAILED))
+    latest = cached.get("latest")
+    detail = str(cached.get("detail", ""))
+    if status == UPDATE_AVAILABLE:
+        if not (isinstance(latest, str) and versionlib.parse(latest) is not None):
+            status = UP_TO_DATE
+            detail = "cached availability notice carries no usable version"
+        elif not versionlib.is_newer(latest, current):
+            status = UP_TO_DATE
+            detail = f"cached availability notice ({latest}) is not newer than {current}"
+    result = CheckResult(status=status, current=current,
+                         latest=latest if isinstance(latest, str) else None,
+                         from_cache=True, checked_at=cached.get("checked_at"),
+                         detail=detail)
+    return _runtime_fields(result)
 
 
 def _read_cache(project: Path) -> dict | None:
@@ -119,12 +201,17 @@ def checks_disabled(state: statelib.InstallState | None) -> bool:
 
 def check(project: Path, *, force: bool = False, allow_network: bool = True,
           record: bool = True, state: statelib.InstallState | None = None,
-          source: DistributionSource | None = None) -> CheckResult:
+          source: DistributionSource | None = None,
+          release: providerlib.Release | None = None) -> CheckResult:
     """Resolve the newest compatible release. Never fatal, never a traceback.
 
     `record=False` answers without touching the cache. `update --dry-run` needs
     it: the cache is a file, and a dry run that wrote one was a dry run that
     changed the project (EMP-LC-024).
+
+    `release` lets a caller that already resolved the release (the updater,
+    which must check the runtime contract before any write) share it instead of
+    asking the provider twice.
     """
 
     project = installerlib.require_project(project)
@@ -138,42 +225,82 @@ def check(project: Path, *, force: bool = False, allow_network: bool = True,
     if cached and not force:
         age = _cache_age(cached)
         if age is not None and age < interval:
-            return CheckResult(status=str(cached.get("status", CHECK_FAILED)), current=current,
-                               latest=cached.get("latest"), from_cache=True,
-                               checked_at=cached.get("checked_at"),
-                               detail=str(cached.get("detail", "")))
+            return _reconcile_cached(cached, current)
 
     if not allow_network or (checks_disabled(state) and not force):
-        return CheckResult(DISABLED, current, from_cache=False, detail="update checks disabled")
+        return _runtime_fields(CheckResult(DISABLED, current, from_cache=False,
+                                           detail="update checks disabled"))
 
-    try:
-        release = providerlib.build(channel).latest(channel)
-    except LifecycleError as error:
-        status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
-        result = CheckResult(status, current, detail=error.message,
-                             checked_at=statelib.now())
-        if record:
-            _write_cache(project, result)
-        return result
+    if release is None:
+        try:
+            release = providerlib.build(channel).latest(channel)
+        except LifecycleError as error:
+            status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
+            result = _runtime_fields(CheckResult(status, current, detail=error.message,
+                                                 checked_at=statelib.now()))
+            if record:
+                _write_cache(project, result)
+            return result
 
     newer = versionlib.is_newer(release.version, current)
-    result = CheckResult(UPDATE_AVAILABLE if newer else UP_TO_DATE, current,
-                         latest=release.version, notes=release.notes,
-                         checked_at=statelib.now())
+    result = _runtime_fields(CheckResult(UPDATE_AVAILABLE if newer else UP_TO_DATE, current,
+                                         latest=release.version, notes=release.notes,
+                                         checked_at=statelib.now()))
     if record:
         _write_cache(project, result)
     return result
 
 
-def cached_notice(project: Path, *, allow_network: bool = False) -> dict | None:
-    """What a status line may print. Reads the cache; never dials out by itself."""
+def cached_notice(project: Path, *, allow_network: bool = False,
+                  current: str | None = None) -> dict | None:
+    """What a status line may print. Reads the cache; never dials out by itself.
+
+    `current` lets a caller that already loaded the install state pass the
+    project's own version, so a cache that predates an update cannot announce
+    an update that already happened (#131). Without it, the state is read
+    defensively: a corrupt state must not turn a status line into a crash.
+    """
 
     if allow_network:
         return check(project).to_record()
     cached = _read_cache(project)
     if cached is None:
         return None
-    return {**cached, "from_cache": True}
+    if current is None:
+        current = _current_without_raising(project, cached)
+    return _reconcile_cached(cached, current).to_record()
+
+
+def notice_line(record: dict | None) -> str:
+    """One line a status or doctor output prints for an update record.
+
+    Single owner on purpose: two renderings of the same record drifted the
+    first time - `status` printed a raw status where `check` printed a
+    sentence - and this line is where the runtime-requirement is surfaced to
+    a user whose CLI cannot apply the release it sees.
+    """
+
+    if not record:
+        return "unknown"
+    status = record.get("status")
+    latest = record.get("latest")
+    if status == UPDATE_AVAILABLE and latest:
+        if record.get("runtime_ready", True):
+            return f"{latest} available"
+        return (f"{latest} available (CLI upgrade required first: "
+                f"{upgrade_command(str(latest))})")
+    return str(status or "unknown").lower()
+
+
+def _current_without_raising(project: Path, cached: dict) -> str:
+    try:
+        state = statelib.load(project)
+    except LifecycleError:
+        state = None
+    if state is not None and state.stack_version:
+        return state.stack_version
+    fallback = cached.get("current")
+    return fallback if isinstance(fallback, str) and fallback else "0.0.0"
 
 
 # --- applying an update --------------------------------------------------
@@ -278,9 +405,43 @@ def rollback_candidate(project: Path):
     return max(candidates, key=lambda item: item.started_at, default=None)
 
 
+def _require_matching_runtime(release: providerlib.Release) -> None:
+    """Refuse a target this lifecycle runtime does not know (AUD-202).
+
+    The runtime and the target must be the same version - not a compatibility
+    matrix, an exact equality. The older runtime's manifests, planner and
+    transaction code are what would execute, and nothing inside that runtime
+    can prove they implement the policy the target release intends. The
+    refusal happens before the archive is fetched and before the first write:
+    it costs one bounded metadata request.
+    """
+
+    runtime = runtime_version()
+    if runtime == release.version:
+        return
+    direction = "older" if versionlib.is_newer(release.version, runtime) else "different"
+    raise LifecycleError(
+        "CLI_UPDATE_REQUIRED",
+        f"AI Native CLI runtime: {runtime}\n"
+        f"Target stack release: {release.version}\n\n"
+        f"This project cannot be updated safely with a {direction} lifecycle runtime.\n\n"
+        "Upgrade the CLI first:\n"
+        f"  {upgrade_command(release.version)}\n\n"
+        "Then run:\n"
+        "  ainative update",
+        runtime_version=runtime, target_version=release.version,
+        upgrade_command=upgrade_command(release.version))
+
+
 def apply(project: Path, *, dry_run: bool = False, force: bool = False,
           distribution: manifestlib.Distribution | None = None) -> UpdateResult:
-    """check -> resolve -> stage -> verify -> transactional apply -> commit."""
+    """resolve -> runtime gate -> check -> fetch -> verify -> apply -> commit.
+
+    The gate order is load-bearing: the release is resolved (metadata only),
+    the runtime contract is checked, and only then is the archive downloaded.
+    Everything that can refuse happens before the first project write, so a
+    refused update leaves the project byte-identical.
+    """
 
     project = installerlib.require_project(project)
     distribution = distribution or manifestlib.load()
@@ -289,14 +450,41 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
         raise LifecycleError("NOT_INSTALLED",
                              f"no AI Native installation recorded in {project}")
 
-    outcome = check(project, force=True, record=not dry_run, state=state)
-    if outcome.status not in (UPDATE_AVAILABLE,) and not force:
+    channel = state.update_preferences.get("channel", "stable") or "stable"
+    provider = providerlib.build(channel)
+    try:
+        release = provider.latest(channel)
+    except LifecycleError as error:
+        # An unreachable or empty source degrades gracefully, exactly as
+        # `check` reports it. A source that answered with something this stack
+        # refuses (mismatched bundle version, missing digest) is not degraded
+        # connectivity - it is a refusal, and it propagates.
+        if force or error.code not in ("UPDATE_CHECK_FAILED", "UPDATE_UNAVAILABLE"):
+            raise
+        outcome = _runtime_fields(CheckResult(
+            OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED,
+            state.stack_version, detail=error.message, checked_at=statelib.now()))
+        if not dry_run:
+            _write_cache(project, outcome)
+        return UpdateResult(False, dry_run, state.stack_version, None, outcome)
+
+    # Availability first, runtime contract second: a project already at the
+    # newest release has nothing to apply, so a runtime that differs is not
+    # asked to apply anything and gets the truthful "nothing to do" instead of
+    # a refusal about work nobody requested.
+    applying = force or versionlib.is_newer(release.version, state.stack_version)
+    if applying:
+        _require_matching_runtime(release)
+
+    # `record=False`: every refusal below this line must leave the project
+    # byte-identical, cache included. The cache is refreshed by
+    # `ainative update check`, and corrected at read time (#131) - an attempt
+    # that did not apply anything writes nothing.
+    outcome = check(project, force=True, record=False, state=state, release=release)
+    if not applying:
         return UpdateResult(applied=False, dry_run=dry_run, from_version=state.stack_version,
                             to_version=outcome.latest, check=outcome)
 
-    channel = state.update_preferences.get("channel", "stable") or "stable"
-    provider = providerlib.build(channel)
-    release = provider.latest(channel)
     payload = provider.fetch(release)
     providerlib.verify_archive(payload, release.digest)
 
@@ -306,6 +494,15 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
         root = _distribution_root(_safe_extract(payload, staging))
         staged_source = DistributionSource(root=root.resolve(), origin="update",
                                            version=sourcelib.read_version(root))
+        # The release named a version; the bytes name another one. SHA-256
+        # covers integrity, not identity - this comparison is what makes the
+        # filename version and the internal VERSION one fact (AUD-201).
+        if staged_source.version != release.version:
+            raise LifecycleError(
+                "UPDATE_VERSION_MISMATCH",
+                f"release {release.version} published a bundle whose internal "
+                f"VERSION is {staged_source.version!r}; refusing before any write",
+                release_version=release.version, bundle_version=staged_source.version)
         plan, _, _ = installerlib.plan_profile(project, distribution, staged_source,
                                                state.active_profile, operation="update",
                                                state=state)
@@ -445,7 +642,8 @@ def _backed_up_version(project: Path, journal) -> str | None:
 
 __all__ = [
     "UP_TO_DATE", "UPDATE_AVAILABLE", "OFFLINE", "CHECK_FAILED", "DISABLED", "DISABLE_ENV",
-    "CheckResult", "check", "cached_notice", "checks_disabled",
+    "CheckResult", "check", "cached_notice", "checks_disabled", "notice_line",
+    "runtime_version", "upgrade_command",
     "UpdateResult", "apply", "rollback", "rollback_candidate", "cache_path",
     "ROLLBACK_SCOPE",
     "MAX_EXPANDED_BYTES", "MAX_ARCHIVE_ENTRIES",
