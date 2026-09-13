@@ -182,7 +182,9 @@ def diagnose(project: Path, *, distribution: Distribution | None = None,
             "component": "lifecycle", "status": CORRUPTED,
             "detail": "transaction journal is malformed or has an illegal id; ignored"})
     diagnosis.lock = locklib.describe(project)
-    diagnosis.update = updaterlib.cached_notice(project, allow_network=check_updates)
+    diagnosis.update = updaterlib.cached_notice(
+        project, allow_network=check_updates,
+        current=state.stack_version if state else None)
     return diagnosis
 
 

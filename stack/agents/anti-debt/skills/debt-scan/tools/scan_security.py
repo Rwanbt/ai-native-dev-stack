@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "tools"))
-from finding_common import finding_id  # noqa: E402
+from finding_common import finding_id, secret_fingerprint  # noqa: E402
 
 
 TOOLS = [
@@ -61,12 +61,13 @@ def normalize_trufflehog(stdout: str) -> list[dict]:
 
         source_path = item.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {}).get("file", "")
         raw = item.get("Raw", "")
-        # Truncate raw secret to first 8 chars to avoid leaking in reports
-        raw_preview = raw[:8] + "..." if len(raw) > 8 else raw
+        # A fingerprint identifies the secret across scans without carrying a
+        # single byte of it into the report (AUD-203). No preview, ever.
+        fingerprint = secret_fingerprint(raw)
 
         findings.append({
             "id": finding_id("security", "secrets_in_code", source_path, "",
-                             f"trufflehog:{item.get('DetectorName', '?')}:{raw_preview}"),
+                             f"trufflehog:{item.get('DetectorName', '?')}:{fingerprint}"),
             "category": "security",
             "subcategory": "secrets_in_code",
             "severity": severity,
@@ -74,7 +75,7 @@ def normalize_trufflehog(stdout: str) -> list[dict]:
             "description": f"Secret detected by trufflehog: {item.get('DetectorName', 'unknown')} ({'verified' if item.get('Verified') else 'unverified'})",
             "evidence": [
                 {"type": "file_location", "value": source_path},
-                {"type": "tool_output", "tool": "trufflehog", "value": f"Detector {item.get('DetectorName', '?')} verified={item.get('Verified')}, preview={raw_preview}"},
+                {"type": "tool_output", "tool": "trufflehog", "value": f"Detector {item.get('DetectorName', '?')} verified={item.get('Verified')}, fingerprint={fingerprint}"},
             ],
             "confidence": confidence,
             "source": "tool:trufflehog",
@@ -102,9 +103,12 @@ def normalize_gitleaks(stdout: str) -> list[dict]:
         items = [items]
 
     for item in items:
+        # Same contract as trufflehog: a fingerprint, never a preview.
+        fingerprint = secret_fingerprint(str(item.get("Secret", "")))
         findings.append({
             "id": finding_id("security", "secrets_in_code", item.get("File", ""),
-                             str(item.get("StartLine", "?")), item.get("RuleID", "")),
+                             str(item.get("StartLine", "?")),
+                             f"{item.get('RuleID', '')}:{fingerprint}"),
             "category": "security",
             "subcategory": "secrets_in_code",
             "severity": "critical",
@@ -112,7 +116,7 @@ def normalize_gitleaks(stdout: str) -> list[dict]:
             "description": f"Secret detected by gitleaks: {item.get('RuleID', 'unknown')}",
             "evidence": [
                 {"type": "file_location", "value": f"{item.get('File', '')}:{item.get('StartLine', '?')}"},
-                {"type": "tool_output", "tool": "gitleaks", "value": f"Rule {item.get('RuleID', '?')} secret (preview {item.get('Secret', '')[:8]}...)"},
+                {"type": "tool_output", "tool": "gitleaks", "value": f"Rule {item.get('RuleID', '?')} fingerprint={fingerprint}"},
             ],
             "confidence": 0.95,
             "source": "tool:gitleaks",
@@ -227,16 +231,23 @@ def main() -> int:
                 cwd=str(root),
                 timeout=600,
             )
-            # trufflehog exits 0 even when secrets found; osv-scanner exits 1
-            if result.returncode not in (0, 1):
-                warnings.append({"warning": f"{tool['name']} exited {result.returncode}", "stderr_tail": result.stderr[-300:]})
-                continue
-            findings = PARSERS[tool["parser"]](result.stdout)
-            all_findings.extend(findings)
         except subprocess.TimeoutExpired:
             warnings.append({"warning": f"{tool['name']} timed out after 600s"})
-        except Exception as e:
-            warnings.append({"warning": f"{tool['name']} failed: {type(e).__name__}: {e}"})
+            continue
+        except OSError as error:
+            # Binary vanished between detection and run, permissions, ...
+            warnings.append({"warning": f"{tool['name']} could not run: {error}"})
+            continue
+        # trufflehog exits 0 even when secrets found; osv-scanner exits 1
+        if result.returncode not in (0, 1):
+            warnings.append({"warning": f"{tool['name']} exited {result.returncode}", "stderr_tail": result.stderr[-300:]})
+            continue
+        # Deliberately unguarded: an external tool failure is a warning above,
+        # but a defect in this scanner's parser (AttributeError, TypeError,
+        # NameError) must fail the scan where it can be seen - the clippy
+        # parser's silent degradation is exactly what a broad except hid (#127).
+        findings = PARSERS[tool["parser"]](result.stdout)
+        all_findings.extend(findings)
 
     print(json.dumps({
         "tools_installed": installed_tools,

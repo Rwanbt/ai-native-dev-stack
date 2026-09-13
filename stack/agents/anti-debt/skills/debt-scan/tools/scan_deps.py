@@ -340,13 +340,18 @@ def main() -> int:
                 cwd=str(root),
                 timeout=600,
             )
-            # audit tools exit nonzero on issues found — that's expected
-            findings = PARSERS[tool["name"]](result.stdout)
-            all_findings.extend(findings)
         except subprocess.TimeoutExpired:
             warnings.append({"warning": f"{tool['name']} timed out"})
-        except Exception as e:
-            warnings.append({"warning": f"{tool['name']} failed: {type(e).__name__}: {e}"})
+            continue
+        except OSError as error:
+            warnings.append({"warning": f"{tool['name']} could not run: {error}"})
+            continue
+        # audit tools exit nonzero on issues found — that's expected. The
+        # parser call is deliberately unguarded: an external failure is the
+        # warning above, a defect in this scanner's parser must fail visibly
+        # (#127 class).
+        findings = PARSERS[tool["name"]](result.stdout)
+        all_findings.extend(findings)
 
     # Heuristic fallback for Python: detect outdated packages when pip-audit
     # is not installed. Findings are tagged confidence=0.5 to land in 'review' tier.

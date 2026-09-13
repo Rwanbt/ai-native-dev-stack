@@ -74,11 +74,7 @@ class Status:
         if self.update:
             lines.append("")
             lines.append("Updates")
-            latest = self.update.get("latest")
-            if self.update.get("status") == updaterlib.UPDATE_AVAILABLE and latest:
-                lines.append(f"  {latest} available")
-            else:
-                lines.append(f"  {self.update.get('status', 'unknown').lower()}")
+            lines.append(f"  {updaterlib.notice_line(self.update)}")
         return "\n".join(lines)
 
 
@@ -168,7 +164,8 @@ def build(project: Path, *, distribution: Distribution | None = None,
         components=_component_rows(distribution, state, diagnosis),
         healthy=diagnosis.healthy, lifecycle_notes=notes,
         verified=_verified_section(project, distribution, state),
-        update=updaterlib.cached_notice(project, allow_network=check_updates),
+        update=updaterlib.cached_notice(project, allow_network=check_updates,
+                                        current=state.stack_version),
         counts=diagnosis.counts())
 
 

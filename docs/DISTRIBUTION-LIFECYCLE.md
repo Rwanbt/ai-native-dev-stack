@@ -378,21 +378,56 @@ it. They may display an already-cached notice; nothing more.
 ### Applying
 
 ```
-check → resolve release → download → verify digest → validate archive paths
-      → extract to a staging directory → build the plan → backup
+resolve release → runtime contract check → check → download → verify digest
+      → validate archive paths → extract to a staging directory
+      → bundle version check → build the plan → backup
       → transactional apply → commit state → record rollback metadata
 ```
 
-There is no `curl … | overwrite project` anywhere in this path.
+There is no `curl … | overwrite project` anywhere in this path. Everything
+that can refuse happens before the first project write: a refused update -
+wrong runtime, wrong version, bad digest, bad archive - leaves the project
+byte-identical, cache included.
 
 **The artifact, stated precisely.** The official provider consumes exactly one
 asset: the lifecycle bundle `ainative-dev-stack-<version>.zip` published beside
-the wheel and the sdist. Its SHA-256 must be published by the source (the
-release asset digest); a release whose bundle carries no digest, or no bundle
-at all, is refused with `UPDATE_INTEGRITY_METADATA_MISSING` before any download.
-There is no `zipball` fallback and no unverified path. The internal mirror
-contract is the same: a `releases.json` channel without a valid `sha256` is
-refused.
+the wheel and the sdist, named for the release's own version. A release whose
+tag says 2.2.2 and whose bundle says 2.2.1 is refused with
+`UPDATE_VERSION_MISMATCH` before any download; so is a bundle whose internal
+`VERSION` file disagrees with the release it declared, and so is a local
+mirror whose index declares one version and names another version's archive.
+Its SHA-256 must be published by the source (the release asset digest); a
+release whose bundle carries no digest, or no bundle at all, is refused with
+`UPDATE_INTEGRITY_METADATA_MISSING` before any download. There is no `zipball`
+fallback and no unverified path. The internal mirror contract is the same: a
+`releases.json` channel without a valid `sha256` is refused.
+
+**The runtime must be the target.** Applying release N+1 is done by the
+lifecycle code of N+1: the manifests, the planner and the transaction engine
+ship inside the Python package. The updater therefore requires the installed
+runtime to be exactly the target release version and refuses any other with
+`CLI_UPDATE_REQUIRED`, before the download. The rule is strict equality, not a
+compatibility matrix: no release has needed one, and a silent permission
+system is the failure mode this refusal removes. Detection is unaffected -
+`update check`, `status --check-updates` and `doctor --check-updates` work
+with any runtime and say when a CLI upgrade is required first:
+
+```bash
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+cd your-project && ainative update
+```
+
+**The release chain, stated precisely.** For a published release:
+
+```
+tag == VERSION == ainative.__version__ == wheel/sdist metadata
+    == bundle filename version == bundle internal VERSION
+```
+
+`scripts/check_release_versions.py` enforces the whole chain in the release
+workflow, before publishing and again over the built artifacts; a tag that
+does not name the tree's `VERSION` fails the release even when it points at
+`main`.
 **Integrity, stated precisely.** SHA-256 over the release archive proves the
 bytes are the bytes the source described, and the archive's entry names are
 validated by the same containment rule as every other destination (an entry
@@ -566,7 +601,8 @@ Stable error codes: `PROFILE_INVALID` · `COMPONENT_UNKNOWN` · `MANIFEST_INVALI
 `CONFIRMATION_REQUIRED` · `PATH_ESCAPE` · `INSTALL_STATE_CORRUPTED` ·
 `NOT_INSTALLED` · `USER_MODIFIED_CONFLICT` · `TRANSACTION_IN_PROGRESS` ·
 `RECOVERY_REQUIRED` · `LOCK_HELD` · `UPDATE_UNAVAILABLE` · `UPDATE_CHECK_FAILED`
-· `UPDATE_INTEGRITY_FAILED` · `UPDATE_INTEGRITY_METADATA_MISSING` · `ROLLBACK_UNAVAILABLE` · `APPLY_FAILED`.
+· `UPDATE_INTEGRITY_FAILED` · `UPDATE_INTEGRITY_METADATA_MISSING` ·
+`UPDATE_VERSION_MISMATCH` · `CLI_UPDATE_REQUIRED` · `ROLLBACK_UNAVAILABLE` · `APPLY_FAILED`.
 
 The CLI prints `refused: <CODE>: <message>` on stderr — never a traceback — and
 `--json` emits `{"error": ..., "message": ..., "detail": {...}}`.

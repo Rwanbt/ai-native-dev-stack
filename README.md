@@ -404,6 +404,22 @@ leaves the old valid state or the new one, never a half-installed project.
 See **[docs/DISTRIBUTION-LIFECYCLE.md](docs/DISTRIBUTION-LIFECYCLE.md)** and
 [ADR-0009](docs/adr/0009-distribution-profiles-and-lifecycle-ownership.md).
 
+**Updating is two steps when the lifecycle changed: CLI first, then projects.**
+The runtime that applies a release is the release's own code, so `ainative update`
+refuses a target it did not ship with (`CLI_UPDATE_REQUIRED`, before any download
+and any write):
+
+```bash
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+cd your-project && ainative update
+```
+
+`update check`, `status --check-updates` and `doctor --check-updates` work with
+any runtime and say when the CLI must be upgraded first. A release's version
+chain - git tag, `VERSION`, package metadata, wheel/sdist, bundle filename and
+bundle internal `VERSION` - is fail-closed: a tag that does not name the tree it
+points at cannot publish.
+
 ---
 
 ## Which profile should I choose?
@@ -547,8 +563,10 @@ ainative doctor                     # includes the Knowledge section
 ### For an existing project
 
 ```bash
-# 1. Install the CLI (once), then choose a profile in your project
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.1"   # pinned release (reproducible)
+# 1. Install (or upgrade) the CLI, then choose a profile in your project.
+#    Re-run the upgrade line when a release changes the lifecycle runtime;
+#    `ainative update` tells you when (CLI_UPDATE_REQUIRED).
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"   # pinned release (reproducible)
 cd your-project
 ainative init                          # asks Standard or Verified
 #   or, non-interactively:

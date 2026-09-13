@@ -80,6 +80,18 @@ def load_conventions() -> dict:
     return _conventions_cache
 
 
+def secret_fingerprint(secret: str) -> str:
+    """A stable, non-reversible identifier for a secret value.
+
+    Reports must stay deduplicable across scans without ever carrying a
+    fragment of the secret itself: the old `raw[:8] + "..."` preview both
+    leaked the leading bytes and made the finding id unstable whenever the
+    surrounding value changed. The fingerprint is the first 12 hex digits of
+    the SHA-256 of the exact bytes the tool reported.
+    """
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
+
+
 def finding_id(
     category: str,
     subcategory: str,

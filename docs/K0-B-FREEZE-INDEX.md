@@ -6,7 +6,8 @@ Normative freeze documents:
 2. `K0-B2-CONTEXT-AUTHORITY-FREEZE.md`
 3. `K0-B3-MUTATION-TRUST-FREEZE.md`
 
-Status:
+Status snapshot (historical; the contracts below remain normative):
+
 
 - K0-A: EXECUTED on branch evidence supplied by maintainer
 - K0-B1: GO / FROZEN

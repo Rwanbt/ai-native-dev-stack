@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # The only third-party ecosystem this repository consumes. Python is absent
+  # on purpose: the lifecycle layer is stdlib-only (ADR-0009) and declares no
+  # runtime dependencies, so a pip ecosystem would watch files that do not
+  # exist. Re-add it when ADR-0009 changes, not before.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"

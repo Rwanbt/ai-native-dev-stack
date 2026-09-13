@@ -1,0 +1,37 @@
+# Review ownership for sensitive zones. The repository currently has a single
+# maintainer; this file reflects that reality and prepares the review boundary
+# for a second maintainer rather than inventing one.
+
+# Default: everything not listed below falls to the maintainer.
+*                       @Rwanbt
+
+# CI/CD pipelines and release plumbing: a change here can publish artifacts.
+.github/workflows/      @Rwanbt
+.github/dependabot.yml  @Rwanbt
+
+# Lifecycle: installs, updates, deletes files in user projects.
+ainative/lifecycle/     @Rwanbt
+pyproject.toml          @Rwanbt
+_build_backend.py       @Rwanbt
+_payload_staging.py     @Rwanbt
+MANIFEST.in             @Rwanbt
+VERSION                 @Rwanbt
+
+# Authority-producing code and the trust boundary around it.
+ainative_workplane/     @Rwanbt
+
+# Knowledge / Auto-Memory: stores user knowledge, must never leak it.
+ainative/knowledge/     @Rwanbt
+
+# Multi-Vault isolation boundary.
+ainative/multivault/    @Rwanbt
+
+# Installers, validators and gates that enforce the rules in AGENTS.md.
+scripts/                @Rwanbt
+
+# Anti-debt agent: scanners that read user code and secrets.
+stack/agents/anti-debt/ @Rwanbt
+
+# Security policy itself.
+SECURITY.md             @Rwanbt
+CODEOWNERS              @Rwanbt

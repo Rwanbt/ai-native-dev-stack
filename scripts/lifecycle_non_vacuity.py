@@ -212,10 +212,68 @@ CASES = (
                     "staged_source.version,\n"
                     "                                outcome, plan.to_record(), conflicts)\n"),
                Edit("ainative/lifecycle/updater.py",
-                    "    outcome = check(project, force=True, record=not dry_run, state=state)\n",
-                    "    outcome = check(project, force=True, state=state)\n")),
+                    "    outcome = check(project, force=True, record=False, state=state, "
+                    "release=release)\n",
+                    "    outcome = check(project, force=True, state=state, release=release)\n")),
         test=("tests.test_lifecycle_update.UpdateApply"
               ".test_a_dry_run_update_writes_nothing"),
+    ),
+    Case(
+        name="runtime_freshness_gate",
+        guards="an older lifecycle runtime must not apply a newer release",
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    "    if runtime == release.version:\n"
+                    "        return\n",
+                    "    if True:\n        return\n"),),
+        test=("tests.test_lifecycle_update_version_chain.RuntimeFreshness"
+              ".test_an_older_runtime_is_refused_before_any_write"),
+    ),
+    Case(
+        name="bundle_internal_version_gate",
+        guards="a bundle whose internal VERSION differs from the release is refused",
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    "        if staged_source.version != release.version:\n",
+                    "        if False:\n"),),
+        test=("tests.test_lifecycle_update_version_chain.VersionChainRefusals"
+              ".test_a_bundle_whose_internal_version_differs_is_refused"),
+    ),
+    Case(
+        name="asset_version_gate",
+        guards="a release asset named for another version must be refused",
+        # Anchored on the raise that follows: the same condition line exists
+        # with twelve-space indentation in LocalDirectoryProvider, and a short
+        # anchor matches inside each other.
+        edits=(Edit("ainative/lifecycle/provider.py",
+                    "        if name != expected:\n"
+                    "            raise LifecycleError(\n"
+                    '                "UPDATE_VERSION_MISMATCH",\n'
+                    '                f"release {expected_version} publishes',
+                    "        if False:\n"
+                    "            raise LifecycleError(\n"
+                    '                "UPDATE_VERSION_MISMATCH",\n'
+                    '                f"release {expected_version} publishes'),),
+        test=("tests.test_lifecycle_update_version_chain.OfficialAssetSelection"
+              ".test_a_release_publishing_another_version_bundle_is_refused"),
+    ),
+    Case(
+        name="local_mirror_version_gate",
+        guards="a local mirror archive named for another version must be refused",
+        edits=(Edit("ainative/lifecycle/provider.py",
+                    "            if name != expected:\n"
+                    "                # Same rule as the official source",
+                    "            if False:\n"
+                    "                # Same rule as the official source"),),
+        test=("tests.test_lifecycle_update_version_chain.VersionChainRefusals"
+              ".test_a_local_index_whose_archive_names_another_version_is_refused"),
+    ),
+    Case(
+        name="stale_cache_reconciliation",
+        guards="a cached availability notice must not outrank the state it describes",
+        edits=(Edit("ainative/lifecycle/updater.py",
+                    "        elif not versionlib.is_newer(latest, current):\n",
+                    "        elif False:\n"),),
+        test=("tests.test_lifecycle_update_version_chain.StaleUpdateCache"
+              ".test_after_an_update_the_cached_availability_is_corrected"),
     ),
     Case(
         name="ownership_flag_typing",

@@ -134,6 +134,24 @@ class LifecycleTestCase(unittest.TestCase):
 
     # --- helpers ---------------------------------------------------------
 
+    def assume_runtime(self, version: str) -> None:
+        """Make this process claim `version` as its lifecycle runtime.
+
+        Update-path fixtures target versions other than the checkout's own, and
+        the production runtime gate compares the running package with the
+        target. Unit tests cannot install a second package into the running
+        interpreter; the real old-runtime -> new-release transition is exercised
+        with real wheels by `scripts/lifecycle_upgrade_e2e.py`.
+        """
+
+        from unittest import mock
+
+        from ainative.lifecycle import updater
+
+        patcher = mock.patch.object(updater, "runtime_version", lambda: version)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def install(self, profile: str = "standard", **kwargs):
         from ainative.lifecycle import installer
 

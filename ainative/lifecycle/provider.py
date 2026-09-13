@@ -8,8 +8,10 @@ point the updater at an internal mirror.
 Both providers obey the same integrity contract: a release this stack is
 willing to install names exactly one archive AND the SHA-256 of those bytes.
 A source that cannot say what it published is refused rather than trusted
-(#126). There is no unverified fallback path — not even the GitHub
-`zipball_url`, which no digest can ever cover.
+(#126). Within a release, the archive's filename must also carry the release's
+own version: a bundle whose name says 2.2.1 under a tag that says 2.2.2 is
+refused, digest or not (AUD-201). There is no unverified fallback path —
+not even the GitHub `zipball_url`, which no digest can ever cover.
 
 This is not a plugin system. There is no registry, no discovery, no entry
 points: two classes and a factory that reads one environment variable.
@@ -24,7 +26,7 @@ import shutil
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import version as versionlib
 from .digest import digest_bytes
@@ -39,6 +41,13 @@ RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
 # `scripts/build_lifecycle_bundle.py` beside the wheel and the sdist.
 LIFECYCLE_BUNDLE_PREFIX = "ainative-dev-stack-"
 LIFECYCLE_BUNDLE_SUFFIX = ".zip"
+
+
+def lifecycle_bundle_name(version: str) -> str:
+    """The one filename this stack accepts for a bundle of `version`."""
+
+    return f"{LIFECYCLE_BUNDLE_PREFIX}{version}{LIFECYCLE_BUNDLE_SUFFIX}"
+
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -106,15 +115,28 @@ class LocalDirectoryProvider(UpdateProvider):
         if not isinstance(entry, dict) or not entry.get("version"):
             raise LifecycleError("UPDATE_UNAVAILABLE",
                                  f"local release index declares no {channel!r} channel")
+        version = str(entry["version"])
         digest = entry.get("sha256")
         if not (isinstance(digest, str) and _SHA256.match(digest.strip().lower())):
             raise LifecycleError(
                 "UPDATE_INTEGRITY_METADATA_MISSING",
                 f"local release index declares no valid sha256 for "
-                f"{entry['version']}; refusing an update this stack cannot verify")
+                f"{version}; refusing an update this stack cannot verify")
         archive = entry.get("archive")
+        if archive is not None:
+            name = PurePosixPath(str(archive)).name
+            expected = lifecycle_bundle_name(version)
+            if name != expected:
+                # Same rule as the official source: a mirror publishing
+                # {version: 2.2.2, archive: ainative-dev-stack-2.2.1.zip} is
+                # refused rather than applied with a version nobody can name.
+                raise LifecycleError(
+                    "UPDATE_VERSION_MISMATCH",
+                    f"local release index declares version {version} but archive "
+                    f"{str(archive)!r}; expected {expected!r}",
+                    version=version, published=str(archive), expected=expected)
         url = str((self.root / archive).resolve()) if archive else None
-        return Release(version=str(entry["version"]), url=url,
+        return Release(version=version, url=url,
                        digest=digest.strip().lower(), notes=str(entry.get("notes", "")),
                        source=f"local:{self.root}")
 
@@ -184,7 +206,7 @@ class ReleaseApiProvider(UpdateProvider):
             raise LifecycleError("UPDATE_UNAVAILABLE",
                                  f"latest release {tag} is a pre-release; "
                                  "the stable channel has nothing newer")
-        url, sha = _select_asset(document)
+        url, sha = _select_asset(document, str(parsed))
         return Release(version=str(parsed), url=url, digest=sha,
                        notes=str(document.get("body", ""))[:2000], source=self.url)
 
@@ -194,17 +216,22 @@ class ReleaseApiProvider(UpdateProvider):
         return self._get(release.url, MAX_ARCHIVE_BYTES)
 
 
-def _select_asset(document: dict) -> tuple[str | None, str | None]:
-    """Pick the lifecycle bundle and its published digest, or refuse.
+def _select_asset(document: dict, expected_version: str) -> tuple[str | None, str | None]:
+    """Pick the lifecycle bundle of `expected_version` and its digest, or refuse.
 
     The official path accepts exactly one kind of asset: the lifecycle bundle
-    published beside the wheel and the sdist. A digest is not optional — an
-    update that cannot verify what it downloaded is not an update this stack
-    performs (#126). The `zipball_url` fallback this function used to return
-    (with `digest=None`, verifying nothing) is gone on purpose: no silent
-    unverified path exists.
+    published beside the wheel and the sdist, named after the version the
+    release itself declares. A mismatched name is a distinct refusal
+    (`UPDATE_VERSION_MISMATCH`), not "no bundle found": the digest may cover
+    bytes whose internal VERSION is a different release, which no comparison
+    can detect until after extraction - so it never reaches the download. A
+    digest is not optional either: an update that cannot verify what it
+    downloaded is not an update this stack performs (#126). The `zipball_url`
+    fallback this function used to return (with `digest=None`, verifying
+    nothing) is gone on purpose: no silent unverified path exists.
     """
 
+    expected = lifecycle_bundle_name(expected_version)
     assets = document.get("assets")
     for asset in assets if isinstance(assets, list) else []:
         if not isinstance(asset, dict):
@@ -215,6 +242,12 @@ def _select_asset(document: dict) -> tuple[str | None, str | None]:
                 and name.endswith(LIFECYCLE_BUNDLE_SUFFIX)
                 and isinstance(url, str)):
             continue
+        if name != expected:
+            raise LifecycleError(
+                "UPDATE_VERSION_MISMATCH",
+                f"release {expected_version} publishes lifecycle bundle {name!r}; "
+                f"expected {expected!r}",
+                version=expected_version, published=name, expected=expected)
         digest = asset.get("digest")
         if not (isinstance(digest, str) and digest.startswith("sha256:")):
             raise LifecycleError(
@@ -278,7 +311,7 @@ def copy_tree(source: Path, destination: Path) -> None:
 
 __all__ = [
     "Release", "UpdateProvider", "LocalDirectoryProvider", "ReleaseApiProvider",
-    "build", "verify_archive", "copy_tree",
+    "build", "verify_archive", "copy_tree", "lifecycle_bundle_name",
     "PROVIDER_ENV", "LOCAL_SOURCE_ENV", "RELEASE_URL_ENV", "DEFAULT_RELEASE_URL",
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
