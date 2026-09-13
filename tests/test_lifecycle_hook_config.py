@@ -149,14 +149,22 @@ class HookConfiguration(LifecycleTestCase):
         payload = json.dumps({"tool_name": "Edit",
                               "tool_input": {"file_path": str(module / "code.py")}})
         wrapper = self.project / hookslib.wrapper_relative()
+        # The wrapper searches PATH like a real session does. This interpreter
+        # is the one running the suite; making it visible keeps the test about
+        # the hook, not about the developer's PATH layout.
+        environment = {**os.environ,
+                       "PATH": str(Path(sys.executable).parent) + os.pathsep
+                               + os.environ.get("PATH", "")}
         if os.name == "nt":
             completed = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                  "-File", str(wrapper)],
-                input=payload, capture_output=True, text=True, timeout=180)
+                input=payload, capture_output=True, text=True, timeout=180,
+                env=environment)
         else:
             completed = subprocess.run(["bash", str(wrapper)], input=payload,
-                                       capture_output=True, text=True, timeout=180)
+                                       capture_output=True, text=True, timeout=180,
+                                       env=environment)
         diagnostic = (f"rc={completed.returncode} "
                       f"stdout={completed.stdout[-600:]!r} "
                       f"stderr={completed.stderr[-600:]!r}")

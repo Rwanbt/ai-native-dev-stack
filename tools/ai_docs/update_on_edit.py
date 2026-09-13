@@ -67,14 +67,37 @@ def check_context_freshness(module_dir: Path) -> None:
 
 
 
+def _read_payload() -> str:
+    """The hook payload: from --payload-file, or from stdin.
+
+    The file route exists because PowerShell's pipe to a native executable is
+    not byte-stable across host shapes; the wrapper writes the exact bytes it
+    received and passes the path, so this script never depends on that pipe.
+    """
+
+    if "--payload-file" in sys.argv:
+        index = sys.argv.index("--payload-file")
+        try:
+            path = Path(sys.argv[index + 1])
+            return path.read_text(encoding="utf-8-sig", errors="replace")
+        except (IndexError, OSError) as error:
+            print(f"[ai_docs] hook payload file unreadable: {error}", file=sys.stderr)
+            return ""
+    return sys.stdin.read()
+
+
 def main() -> int:
+    raw = _read_payload().lstrip("\ufeff")
+    if not raw.strip():
+        print("[ai_docs] hook received an empty payload", file=sys.stderr)
+        return 0
     try:
-        raw = sys.stdin.read()
-        if not raw.strip():
-            return 0
         data = json.loads(raw)
-    except (json.JSONDecodeError, Exception):
-        return 0  # not a JSON hook event — skip silently
+    except ValueError as error:
+        preview = raw[:120].replace("\n", " ")
+        print(f"[ai_docs] hook payload is not JSON ({error}); got: {preview!r}",
+              file=sys.stderr)
+        return 0
 
     # Claude Code PostToolUse payload: { tool_name, tool_input, tool_response }
     tool_input = data.get("tool_input", data)
