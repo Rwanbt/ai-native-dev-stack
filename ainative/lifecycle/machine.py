@@ -103,8 +103,13 @@ def save(home: Path, *, version: str, assets: list[dict],
     }
     if stack_root:
         record["stack_root"] = stack_root
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8")
+    # Written beside the target then renamed: a crash mid-write leaves the
+    # previous manifest intact, never a truncated one (a manifest nobody can
+    # read is a manifest nobody can act on).
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+    os.replace(temporary, path)
     return path
 
 

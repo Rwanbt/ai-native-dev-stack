@@ -171,11 +171,15 @@ def main() -> int:
         return 2
 
     stack = Path(__file__).resolve().parent.parent
-    report = machine_install.install(
-        args.home, stack, vault=vault, slug=slug,
-        remove_vault_block=args.no_vault_block,
-        dry_run=args.dry_run, check=args.check,
-    )
+    try:
+        report = machine_install.install(
+            args.home, stack, vault=vault, slug=slug,
+            remove_vault_block=args.no_vault_block,
+            dry_run=args.dry_run, check=args.check,
+        )
+    except machine.MachineLifecycleError as refusal:
+        print(f"ERROR: {refusal}", file=sys.stderr)
+        return 2
 
     mode = "check" if args.check else "dry-run" if args.dry_run else "install"
     print(f"\nStack {mode} ({sys.platform}): {report.changes} change(s), "
