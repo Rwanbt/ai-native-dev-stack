@@ -157,9 +157,12 @@ class HookConfiguration(LifecycleTestCase):
         else:
             completed = subprocess.run(["bash", str(wrapper)], input=payload,
                                        capture_output=True, text=True, timeout=180)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        diagnostic = (f"rc={completed.returncode} "
+                      f"stdout={completed.stdout[-600:]!r} "
+                      f"stderr={completed.stderr[-600:]!r}")
+        self.assertEqual(completed.returncode, 0, diagnostic)
         summary = module / "AI_SUMMARY.md"
-        self.assertTrue(summary.is_file(), completed.stderr)
+        self.assertTrue(summary.is_file(), diagnostic)
         self.assertIn("AI_SUMMARY", read_text(summary))
 
 

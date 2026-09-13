@@ -24,11 +24,23 @@ if (-not $PAYLOAD.Trim()) {
 $PY = $null
 foreach ($candidate in @("python", "python3", "py")) {
     $found = Get-Command $candidate -ErrorAction SilentlyContinue
-    if ($found) { $PY = $found.Source; break }
+    if (-not $found) { continue }
+    # The WindowsApps entries are execution aliases for the Store stub: they
+    # "exist", then do nothing and exit 0. A hook that silently does nothing
+    # is the failure this prevents.
+    if ($found.Source -like "*\WindowsApps\*") { continue }
+    $PY = $found.Source
+    break
 }
 
-if ($PY -and (Test-Path $UPDATE_SCRIPT)) {
-    $env:PYTHONIOENCODING = "utf-8"
-    $PAYLOAD | & $PY $UPDATE_SCRIPT 2>&1 | Out-String | Write-Output
+if (-not $PY) {
+    [Console]::Error.WriteLine("[ai_docs] PostToolUse hook found no usable Python on PATH")
+    exit 0
 }
+if (-not (Test-Path $UPDATE_SCRIPT)) {
+    [Console]::Error.WriteLine("[ai_docs] PostToolUse hook found no update_on_edit.py at $UPDATE_SCRIPT")
+    exit 0
+}
+$env:PYTHONIOENCODING = "utf-8"
+$PAYLOAD | & $PY $UPDATE_SCRIPT 2>&1 | Out-String | Write-Output
 exit 0
