@@ -62,7 +62,7 @@ def main() -> int:
     if not modules:
         print(f"No AI_CONTEXT.md files found under {root}")
         print("Create an AI_CONTEXT.md in each module directory first.")
-        print("See templates/AI_CONTEXT_template.md for the format.")
+        print("See .ai-native/templates/AI_CONTEXT_template.md for the format.")
         return 1
 
     print(f"Found {len(modules)} module(s) under {root}")

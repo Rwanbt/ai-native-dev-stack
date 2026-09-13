@@ -9,6 +9,7 @@ and the packaged metadata.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -66,10 +67,17 @@ class FreshCheckoutInvariants(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="ainative-bundle-") as staging:
             bundle = build(Path(staging) / "dist")
-            self.assertEqual(bundle.name, f"ainative-dev-stack-{ainative.__version__}.zip")
+            self.assertEqual(bundle.name,
+                             f"ainative-lifecycle-v2-{ainative.__version__}.zip")
             with zipfile.ZipFile(bundle) as archive:
-                self.assertEqual(archive.read("VERSION").decode("utf-8").strip(),
-                                 ainative.__version__)
+                document = json.loads(archive.read(
+                    "lifecycle-protocol.json").decode("utf-8"))
+                self.assertEqual(document["protocol_version"], 2)
+                self.assertEqual(document["release_version"], ainative.__version__)
+                payload_root = document["payload_root"]
+                self.assertEqual(
+                    archive.read(f"{payload_root}/VERSION").decode("utf-8").strip(),
+                    ainative.__version__)
 
     def test_two_disagreeing_labels_refuse_the_build(self):
         with tempfile.TemporaryDirectory(prefix="ainative-mismatch-") as staging:

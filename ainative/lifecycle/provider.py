@@ -32,21 +32,45 @@ from . import version as versionlib
 from .digest import digest_bytes
 from .errors import LifecycleError
 
+
+def _update_token() -> str:
+    """The token this environment offers, if any. Never logged anywhere."""
+
+    for name in TOKEN_ENVS:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
 DEFAULT_RELEASE_URL = "https://api.github.com/repos/Rwanbt/ai-native-dev-stack/releases/latest"
 PROVIDER_ENV = "AINATIVE_UPDATE_PROVIDER"     # "github" (default) | "local"
 LOCAL_SOURCE_ENV = "AINATIVE_UPDATE_LOCAL_DIR"
 RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
+# Authenticated checks, when the environment provides a token. Never logged,
+# never persisted: NAT-shared users hit the anonymous rate limit otherwise.
+TOKEN_ENVS = ("GITHUB_TOKEN", "GH_TOKEN")
 
-# The one asset the official update path consumes. Published by
-# `scripts/build_lifecycle_bundle.py` beside the wheel and the sdist.
-LIFECYCLE_BUNDLE_PREFIX = "ainative-dev-stack-"
+# The update protocol. v1 (runtimes <= 2.2.2) selected any
+# `ainative-dev-stack-*.zip`; v2 names its bundle `ainative-lifecycle-v2-*` and
+# wraps the payload so a v1 runtime cannot consume it even through a mirror
+# that names the file for it. See docs/DISTRIBUTION-LIFECYCLE.md section 8.
+UPDATE_PROTOCOL_VERSION = 2
+LIFECYCLE_BUNDLE_PREFIX = "ainative-lifecycle-v2-"
 LIFECYCLE_BUNDLE_SUFFIX = ".zip"
+PROTOCOL_MANIFEST = "lifecycle-protocol.json"
 
 
 def lifecycle_bundle_name(version: str) -> str:
     """The one filename this stack accepts for a bundle of `version`."""
 
     return f"{LIFECYCLE_BUNDLE_PREFIX}{version}{LIFECYCLE_BUNDLE_SUFFIX}"
+
+
+def protocol_document(version: str) -> dict:
+    """The manifest a v2 bundle carries at its root."""
+
+    return {"schema_name": "lifecycle_protocol", "protocol_version": UPDATE_PROTOCOL_VERSION,
+            "release_version": version, "payload_root": "stack"}
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -175,11 +199,22 @@ class ReleaseApiProvider(UpdateProvider):
     def _get(self, url: str, limit: int) -> bytes:
         if not url.lower().startswith("https://"):
             raise LifecycleError("UPDATE_CHECK_FAILED", f"refusing a non-HTTPS source: {url}")
-        request = urllib.request.Request(url, headers={
-            "User-Agent": "ainative-lifecycle", "Accept": "application/vnd.github+json"})
+        headers = {"User-Agent": "ainative-lifecycle",
+                   "Accept": "application/vnd.github+json"}
+        token = _update_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
                 payload = response.read(limit + 1)
+        except urllib.error.HTTPError as error:
+            # The status is the diagnosis; the message never echoes headers.
+            detail = ("the release source rate-limited this check; set GITHUB_TOKEN "
+                      "or GH_TOKEN to raise the limit"
+                      if error.code in (403, 429)
+                      else f"the release source answered HTTP {error.code}")
+            raise LifecycleError("UPDATE_CHECK_FAILED", detail) from error
         except (urllib.error.URLError, OSError, ValueError) as error:
             raise LifecycleError("UPDATE_CHECK_FAILED",
                                  f"cannot reach the release source: {error}") from error
@@ -312,6 +347,7 @@ def copy_tree(source: Path, destination: Path) -> None:
 __all__ = [
     "Release", "UpdateProvider", "LocalDirectoryProvider", "ReleaseApiProvider",
     "build", "verify_archive", "copy_tree", "lifecycle_bundle_name",
+    "protocol_document", "UPDATE_PROTOCOL_VERSION", "PROTOCOL_MANIFEST", "TOKEN_ENVS",
     "PROVIDER_ENV", "LOCAL_SOURCE_ENV", "RELEASE_URL_ENV", "DEFAULT_RELEASE_URL",
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",

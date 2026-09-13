@@ -149,7 +149,7 @@ class TransferEngineTests(unittest.TestCase):
             exact_refspec=refspec,
             observed_remote=observed if observed is not None else observed_remote(self.url),
             observed_transport=transport if transport is not None else observed_transport(),
-            expected_git_identity="Rwanbt <barat.erwan@gmail.com>",
+            expected_git_identity="Maintainer <maintainer@example.invalid>",
         )
 
     def test_governed_fetch_records_evidence_and_state(self):

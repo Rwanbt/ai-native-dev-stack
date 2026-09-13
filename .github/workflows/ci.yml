@@ -52,6 +52,13 @@ jobs:
         # the whole thing in one pass.
         run: python scripts/measure_scope.py
 
+      - name: No machine-specific path may ship
+        # A committed C:\Users\<someone> ships a home directory to every
+        # clone; the Mavis adapters did exactly that. The gate has a reasoned
+        # allowlist for historical evidence and its mutation test runs in the
+        # lifecycle job.
+        run: python scripts/check_personal_paths.py
+
   loc-gate:
     name: LOC budget gate
     runs-on: ubuntu-latest
@@ -127,6 +134,9 @@ jobs:
 
       - name: CLI, integrations and local pilot harnesses
         run: python -m unittest tests.test_workplane_cli tests.test_workplane_integrations_metrics tests.test_workplane_pilot tests.test_workplane_harness_matrix tests.test_workplane_historical_case -v
+
+      - name: Trust onboarding - scaffold, validation and refusals
+        run: python -m unittest tests.test_trust_onboarding -v
 
       - name: The package installs and exposes its console entry point
         shell: bash
@@ -204,6 +214,12 @@ jobs:
       - name: Implementation Economy skill contract (#53 - never executed before)
         run: python -m unittest tests.test_implementation_economy_skill -v
 
+      - name: Hook configuration, first-run policy and the machine-path gate
+        run: python -m unittest tests.test_lifecycle_hook_config tests.test_lifecycle_permissions tests.test_personal_paths_gate -v
+
+      - name: Update transport, protocol v2 and the release gates
+        run: python -m unittest tests.test_lifecycle_update_transport tests.test_release_assets_gate -v
+
       - name: Non-vacuity — each guard must actually block
         # A protection nobody has seen refuse is a comment. This reverts each
         # guard in a scratch copy and asserts the matching test then fails.
@@ -230,6 +246,26 @@ jobs:
       # need to exhibit.
       - name: Build two real wheels and cross the transition as a user would
         run: python scripts/lifecycle_upgrade_e2e.py
+
+  verified-first-run:
+    name: Verified first run (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      # A stranger's Verified first run through the CLI only: fresh wheel,
+      # fresh venv, fresh git project, init, trust init, bootstrap, work,
+      # verify, converge. If a step needed a file no command produced, this
+      # fails - that is the property (AUD-204/205).
+      - name: Fresh wheel, fresh project, governed workflow to CONVERGED
+        run: python scripts/verified_first_run_e2e.py
 
   knowledge-b1:
     name: Knowledge B1 schemas (${{ matrix.os }}, py${{ matrix.python-version }})

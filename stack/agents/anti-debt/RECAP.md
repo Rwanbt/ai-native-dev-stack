@@ -189,9 +189,9 @@ Le plan d'origine avait mentionné 2 hooks Codex qui n'ont pas été universalis
 - **PreToolUse Bash avec injection graphify** : quand l'utilisateur tape `grep`/`rg`/`find`, injecter `GRAPH_REPORT.md`
 - **PermissionRequest readonly env-prefix** : auto-allow `RUST_LOG=debug cat file.txt`
 
-**Localisation** : `D:\App\ai-native-dev-stack\hooks/` (déjà créé pour hooks universels)
+**Localisation** : `hooks/` (déjà créé pour hooks universels)
 
-**Action** : déplacer/porter ces 2 hooks depuis `C:\Users\barat\.codex\hooks.json` vers le format agent-neutre.
+**Action** : déplacer/porter ces 2 hooks depuis `~/.codex/hooks.json` vers le format agent-neutre.
 
 **Effort estimé** : 2 heures.
 

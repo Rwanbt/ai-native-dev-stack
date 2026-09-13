@@ -33,12 +33,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+
+import machine_lifecycle
 
 # Shared engineering method — installed unconditionally when a harness
 # directory is targeted. The block carries the canonical rules, not a
@@ -83,6 +86,20 @@ class Installer:
         self.changes = 0
         self.vault = vault
         self.slug = slug
+        # What this run established ownership of, for ~/.ai-native/machine.json.
+        self.assets: list[dict] = []
+
+    def _record(self, kind: str, target: Path, **fields: object) -> None:
+        """One machine-owned asset. Recorded on OK as well as on write: a
+        re-run must not drop the record of something it still owns."""
+
+        try:
+            relative = target.resolve().relative_to(self.home).as_posix()
+        except (OSError, ValueError):
+            relative = target.as_posix()
+        record = {"kind": kind, "path": relative, **fields}
+        if record not in self.assets:
+            self.assets.append(record)
 
     def report(self, status: str, path: Path, detail: str = "") -> None:
         suffix = f" ({detail})" if detail else ""
@@ -119,6 +136,7 @@ class Installer:
         source = source.resolve()
         if self._points_at(target, source):
             self.report("OK", target)
+            self._record("link", target, source=str(source))
             return
         if target.exists() or target.is_symlink():
             self.errors += 1
@@ -133,7 +151,18 @@ class Installer:
         if self.dry_run:
             self.report("LINK", target, str(source))
         else:
+            before = len([asset for asset in self.assets if asset["path"] ==
+                          self._relative(target)])
             self._create_link(source, target)
+            if len([asset for asset in self.assets if asset["path"] ==
+                    self._relative(target)]) == before:
+                self._record("link", target, source=str(source))
+
+    def _relative(self, target: Path) -> str:
+        try:
+            return target.resolve().relative_to(self.home).as_posix()
+        except (OSError, ValueError):
+            return target.as_posix()
 
     def _create_link(self, source: Path, target: Path) -> None:
         """Symlink, falling back to a Windows junction when symlinks are denied.
@@ -265,6 +294,8 @@ class Installer:
         )
         if current == wanted:
             self.report("OK", path)
+            self._record("block", path, begin=begin, end=end, label=label,
+                         preamble=preamble)
             return
         if self.check:
             self.errors += 1
@@ -277,6 +308,8 @@ class Installer:
         else:
             path.write_text(wanted, encoding="utf-8")
             self.report("UPDATED", path)
+            self._record("block", path, begin=begin, end=end, label=label,
+                         preamble=preamble)
 
     def remove_managed_block(self, path: Path, begin: str, end: str,
                              label: str) -> None:
@@ -316,6 +349,8 @@ class Installer:
         current = target.read_text(encoding="utf-8") if target.is_file() else ""
         if current == wanted:
             self.report("OK", target)
+            self._record("rendered", target,
+                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest())
             return
         if target.exists() and GENERATED not in current:
             self.errors += 1
@@ -330,8 +365,13 @@ class Installer:
         if self.dry_run:
             self.report("RENDER", target, str(template))
         else:
-            target.write_text(wanted, encoding="utf-8")
+            # Bytes, not text mode: `write_text` translates \n to \r\n on
+            # Windows, and the recorded digest is of the rendered text, so the
+            # file would never match its own record (the EMP-LC-025 class).
+            target.write_bytes(wanted.encode("utf-8"))
             self.report("RENDERED", target)
+            self._record("rendered", target,
+                         digest=hashlib.sha256(wanted.encode("utf-8")).hexdigest())
 
 
 def parse_args() -> argparse.Namespace:
@@ -342,6 +382,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--home", type=Path, default=Path.home(), help="target home directory")
     parser.add_argument("--dry-run", action="store_true", help="show changes without writing")
     parser.add_argument("--check", action="store_true", help="verify an existing installation")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="reverse the recorded machine installation "
+                             "(~/.ai-native/machine.json). Removes only assets this "
+                             "installer wrote and the user has not modified; user "
+                             "files and edited managed files are preserved. "
+                             "Combine with --dry-run to preview.")
     parser.add_argument("--vault", type=Path, default=None,
                         help="v4 Obsidian vault path (default: $OBSIDIAN_VAULT). "
                              "When given, every supported harness gets a Vault "
@@ -388,8 +434,37 @@ def resolve_vault_pair(args: argparse.Namespace) -> tuple[Path | None, str | Non
     return (status.vault, status.slug, None)
 
 
+def machine_uninstall(args: argparse.Namespace) -> int:
+    """Print the reversal plan or apply it, then report like every other mode."""
+
+    try:
+        record = machine_lifecycle.uninstall(args.home, dry_run=args.dry_run)
+    except machine_lifecycle.MachineLifecycleError as refusal:
+        print(f"ERROR: {refusal}", file=sys.stderr)
+        return 2
+    mode = "dry-run" if args.dry_run else "uninstall"
+    print(f"Machine {mode}: {len(record['removed'])} removal(s), "
+          f"{len(record['preserved'])} preserved, {len(record['missing'])} already absent.")
+    for path in record["removed"]:
+        print(f"  REMOVE     {path}")
+    for path in record["preserved"]:
+        print(f"  PRESERVE   {path}")
+    if record.get("detail"):
+        print(f"  note: {record['detail']}")
+    if not record["removed"] and not record["preserved"] and record.get("detail") is None:
+        print("  note: the manifest recorded no assets")
+    if not args.dry_run:
+        print("Restart running AI clients to reload their configuration.")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
+    if args.uninstall:
+        if args.check:
+            print("ERROR: --check and --uninstall are mutually exclusive.", file=sys.stderr)
+            return 2
+        return machine_uninstall(args)
     if args.check and args.dry_run:
         print("ERROR: --check and --dry-run are mutually exclusive.", file=sys.stderr)
         return 2
@@ -470,6 +545,16 @@ def main() -> int:
     mode = "check" if args.check else "dry-run" if args.dry_run else "install"
     print(f"\nStack {mode} ({sys.platform}): {installer.changes} change(s), "
           f"{installer.errors} issue(s).")
+    if not args.check and not args.dry_run and not installer.errors:
+        # The machine ownership record: written only after the run that made
+        # those files ours, and only when nothing failed.
+        version = "unknown"
+        version_file = stack / "VERSION"
+        if version_file.is_file():
+            version = version_file.read_text(encoding="utf-8").strip()
+        manifest = machine_lifecycle.save(args.home, version=version,
+                                          assets=installer.assets)
+        print(f"Machine manifest: {manifest} ({len(installer.assets)} asset(s))")
     if not args.check:
         print("Restart running AI clients so they reload global rules, skills and plugins.")
     return 1 if installer.errors else 0

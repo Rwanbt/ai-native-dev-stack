@@ -1,13 +1,17 @@
 #Requires -Version 5.1
 # OPTIONAL HIGH-ASSURANCE HARDENING (EXPERIMENTAL) - not part of the normal installation.
 # Runs UNDER the dedicated workload principal (scheduled task). Writes results only.
+# Every path is supplied by the operator (argument or environment); no machine
+# default is baked in, because this repository is public and the maintainer's
+# layout is not a contract.
 param(
-    [string]$OutputPath = "D:\App\ainative-enforced-runtime\results.json",
-    [string]$WorkspacePath = "D:\App\ainative-enforced-runtime\workspace",
-    [string]$VaultPath = "D:\Documents\Obsidian\IA_Dev_Brain",
-    [string]$AuthorityStorePath = "D:\App\ai-native-dev-stack\.ai-native",
-    [string]$ObsidianCredentialsPath = "D:\Documents\Obsidian\IA_Dev_Brain\.obsidian\plugins\obsidian-local-rest-api\data.json"
+    [string]$OutputPath = $env:AINATIVE_ENFORCED_RESULTS,
+    [string]$WorkspacePath = $env:AINATIVE_ENFORCED_WORKSPACE,
+    [string]$VaultPath = $env:OBSIDIAN_VAULT,
+    [string]$AuthorityStorePath = $env:AINATIVE_ENFORCED_AUTHORITY,
+    [string]$ObsidianCredentialsPath = $env:AINATIVE_ENFORCED_OBSIDIAN_CREDENTIALS
 )
+if (-not $OutputPath) { throw "OutputPath is required (or set AINATIVE_ENFORCED_RESULTS). This script carries no machine defaults." }
 
 $results = @()
 function Record-Test([string]$Name, [string]$Path, [string]$Mode) {

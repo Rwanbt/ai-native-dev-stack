@@ -143,7 +143,7 @@ def build_wheel(tree: Path, output: Path) -> Path:
 def build_bundle(tree: Path, output: Path) -> Path:
     run([sys.executable, str(tree / "scripts" / "build_lifecycle_bundle.py"),
          "--outdir", output])
-    bundles = sorted(output.glob("ainative-dev-stack-*.zip"))
+    bundles = sorted(output.glob("ainative-lifecycle-v2-*.zip"))
     if len(bundles) != 1:
         raise Failure(f"expected one bundle from {tree}, found {bundles}")
     return bundles[0]
@@ -194,7 +194,10 @@ def main() -> int:
             if not wheel_n.is_file():
                 raise Failure(f"wheel not found: {wheel_n}")
         else:
-            wheel_n = build_wheel(REPO, workspace / "dist-n")
+            # Hermetic: a stale developer build/ cache could both fail the
+            # build and contaminate the artifact under test.
+            source = relabel_tree(REPO, workspace / "source-n", from_version)
+            wheel_n = build_wheel(source, workspace / "dist-n")
         run([venv_python, "-m", "pip", "install", "--disable-pip-version-check",
              "-q", "--no-deps", wheel_n])
         ok(f"runtime N {from_version} installed from {wheel_n.name}")
@@ -219,7 +222,7 @@ def main() -> int:
         releases = workspace / "releases"
         releases.mkdir()
         bundle_n1 = build_bundle(probe_tree, releases)
-        if bundle_n1.name != f"ainative-dev-stack-{to_version}.zip":
+        if bundle_n1.name != f"ainative-lifecycle-v2-{to_version}.zip":
             raise Failure(f"probe bundle is {bundle_n1.name}, expected the canonical name")
         publish(releases, to_version, bundle_n1)
         provider_env = {"AINATIVE_UPDATE_PROVIDER": "local",
@@ -228,14 +231,20 @@ def main() -> int:
 
         before = snapshot(project)
         refused = run([console, "update", "--project", project], env=provider_env, expect=1)
-        if "CLI_UPDATE_REQUIRED" not in refused.stderr:
+        # A v2-aware older runtime refuses with CLI_UPDATE_REQUIRED; a runtime
+        # that predates the v2 protocol never selects the asset and refuses
+        # with a check/integrity code. Both leave the project untouched.
+        refusal_codes = ("CLI_UPDATE_REQUIRED", "UPDATE_INTEGRITY_METADATA_MISSING",
+                         "UPDATE_VERSION_MISMATCH", "UPDATE_INTEGRITY_FAILED")
+        observed = next((code for code in refusal_codes if code in refused.stderr), None)
+        if observed is None:
             raise Failure(f"the old runtime did not refuse:\n{refused.stdout}\n{refused.stderr}")
         if snapshot(project) != before:
             raise Failure("the refused update wrote to the project")
         if state_of(project)["stack_version"] != from_version:
             raise Failure("the refused update moved the project state")
         ok(f"runtime {from_version} refused target {to_version}: "
-           f"CLI_UPDATE_REQUIRED, zero writes")
+           f"{observed}, zero writes")
 
         run([venv_python, "-m", "pip", "install", "--disable-pip-version-check",
              "-q", "--upgrade", "--no-deps", wheel_n1])

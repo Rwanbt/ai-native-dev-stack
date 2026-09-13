@@ -177,7 +177,7 @@ def checkpoint(project: Path, state: dict, *, ttl_seconds: int = 86400) -> dict[
         if len(payload.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
             raise KnowledgeError("KNOWLEDGE_CANDIDATE_TOO_LARGE",
                                  "checkpoint exceeds size bound")
-        statelib.write_atomic(directory / f"{record['checkpoint_id']}.json",
+        statelib.write_atomic_private(directory / f"{record['checkpoint_id']}.json",
                               payload)
         return record
 

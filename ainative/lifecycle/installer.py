@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import environment
 from . import legacy as legacylib
 from . import manifest as manifestlib
 from . import planner as plannerlib
@@ -158,6 +159,7 @@ def install(project: Path, target_profile: str, *, dry_run: bool = False,
     distribution = distribution or manifestlib.load()
     source = source or sourcelib.resolve()
     _blocking_transaction(project)
+    _require_git_for_verified(project, distribution, target_profile)
 
     plan, state, adoption = plan_profile(project, distribution, source, target_profile,
                                          operation=operation)
@@ -192,9 +194,32 @@ def install(project: Path, target_profile: str, *, dry_run: bool = False,
                            transaction=journal.identifier, notices=notices, legacy=adoption)
 
 
+def _require_git_for_verified(project: Path, distribution: Distribution,
+                              target_profile: str) -> None:
+    """Verified's provenance guarantees are impossible outside a Git repository.
+
+    Installing the profile anyway and reporting "healthy" is the false-green
+    this exists to remove: work evidence, snapshots and freshness all resolve
+    against a repository that would not be there.
+    """
+
+    if "verified" not in distribution.inheritance_chain(target_profile):
+        return
+    if environment.git_root(project) is None:
+        raise LifecycleError(
+            "GIT_REPOSITORY_REQUIRED",
+            "the Verified profile's provenance guarantees require a Git repository; "
+            "run `git init` first, or use --profile standard")
+
+
 def _notices(project: Path, distribution: Distribution, plan: Plan, target_profile: str,
              adoption: legacylib.Adoption) -> list[str]:
     notices: list[str] = []
+    if environment.git_root(project) is None:
+        notices.append(
+            "This project is not inside a Git repository. Standard works, but "
+            "Knowledge persistence and provenance are unavailable until `git init` "
+            "creates one; the Verified profile refuses to install without it.")
     if adoption.detected:
         notices.append(
             f"Existing AI Native installation detected ({len(adoption.adopted)} files). "

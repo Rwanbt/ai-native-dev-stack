@@ -116,6 +116,7 @@ Components shipped today:
 | `skills-agents` | standard | tree | MANAGED_IMMUTABLE | `.agents/skills/` |
 | `machine-config` | standard | template | USER_DATA | `tools/ai_docs/config.sh` |
 | `gitignore-entry` | standard | external_block | EXTERNAL_CONFIG | `.gitignore` |
+| `claude-hook` | standard | json_hook | EXTERNAL_CONFIG | `.claude/settings.json` |
 | `verified-workplane` | verified | marker | MANAGED_IMMUTABLE | `.ai-native/lifecycle/verified.json` |
 | `verified-guide` | verified | file | MANAGED_IMMUTABLE | `.ai-native/docs/VERIFIED-WORK-PLANE.md` |
 | `verified-data` | verified | data_root | USER_DATA | `.ai-native/{trust,work,runs}` |
@@ -364,7 +365,16 @@ Preferences live in the install state:
 ```
 
 `AINATIVE_NO_UPDATE_CHECK=1` disables every network check — for CI and offline
-machines.
+machines. When `GITHUB_TOKEN` or `GH_TOKEN` is present in the environment, the
+check sends it as a bearer token (many users share one NAT address and hit the
+anonymous rate limit); the token is never logged, never written to the cache,
+and never included in an error message. A 403/429 answer is reported as a
+rate-limit diagnosis with the same remedy.
+
+`ainative update check` exits 0 whatever the answer: `exit 0` means "the answer
+is what it is", never "the source was reachable". A CI gate that needs the
+second statement runs `ainative update check --strict`, which exits 1 on
+`OFFLINE` / `CHECK_FAILED`.
 
 ### No network inside an authority command
 
@@ -390,8 +400,19 @@ wrong runtime, wrong version, bad digest, bad archive - leaves the project
 byte-identical, cache included.
 
 **The artifact, stated precisely.** The official provider consumes exactly one
-asset: the lifecycle bundle `ainative-dev-stack-<version>.zip` published beside
-the wheel and the sdist, named for the release's own version. A release whose
+asset: the lifecycle bundle `ainative-lifecycle-v2-<version>.zip` published
+beside the wheel and the sdist, named for the release's own version. Inside,
+a `lifecycle-protocol.json` document names the protocol version, the release
+version and the payload root (`stack/`), and the payload's `VERSION` is compared
+with the release again.
+
+**Containment of pre-2.2.2 runtimes, stated precisely.** Runtimes up to v2.2.2
+looked for `ainative-dev-stack-*.zip` and found their payload by taking the
+single top-level directory that held a `VERSION` file. A protocol v2 bundle
+matches neither rule, so such a runtime refuses it with zero project writes even
+when a mirror hands it the file directly. v2.2.2 itself refuses a v2 release at
+the runtime gate (`CLI_UPDATE_REQUIRED`) before the download. The documented
+path is always the same: upgrade the CLI first, then update each project. A release whose
 tag says 2.2.2 and whose bundle says 2.2.1 is refused with
 `UPDATE_VERSION_MISMATCH` before any download; so is a bundle whose internal
 `VERSION` file disagrees with the release it declared, and so is a local
@@ -562,6 +583,7 @@ Files the stack never wrote are in the "kept" column of every row.
 | Number | Source of truth | Changes when |
 |---|---|---|
 | Stack release | `VERSION` | a release is cut |
+| Update protocol | `provider.UPDATE_PROTOCOL_VERSION` | the bundle format changes (currently 2) |
 | Lifecycle state schema | `state.SCHEMA_VERSION` | `state.json`'s shape changes |
 | Work Plane runtime | `ainative_workplane.__version__` | the verdict engine is released |
 | Artifact schema | `contracts.SUPPORTED_SCHEMA_VERSIONS` | a Work Plane artifact changes shape |
@@ -622,6 +644,7 @@ reinterpreted by the dispatcher.
 ├── tools/ai_docs/                     MANAGED_IMMUTABLE
 │   └── config.sh                      USER_DATA (never overwritten)
 ├── .claude/skills/                    MANAGED_IMMUTABLE
+├── .claude/settings.json              EXTERNAL_CONFIG (one owned hook entry)
 ├── .agents/skills/                    MANAGED_IMMUTABLE
 └── .ai-native/
     ├── templates/                     MANAGED_IMMUTABLE
@@ -635,3 +658,30 @@ reinterpreted by the dispatcher.
         ├── update-cache.json          the cached check
         └── lifecycle.lock             held only during a mutation
 ```
+
+---
+
+## 17. The machine surface (global integration)
+
+`ainative init` is per project. Installing the shared method, the skills and
+the harness hooks into a *machine* is a different surface, owned by
+`scripts/install_agents.py` from a stack checkout:
+
+```bash
+python scripts/install_agents.py                 # install or update (idempotent)
+python scripts/install_agents.py --check         # verify what exists
+python scripts/install_agents.py --dry-run       # preview
+python scripts/install_agents.py --uninstall [--dry-run]
+```
+
+Every run records what it wrote in `~/.ai-native/machine.json`: each link with
+its source, each managed block with its markers and preamble, each rendered
+file with its digest. The uninstall reverses exactly that record —
+links/junctions are removed and never followed, a rendered file is removed only
+while its bytes match the recorded digest, a block is removed only while its
+markers are present — and everything else (user skills, user agents, user
+edits) is preserved and reported. `ainative doctor` reads the manifest to
+report whether machine integration is present.
+
+The machine surface has no project ownership state and no transaction journal;
+re-running the installer *is* the update path.

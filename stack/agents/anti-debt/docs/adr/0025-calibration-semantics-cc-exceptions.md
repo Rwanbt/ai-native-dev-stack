@@ -95,4 +95,4 @@ exception ne couvre que ces deux parsers nommés, pas une dispense générale.
 - [ADR-0021](0021-critic-self-challenge.md) — Critic self-challenge (calibration empirique, drift)
 - `tools/calibration.py` — implémentation de `propose_thresholds()`
 - `tools/AI_CONTEXT.md` — invariant de synchro des seuils reject/review
-- `C:\Users\barat\.claude\CLAUDE.md` § « Taille des fonctions et complexité cyclomatique » (exception parsers)
+- The operator's global `CLAUDE.md` - function size and cyclomatic complexity (parser exception).

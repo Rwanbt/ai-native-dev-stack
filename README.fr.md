@@ -416,7 +416,7 @@ refuse une cible qui ne vient pas de lui (`CLI_UPDATE_REQUIRED`, avant tout tél
 toute écriture) :
 
 ```bash
-pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.3.0"
 cd votre-projet && ainative update
 ```
 
@@ -425,6 +425,12 @@ quel runtime et indiquent quand la CLI doit d'abord être mise à niveau. La cha
 d'une release — tag git, `VERSION`, métadonnées du paquet, wheel/sdist, nom du bundle et
 `VERSION` interne du bundle — est fail-closed : un tag qui ne nomme pas l'arbre qu'il pointe
 ne peut pas publier.
+
+Les releases parlent un protocole de mise à jour versionné (v2) : le bundle est
+`ainative-lifecycle-v2-<version>.zip` et un runtime antérieur à v2.2.2 ne peut pas le consommer
+même depuis un miroir — le format lui-même le refuse. Chaque artefact publié porte aussi une
+attestation de provenance de build GitHub (`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`) ;
+SHA-256 seul signifie intégrité, pas signature humaine (voir docs/RELEASING.md).
 
 ---
 
@@ -477,6 +483,12 @@ Mavis, et le plugin OpenCode — tout cela s'installe avec
 `python scripts/install_agents.py` (voir *Installer la méthode sur la machine*
 ci-dessous). Garder les deux séparés, c'est ce qui rend les deux réversibles.
 
+Hors d'un dépôt Git, Standard s'installe avec une degradation documentee —
+persistance Knowledge et provenance indisponibles jusqu'a `git init` — et
+`ainative doctor` le signale. Verified refuse l'installation
+(`GIT_REPOSITORY_REQUIRED`) : ses garanties se resolvent contre un depot qui
+n'existerait pas.
+
 ---
 
 ## Le Verified Work Plane
@@ -486,7 +498,13 @@ Il décide la convergence à partir de contrats commités et de vérifications e
 jamais à partir d'un récit, et jamais à partir de ce que l'appelant fournit.
 
     pip install .
-    ainative trust bootstrap --repo . --approval-root root.json --policy policy.json --by "vous"
+    ainative init --profile verified
+    ainative trust init --repo . --by "vous"          # ecrit le scaffold, sans autorite
+    ainative trust bootstrap --repo . \
+      --approval-root .ai-native/trust/setup/approval-root.json \
+      --policy .ai-native/trust/setup/policy.json --by "vous" \
+      --predicate recorded_owner_ack
+    # committez l'ancre, puis declarez et verifiez le travail :
     ainative work admit .ai-native/work/w1 --repo . --by "vous" --artifact ...
     ainative work new   .ai-native/work/w1 --artifact ...
     ainative converge   --work .ai-native/work/w1 --repo .
@@ -637,7 +655,9 @@ Ensuite :
    jamais une copie (`@/chemin/absolu/AGENTS.md`).
 2. Éditer `tools/ai_docs/config.sh` (coffre Obsidian, binaire graphify) — ce
    fichier vous appartient, l'installeur ne l'écrase jamais.
-3. Enregistrer le hook PostToolUse — voir `.ai-native/templates/settings_hook_example.json`.
+3. Le hook PostToolUse est deja configure : `ainative init` a fusionne une
+   entree possedee dans `.claude/settings.json` sans toucher au reste du
+   fichier, et `ainative doctor` verifie l'entree et sa cible.
 4. Écrire un `AI_CONTEXT.md` par module — voir `.ai-native/templates/AI_CONTEXT_template.md`.
 5. Vérifier : `ainative status`, puis `/verify-ai-docs`.
 
@@ -645,7 +665,12 @@ Ensuite :
 
 Installe règles, skills et agents dans **chaque CLI IA détecté** — Claude Code,
 Codex, OpenCode, Cursor, MiniMax/Mavis — sous forme de **liens** et non de
-copies, pour qu'un `git pull` mette tout à jour d'un coup.
+copies, pour qu'un `git pull` mette tout à jour d'un coup. L'installeur
+enregistre tout ce qu'il écrit dans `~/.ai-native/machine.json` (source ou
+empreinte par asset), et `python scripts/install_agents.py --uninstall` défait
+exactement cet enregistrement : fichiers utilisateur et fichiers modifiés
+préservés, `--dry-run` pour prévisualiser. L'installation est idempotente —
+relancez-la pour mettre à jour.
 
 ```bash
 bash scripts/setup-agents.sh                    # Linux / macOS / Git Bash
@@ -887,7 +912,7 @@ Copier `tools/ai_docs/config.sh.example` vers `config.sh` et renseigner :
 - `CLAUDE_MEMORY_KEY` — nom du sous-dossier dans `~/.claude/projects/`
 
 ### 3. `AI_CONTEXT.md`
-Écrire un fichier par module en utilisant `templates/AI_CONTEXT_template.md`. Se concentrer sur :
+Écrire un fichier par module en utilisant `.ai-native/templates/AI_CONTEXT_template.md`. Se concentrer sur :
 - Ce que fait le module (2-3 phrases)
 - Quelles fonctions s'exécutent sur quel thread
 - Ce qui est interdit ici

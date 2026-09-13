@@ -117,10 +117,18 @@ def make_sdist(dist: Path, declared: str, filename_version: str | None = None) -
     return path
 
 
-def make_bundle(dist: Path, filename_version: str, internal_version: str) -> Path:
-    path = dist / f"ainative-dev-stack-{filename_version}.zip"
+def make_bundle(dist: Path, filename_version: str, internal_version: str,
+                declared_version: str | None = None) -> Path:
+    """A v2-protocol bundle: protocol document at the root, payload under stack/."""
+
+    path = dist / f"ainative-lifecycle-v2-{filename_version}.zip"
+    protocol = {"schema_name": "lifecycle_protocol", "protocol_version": 2,
+                "release_version": declared_version or filename_version,
+                "payload_root": "stack"}
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("VERSION", f"{internal_version}\n")
+        archive.writestr("lifecycle-protocol.json", json.dumps(protocol))
+        archive.writestr("protocol/README.md", "protocol v2\n")
+        archive.writestr("stack/VERSION", f"{internal_version}\n")
     return path
 
 
@@ -142,7 +150,7 @@ class ReleaseDistGate(unittest.TestCase):
             make_wheel(dist, TARGET)
             make_sdist(dist, TARGET)
             checked = self.gate_check(dist)
-            self.assertIn(f"ainative-dev-stack-{TARGET}.zip", checked)
+            self.assertIn(f"ainative-lifecycle-v2-{TARGET}.zip", checked)
             self.assertIn(f"ainative_dev_stack-{TARGET}-py3-none-any.whl", checked)
             self.assertIn(f"ainative_dev_stack-{TARGET}.tar.gz", checked)
 
@@ -196,15 +204,15 @@ class OfficialAssetSelection(unittest.TestCase):
 
     def test_a_release_publishing_another_version_bundle_is_refused(self):
         with self.assertRaises(LifecycleError) as raised:
-            self.provider("v2.2.2", "ainative-dev-stack-2.2.1.zip").latest("stable")
+            self.provider("v2.2.2", "ainative-lifecycle-v2-2.2.1.zip").latest("stable")
         self.assertEqual(raised.exception.code, "UPDATE_VERSION_MISMATCH")
         self.assertEqual(raised.exception.detail.get("published"),
-                         "ainative-dev-stack-2.2.1.zip")
+                         "ainative-lifecycle-v2-2.2.1.zip")
         self.assertEqual(raised.exception.detail.get("expected"),
-                         "ainative-dev-stack-2.2.2.zip")
+                         "ainative-lifecycle-v2-2.2.2.zip")
 
     def test_the_matching_bundle_is_selected(self):
-        release = self.provider("v2.2.2", "ainative-dev-stack-2.2.2.zip").latest("stable")
+        release = self.provider("v2.2.2", "ainative-lifecycle-v2-2.2.2.zip").latest("stable")
         self.assertEqual(release.version, "2.2.2")
         self.assertEqual(release.digest, "0" * 64)
 
@@ -220,7 +228,7 @@ class VersionChainFixture(LifecycleTestCase):
         self.releases.mkdir()
         self.target_tree = build_distribution_tree(self.root / "dist-target", TARGET)
         self.archive = make_release_archive(
-            self.target_tree, self.releases / f"ainative-dev-stack-{TARGET}.zip")
+            self.target_tree, self.releases / f"ainative-lifecycle-v2-{TARGET}.zip")
         self.publish(TARGET, self.archive)
         self.set_env(providerlib.PROVIDER_ENV, "local")
         self.set_env(providerlib.LOCAL_SOURCE_ENV, str(self.releases))
@@ -243,7 +251,7 @@ class VersionChainRefusals(VersionChainFixture):
 
         other = make_release_archive(
             build_distribution_tree(self.root / "dist-other", "2.2.1"),
-            self.releases / "ainative-dev-stack-2.2.1.zip")
+            self.releases / "ainative-lifecycle-v2-2.2.1.zip")
         self.publish(TARGET, other)
         with self.assertRaises(LifecycleError) as raised:
             providerlib.build("stable").latest("stable")
@@ -252,7 +260,7 @@ class VersionChainRefusals(VersionChainFixture):
     def test_an_index_refusal_reaches_the_updater_without_any_write(self):
         other = make_release_archive(
             build_distribution_tree(self.root / "dist-other", "2.2.1"),
-            self.releases / "ainative-dev-stack-2.2.1.zip")
+            self.releases / "ainative-lifecycle-v2-2.2.1.zip")
         self.publish(TARGET, other)
         before = project_snapshot(self.project)
         with self.assertRaises(LifecycleError) as raised:
@@ -266,7 +274,7 @@ class VersionChainRefusals(VersionChainFixture):
 
         inner = build_distribution_tree(self.root / "dist-inner", "2.2.1")
         archive = make_release_archive(
-            inner, self.releases / f"ainative-dev-stack-{TARGET}.zip")
+            inner, self.releases / f"ainative-lifecycle-v2-{TARGET}.zip")
         self.publish(TARGET, archive)
         before = project_snapshot(self.project)
         with self.assertRaises(LifecycleError) as raised:

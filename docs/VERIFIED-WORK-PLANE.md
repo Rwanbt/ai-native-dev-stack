@@ -45,6 +45,7 @@ profile loads none of this package.
 Bootstrap the project's trust anchor. This is a privileged ceremony — see
 "What it cannot verify" below.
 
+    ainative trust init --repo . --by "you"   # scaffold a root + policy (no authority)
     ainative trust bootstrap --repo . \
       --approval-root root.json --policy policy.json \
       --by "your name" --predicate recorded_owner_ack

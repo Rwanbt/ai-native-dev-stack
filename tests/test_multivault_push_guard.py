@@ -56,7 +56,7 @@ def intent(**overrides) -> PushIntent:
         "transport_policy": transport_policy(),
         "candidate_object_set_digest": "candidates",
         "scan_result_digest": "scan",
-        "expected_git_identity": "Rwanbt <barat.erwan@gmail.com>",
+        "expected_git_identity": "Maintainer <maintainer@example.invalid>",
     }
     fields.update(overrides)
     return PushIntent(**fields)

@@ -11,23 +11,26 @@ the chain:
     TAG_VERSION
     == ROOT_VERSION (VERSION)
     == PACKAGE_VERSION (ainative.__version__)
-    == WHEEL_VERSION (filename and METADATA, with --dist)
-    == SDIST_VERSION (filename and PKG-INFO, with --dist)
-    == BUNDLE_VERSION (filename and internal VERSION, with --dist)
+    == WHEEL_VERSION (filename and METADATA)
+    == SDIST_VERSION (filename and PKG-INFO)
+    == BUNDLE_VERSION (filename, protocol document, payload VERSION)
 
 The release workflow runs it before publishing and again over the built
-artifacts; a maintainer can run it before tagging. It exits non-zero with the
-disagreeing labels named, and never "fixes" anything.
+artifacts; the PyPI workflow runs the wheel/sdist half with --without-bundle
+(PyPI ships no lifecycle bundle); a maintainer can run it before tagging. It
+exits non-zero with the disagreeing labels named, and never "fixes" anything.
 
 Usage:
     python scripts/check_release_versions.py
     python scripts/check_release_versions.py --tag v2.2.2
     python scripts/check_release_versions.py --tag v2.2.2 --dist dist
+    python scripts/check_release_versions.py --tag v2.2.2 --dist dist --without-bundle
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import tarfile
@@ -39,9 +42,13 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from _payload_staging import assert_version_consistency  # noqa: E402
-from ainative.lifecycle.provider import lifecycle_bundle_name  # noqa: E402
+from ainative.lifecycle.provider import (PROTOCOL_MANIFEST,  # noqa: E402
+                                         UPDATE_PROTOCOL_VERSION,
+                                         lifecycle_bundle_name)
 
 _STACK_VERSION = re.compile(r"stack-version:\s*([0-9][0-9A-Za-z.\-]*)")
+_ARTIFACT = re.compile(r"ainative[_-](?:dev[_-]stack|lifecycle[_-]v\d+)[-_]")
+_SEMVER = re.compile(r"\d+\.\d+\.\d+")
 
 
 class ReleaseVersionMismatch(RuntimeError):
@@ -77,29 +84,53 @@ def _metadata_version(payload: bytes) -> str | None:
     return None
 
 
-def check_dist(version: str, dist: Path) -> list[str]:
-    """Each built artifact must be named for, and declare, `version`."""
+def _stale_artifacts(dist: Path, checked: set[str], version: str) -> list[str]:
+    """Files that name another version would be published beside this release."""
 
-    if not dist.is_dir():
-        raise ReleaseVersionMismatch(f"no dist directory at {dist}")
-    checked: list[str] = []
+    stale: list[str] = []
+    for item in sorted(dist.iterdir()):
+        if not item.is_file() or item.name in checked:
+            continue
+        if _ARTIFACT.search(item.name) and _SEMVER.search(item.name) \
+                and version not in item.name:
+            stale.append(item.name)
+    return stale
 
+
+def _check_bundle(version: str, dist: Path, checked: set[str]) -> None:
     bundle_name = lifecycle_bundle_name(version)
     bundle = dist / bundle_name
     if not bundle.is_file():
         raise ReleaseVersionMismatch(
             f"lifecycle bundle {bundle_name!r} is missing from {dist}")
     with zipfile.ZipFile(bundle) as archive:
-        internal = archive.read("VERSION").decode("utf-8").strip()
-    if internal != version:
+        names = archive.namelist()
+        if PROTOCOL_MANIFEST not in names:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {bundle_name!r} carries no {PROTOCOL_MANIFEST}")
+        document = json.loads(archive.read(PROTOCOL_MANIFEST).decode("utf-8"))
+        if document.get("protocol_version") != UPDATE_PROTOCOL_VERSION:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {bundle_name!r} declares protocol "
+                f"{document.get('protocol_version')!r}")
+        if document.get("release_version") != version:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {bundle_name!r} declares release_version "
+                f"{document.get('release_version')!r}")
+        payload_root = str(document.get("payload_root", ""))
+        payload_version = archive.read(f"{payload_root}/VERSION").decode("utf-8").strip()
+    if payload_version != version:
         raise ReleaseVersionMismatch(
-            f"lifecycle bundle {bundle_name!r} contains VERSION {internal!r}")
-    checked.append(bundle_name)
+            f"lifecycle bundle {bundle_name!r} contains VERSION {payload_version!r}")
+    checked.add(bundle_name)
 
+
+def _check_wheel(version: str, dist: Path, checked: set[str]) -> None:
     wheels = sorted(dist.glob(f"ainative_dev_stack-{version}-*.whl"))
     if not wheels:
         raise ReleaseVersionMismatch(
-            f"no wheel built for {version} in {dist} (expected ainative_dev_stack-{version}-*.whl)")
+            f"no wheel built for {version} in {dist} "
+            f"(expected ainative_dev_stack-{version}-*.whl)")
     for wheel in wheels:
         with zipfile.ZipFile(wheel) as archive:
             metadata = next((entry for entry in archive.namelist()
@@ -110,12 +141,15 @@ def check_dist(version: str, dist: Path) -> list[str]:
         if built != version:
             raise ReleaseVersionMismatch(
                 f"wheel {wheel.name!r} declares metadata version {built!r}")
-        checked.append(wheel.name)
+        checked.add(wheel.name)
 
+
+def _check_sdist(version: str, dist: Path, checked: set[str]) -> None:
     sdists = sorted(dist.glob(f"ainative_dev_stack-{version}.tar.gz"))
     if not sdists:
         raise ReleaseVersionMismatch(
-            f"no sdist built for {version} in {dist} (expected ainative_dev_stack-{version}.tar.gz)")
+            f"no sdist built for {version} in {dist} "
+            f"(expected ainative_dev_stack-{version}.tar.gz)")
     for sdist in sdists:
         with tarfile.open(sdist, "r:gz") as archive:
             pkg_info = next((entry for entry in archive.getmembers()
@@ -127,19 +161,28 @@ def check_dist(version: str, dist: Path) -> list[str]:
         if built != version:
             raise ReleaseVersionMismatch(
                 f"sdist {sdist.name!r} declares metadata version {built!r}")
-        checked.append(sdist.name)
+        checked.add(sdist.name)
 
-    # An artifact from another version in the same dist tree would be published
-    # beside this release and confuse every consumer that guesses by glob.
-    stale = sorted(
-        item.name for item in dist.iterdir()
-        if item.is_file() and item.name not in checked
-        and re.search(r"ainative[_-]dev[_-]stack[-_]", item.name)
-        and re.search(r"\d+\.\d+\.\d+", item.name))
+
+def check_dist(version: str, dist: Path, *, require_bundle: bool = True) -> list[str]:
+    """Each built artifact must be named for, and declare, `version`.
+
+    `require_bundle=False` is the PyPI path: PyPI ships the wheel and the
+    sdist, not the lifecycle bundle, which GitHub Releases carries.
+    """
+
+    if not dist.is_dir():
+        raise ReleaseVersionMismatch(f"no dist directory at {dist}")
+    checked: set[str] = set()
+    if require_bundle:
+        _check_bundle(version, dist, checked)
+    _check_wheel(version, dist, checked)
+    _check_sdist(version, dist, checked)
+    stale = _stale_artifacts(dist, checked, version)
     if stale:
         raise ReleaseVersionMismatch(
             f"artifacts for another version are present in {dist}: {stale}")
-    return checked
+    return sorted(checked)
 
 
 def main() -> int:
@@ -150,11 +193,15 @@ def main() -> int:
                         help="the release tag being published, e.g. v2.2.2")
     parser.add_argument("--dist", type=Path, default=None,
                         help="also verify the built artifacts in this directory")
+    parser.add_argument("--without-bundle", action="store_true",
+                        help="check only the wheel and the sdist (the PyPI surface)")
     args = parser.parse_args()
 
     try:
         version = check_labels(args.root, args.tag)
-        artifacts = check_dist(version, args.dist) if args.dist else []
+        artifacts = (check_dist(version, args.dist,
+                                require_bundle=not args.without_bundle)
+                     if args.dist else [])
     except ReleaseVersionMismatch as refusal:
         print(f"RELEASE_VERSION_MISMATCH: {refusal}", file=sys.stderr)
         return 1

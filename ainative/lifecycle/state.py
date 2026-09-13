@@ -45,7 +45,7 @@ DEFAULT_UPDATE_PREFERENCES = {
 # state module depend on the catalogue it is meant to outlive; the two are kept
 # equal by `test_lifecycle_security.py`.
 OWNERSHIPS = ("MANAGED_IMMUTABLE", "MANAGED_MUTABLE", "USER_DATA", "EXTERNAL_CONFIG")
-MANAGED_KINDS = ("file", "external_block", "data_root")
+MANAGED_KINDS = ("file", "external_block", "json_hook", "data_root")
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -257,6 +257,26 @@ def load(project: Path) -> InstallState | None:
     return InstallState.from_record(payload)
 
 
+def _apply_umask_mode(path: Path) -> None:
+    """Give a written file the mode a plain create would have produced.
+
+    `NamedTemporaryFile` creates 0600, and `os.replace` keeps that mode, so
+    every managed project file used to land owner-only on POSIX. Project files
+    are not secrets; a shared checkout expects group/other read (0644 under the
+    usual umask). Private state calls `write_atomic_private` explicitly.
+    Windows has no mode bits here and is left alone.
+    """
+
+    if os.name == "nt":
+        return
+    current = os.umask(0)
+    os.umask(current)
+    try:
+        os.chmod(path, 0o666 & ~current)
+    except OSError:
+        return
+
+
 def write_atomic(path: Path, payload: str) -> None:
     """Write via a same-directory temporary file and one rename.
 
@@ -274,6 +294,7 @@ def write_atomic(path: Path, payload: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(handle.name, path)
+        _apply_umask_mode(path)
     except BaseException:
         Path(handle.name).unlink(missing_ok=True)
         raise
@@ -290,9 +311,37 @@ def write_bytes_atomic(path: Path, payload: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(handle.name, path)
+        _apply_umask_mode(path)
     except BaseException:
         Path(handle.name).unlink(missing_ok=True)
         raise
+
+
+def restrict_to_owner(path: Path) -> None:
+    """Make one file owner-only where the platform has POSIX modes.
+
+    Private state (the trust anchor, the Knowledge store) is not a secret in
+    the cryptographic sense, but on a shared machine another account has no
+    reason to read a user's memory or authority material. Windows has no
+    equivalent mode bit here; ACLs are a separate, larger surface and nothing
+    in this stack claims them.
+    """
+
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        # A filesystem without POSIX modes (some network mounts) accepts the
+        # write; refusing the operation over the mode would be worse.
+        return
+
+
+def write_atomic_private(path: Path, payload: str) -> None:
+    """`write_atomic`, then owner-only on POSIX. Used for private state."""
+
+    write_atomic(path, payload)
+    restrict_to_owner(path)
 
 
 def save(project: Path, state: InstallState) -> Path:
@@ -310,6 +359,7 @@ __all__ = [
     "SCHEMA_VERSION", "LIFECYCLE_DIRNAME", "STATE_RELATIVE", "TRANSACTIONS_RELATIVE",
     "BACKUPS_RELATIVE", "UPDATE_CACHE_RELATIVE", "DEFAULT_UPDATE_PREFERENCES",
     "ManagedFile", "InstallState", "state_path", "exists", "load", "save", "remove",
-    "write_atomic", "write_bytes_atomic", "now", "new_identifier",
+    "write_atomic", "write_bytes_atomic", "write_atomic_private", "restrict_to_owner",
+    "now", "new_identifier",
     "OWNERSHIPS", "MANAGED_KINDS",
 ]

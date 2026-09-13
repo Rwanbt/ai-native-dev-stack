@@ -6,6 +6,92 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-13
+
+Minor release: the product surface grows (Verified onboarding, machine
+lifecycle, whole-stack diagnostics, a versioned update protocol) without
+breaking the documented Standard flow. A stranger can now install, initialize,
+diagnose, update, roll back and uninstall — and a Verified user can scaffold and
+bootstrap trust — without reading the source.
+
+### Added
+
+- **Verified onboarding.** `ainative trust init` writes a minimal approval-root
+  and policy scaffold (validated by the same code bootstrap uses, claiming no
+  authority); `ainative trust bootstrap` stays the explicit ceremony. One
+  schema owner (`trust_schema.py`) validates both documents before anything
+  reads them. `scripts/verified_first_run_e2e.py` drives the whole governed
+  workflow — init, trust init, bootstrap, work admit/new, verify, converge to
+  CONVERGED — from a fresh wheel and venv, on Linux, Windows and macOS.
+- **The hook is configured by `init`.** A new `claude-hook` component merges
+  exactly one owned `PostToolUse` entry into `.claude/settings.json`:
+  user keys and hook groups are preserved, a re-init never duplicates it,
+  uninstall/rollback remove only the owned entry, and an unparsable file is
+  refused rather than rewritten.
+- **Whole-stack `doctor`.** Beside the lifecycle diagnosis it now reports the
+  Python, Git (repository/HEAD/state), Node, the harness hook, harness
+  integration, the vault and its REST API when configured, Graphify, the
+  machine manifest and the Trust anchor — each as OK / ABSENT_OPTIONAL /
+  DEGRADED / FAIL with its impact. Missing automation fails; optional tools do
+  not.
+- **Machine lifecycle.** Every global install records
+  `~/.ai-native/machine.json` (source or digest per asset), and
+  `scripts/install_agents.py --uninstall [--dry-run]` reverses exactly that
+  record: user files and user-modified assets are preserved, file ownership is
+  provable, and the manifest is removed only after success.
+- **Versioned update protocol v2.** Bundles are now
+  `ainative-lifecycle-v2-<version>.zip` (protocol document + payload under
+  `stack/`). Runtimes up to v2.2.2 cannot consume such a bundle even from a
+  mirror — the layout refuses them. v2.2.2 refuses at the runtime gate before
+  downloading. The documented path is unchanged: upgrade the CLI first.
+- **Authenticated update checks.** `GITHUB_TOKEN`/`GH_TOKEN` is sent as a
+  bearer header when present (never logged, never cached); 403/429 answers are
+  reported as a rate-limit diagnosis with the remedy.
+  `ainative update check --strict` exits non-zero when the source could not be
+  consulted — the default still exits 0, because the answer is what it is.
+- **Atomic, attested releases.** The release workflow builds everything, gates
+  every artifact, attests build provenance
+  (`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`), creates the
+  release as a draft, uploads without `--clobber`, verifies the published
+  names/sizes/digests, and only then publishes. A new `publish-pypi.yml`
+  publishes the wheel and sdist through PyPI Trusted Publishing (OIDC); the
+  one-time PyPI setup is documented in `docs/RELEASING.md`.
+- **Machine-path gate.** `scripts/check_personal_paths.py` refuses any tracked
+  file carrying a user profile, home directory or the maintainer's account in a
+  path, with a reasoned allowlist for historical evidence; the mutation test
+  proves it blocks.
+- **Docs for strangers.** `SUPPORT.md` (what is supported, how to report, known
+  limitations), `CODE_OF_CONDUCT.md`, and `docs/RELEASING.md`.
+
+### Changed
+
+- **Non-Git projects.** Standard installs with an explicit notice and a
+  DEGRADED doctor report (Knowledge persistence and provenance need a
+  repository); Verified refuses with `GIT_REPOSITORY_REQUIRED`.
+- **Truthful plan vocabulary.** `BLOCK_WRITE`/`BLOCK_REMOVE` (which read as
+  "blocked" while the operation proceeded) are replaced by
+  `REGION_WRITE`/`REGION_REMOVE` and `HOOK_WRITE`/`HOOK_REMOVE`; older journals
+  remain readable.
+- **Knowledge works on a fresh install (#138).** The managed `.gitignore`
+  region now carries `.ai-native/state/`, and refusals print the exact remedy.
+  Knowledge state and the trust anchor are owner-only on POSIX.
+- `lifecycle_dogfood.py` runs again (#137) and immediately caught a stale
+  non-vacuity anchor, fixed here.
+
+### Fixed
+
+- **No more tracebacks for invalid trusted input.** `ainative trust bootstrap`
+  with `{}` raised `KeyError` and exited 1 (the NOT_CONVERGED code). Validation
+  now precedes use; refusals print a stable code on stderr and the same record
+  as JSON on stdout, always exit 2.
+- Machine-specific paths removed from distributed files: the committed
+  Mavis-generated OpenCode artifacts are gone, the enforcement script carries no
+  personal defaults, and the maintainer's email left the fixtures.
+- `rendered_file` writes bytes, so a recorded digest matches the file on
+  Windows; the machine uninstall's dry run is pure (it no longer classifies by
+  mutating).
+
+
 ## [2.2.2] - 2026-09-13
 
 Corrective release closing the post-v2.2.1 audit. Two architectural

@@ -18,6 +18,22 @@ The full model — ownership, transactions, rollback, security boundaries — is
 
 ---
 
+## Updating or removing the machine integration
+
+Global integration (method blocks, skill links, hooks, plugins) is updated by
+re-running the installer from a stack checkout — it is idempotent, and it
+records what it wrote in `~/.ai-native/machine.json`:
+
+```bash
+python scripts/install_agents.py                    # install or update
+python scripts/install_agents.py --check            # verify
+python scripts/install_agents.py --uninstall --dry-run   # preview removal
+python scripts/install_agents.py --uninstall         # remove only what it owns
+```
+
+The uninstall removes recorded, unmodified assets and preserves everything
+else — including a managed file you edited since the install.
+
 ## Updating a project — `ainative update`
 
 The runtime that applies an update is the policy the release ships: the
@@ -40,6 +56,13 @@ ainative update rollback   # undo it
 The refusal names both versions and prints the exact upgrade command.
 `ainative status --check-updates` and `ainative doctor --check-updates` still
 report what is available and say when the runtime must be upgraded first.
+
+Releases from the protocol v2 line cannot be consumed by a runtime older than
+v2.2.2 at all: the bundle is named `ainative-lifecycle-v2-<version>.zip` and its
+payload sits under `stack/`, which the old selector and the old extractor both
+refuse. That containment is deliberate - an old runtime must never apply a
+policy it does not know - and the only path forward is upgrading the CLI, then
+running `ainative update` in each project.
 
 ### What it guarantees
 

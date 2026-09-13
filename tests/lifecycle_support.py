@@ -65,6 +65,7 @@ def build_distribution_tree(root: Path, version: str = "1.0.0", *,
                  "assemble_context.py"):
         write_text(tools / name, f"# {name} {version}\n")
     write_text(tools / "run_hook.sh", f"#!/bin/sh\n# {version}\n")
+    write_text(tools / "run_hook.ps1", f"# {version}\n")
     write_text(tools / "find_python.sh", "#!/bin/sh\nexit 0\n")
     write_text(tools / "config.sh.example", f"VAULT=\n# {version}\n")
 
@@ -109,6 +110,16 @@ class LifecycleTestCase(unittest.TestCase):
         (self.project / "src").mkdir(parents=True)
         write_text(self.project / "src" / "app.py", "print('hi')\n")
         write_text(self.project / "README.md", "my project\n")
+        # A project is a Git repository: Verified refuses to install without
+        # one, and the Knowledge control-path policy verifies against it. An
+        # inherited repository from an enclosing directory would make every
+        # test depend on where the developer's temp directory happens to sit.
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(self.project), "config", "user.email",
+                        "test@example.invalid"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.project), "config", "user.name",
+                        "Lifecycle Test"], check=True, capture_output=True)
         self.distribution_root = build_distribution_tree(self.root / "dist-v1", "1.0.0")
         self.distribution = manifestlib.load()
         self.source = sourcelib.DistributionSource(

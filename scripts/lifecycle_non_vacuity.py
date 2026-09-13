@@ -154,13 +154,11 @@ CASES = (
         guards="reversing an update must remove what it created, not only restore "
                "what it replaced",
         edits=(Edit("ainative/lifecycle/transaction.py",
-                    "        elif record.get(\"action\") == plannerlib.CREATE and target.is_file():\n"
-                    "            # Created by this transaction, so there is nothing to restore: the\n"
-                    "            # previous state did not have it. Leaving it behind is what made\n"
-                    "            # `update rollback` produce a v1 project holding v2's new files.\n"
-                    "            target.unlink(missing_ok=True)\n"
-                    "            removed.append(path)\n",
-                    "        elif False:\n            pass\n"),),
+                    "        elif (record.get(\"action\") in (plannerlib.CREATE, "
+                    "plannerlib.REGION_WRITE,\n"
+                    "                                       plannerlib.HOOK_WRITE)\n"
+                    "              and target.is_file()):\n",
+                    "        elif False:\n"),),
         test=("tests.test_lifecycle_update.UpdateRecovery"
               ".test_rollback_also_removes_the_files_the_update_created"),
     ),
@@ -217,6 +215,48 @@ CASES = (
                     "    outcome = check(project, force=True, state=state, release=release)\n")),
         test=("tests.test_lifecycle_update.UpdateApply"
               ".test_a_dry_run_update_writes_nothing"),
+    ),
+    Case(
+        name="hook_merge_preserves_user_groups",
+        guards="configuring the hook must not drop the user's own PostToolUse groups",
+        # Anchored on the comprehension predicate: the same line appears in
+        # `remove`, and the first occurrence (in `apply`) is the guarded one.
+        edits=(Edit("ainative/lifecycle/external_json.py",
+                    "if not owns_group(group, spec)]",
+                    "if False]"),),
+        test=("tests.test_lifecycle_hook_config.HookConfiguration"
+              ".test_a_user_settings_file_is_merged_not_replaced"),
+    ),
+    Case(
+        name="hook_entry_never_duplicated",
+        guards="a re-init must not append a second managed hook entry",
+        edits=(Edit("ainative/lifecycle/external_json.py",
+                    "if not owns_group(group, spec)]",
+                    "if True]"),),
+        test=("tests.test_lifecycle_hook_config.HookConfiguration"
+              ".test_reinit_does_not_duplicate_the_hook"),
+    ),
+    Case(
+        name="hook_invalid_json_is_refused",
+        guards="an unparsable settings.json must be refused, never rewritten",
+        edits=(Edit("ainative/lifecycle/planner.py",
+                    "        if error is not None:\n",
+                    "        if False:\n"),),
+        test=("tests.test_lifecycle_hook_config.HookConfiguration"
+              ".test_invalid_settings_json_is_refused_without_writing"),
+    ),
+    Case(
+        name="verified_requires_git",
+        guards="Verified must refuse a project that is not a Git repository",
+        edits=(Edit("ainative/lifecycle/installer.py",
+                    "    if environment.git_root(project) is None:\n"
+                    "        raise LifecycleError(\n"
+                    '            "GIT_REPOSITORY_REQUIRED",',
+                    "    if False:\n"
+                    "        raise LifecycleError(\n"
+                    '            "GIT_REPOSITORY_REQUIRED",'),),
+        test=("tests.test_lifecycle_hook_config.NonGitPolicy"
+              ".test_verified_refuses_outside_git"),
     ),
     Case(
         name="runtime_freshness_gate",
