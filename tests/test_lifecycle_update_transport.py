@@ -305,6 +305,86 @@ class GitHubPrivateAssetFlow(unittest.TestCase):
         self.assertEqual(raised.exception.code, "UPDATE_INTEGRITY_METADATA_MISSING")
 
 
+class FutureProtocolBridge(LifecycleTestCase):
+    """A newer lifecycle protocol is a newer release, not a broken one (#157).
+
+    Before this bridge existed, a V2 runtime meeting a V3 publication said
+    `UPDATE_INTEGRITY_METADATA_MISSING` - "no lifecycle bundle to verify" -
+    which sends every user looking for a publishing defect instead of upgrading
+    the CLI. The two situations are now distinct: a future-protocol
+    publication refuses with `CLI_UPDATE_REQUIRED` and the upgrade path, while
+    a release that simply publishes no lifecycle bundle keeps the integrity
+    refusal.
+    """
+
+    def v3_document(self, *, tag: str = "v3.0.0", extra_assets: list | None = None) -> bytes:
+        assets = [
+            {"name": "ainative-release-v3.json",
+             "browser_download_url": "https://example.invalid/ainative-release-v3.json"},
+            {"name": f"ainative-lifecycle-v3-{tag.lstrip('v')}.zip",
+             "browser_download_url": f"https://example.invalid/ainative-lifecycle-v3-{tag.lstrip('v')}.zip"},
+        ]
+        assets.extend(extra_assets or [])
+        return json.dumps({"tag_name": tag, "assets": assets}).encode("utf-8")
+
+    def provider(self, document: bytes):
+        provider = providerlib.ReleaseApiProvider("https://example.invalid/releases/latest")
+        provider._get = lambda url, limit: document
+        return provider
+
+    def snapshot(self) -> dict:
+        from ainative.lifecycle.digest import digest_file
+
+        return {path.relative_to(self.project).as_posix(): digest_file(path) or ""
+                for path in self.project.rglob("*") if path.is_file()}
+
+    def test_a_future_protocol_release_is_refused_as_cli_update_required(self):
+        with self.assertRaises(LifecycleError) as raised:
+            self.provider(self.v3_document()).latest("stable")
+        self.assertEqual(raised.exception.code, "CLI_UPDATE_REQUIRED")
+        self.assertEqual(raised.exception.detail.get("target_version"), "3.0.0")
+        self.assertIn("Upgrade the CLI first", raised.exception.message)
+        self.assertIn("@v3.0.0", raised.exception.detail["upgrade_command"])
+
+    def test_a_release_publishing_nothing_consumable_keeps_the_integrity_refusal(self):
+        document = json.dumps({"tag_name": "v3.0.0", "assets": [
+            {"name": "notes.txt", "browser_download_url": "https://example.invalid/notes.txt"}]}
+        ).encode("utf-8")
+        with self.assertRaises(LifecycleError) as raised:
+            self.provider(document).latest("stable")
+        self.assertEqual(raised.exception.code, "UPDATE_INTEGRITY_METADATA_MISSING")
+
+    def test_a_bridge_style_release_stays_selectable_by_the_v2_runtime(self):
+        """A release carrying both a V2 bundle and V3 markers is still a V2 release."""
+
+        bundle = {"name": "ainative-lifecycle-v2-2.5.0.zip",
+                  "browser_download_url": "https://example.invalid/ainative-lifecycle-v2-2.5.0.zip",
+                  "digest": "sha256:" + "a" * 64}
+        document = self.v3_document(tag="v2.5.0", extra_assets=[bundle])
+        release = self.provider(document).latest("stable")
+        self.assertEqual(release.version, "2.5.0")
+        self.assertEqual(release.digest, "a" * 64)
+
+    def test_check_reports_a_future_release_as_available_with_a_cli_upgrade(self):
+        self.install("standard")
+        provider = self.provider(self.v3_document())
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+            result = updaterlib.check(self.project, force=True, record=False)
+        self.assertEqual(result.status, updaterlib.UPDATE_AVAILABLE)
+        self.assertEqual(result.latest, "3.0.0")
+        self.assertFalse(result.runtime_ready)
+
+    def test_apply_refuses_a_future_release_before_any_write(self):
+        self.install("standard")
+        provider = self.provider(self.v3_document())
+        before = self.snapshot()
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+            with self.assertRaises(LifecycleError) as raised:
+                updaterlib.apply(self.project, distribution=self.distribution)
+        self.assertEqual(raised.exception.code, "CLI_UPDATE_REQUIRED")
+        self.assertEqual(self.snapshot(), before, "a refused update touched the project")
+
+
 class ProtocolV2Containment(unittest.TestCase):
     """The layout, not the selector, is what a legacy runtime cannot consume."""
 

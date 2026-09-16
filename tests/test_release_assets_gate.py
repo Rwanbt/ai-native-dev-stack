@@ -13,6 +13,7 @@ failure mode a stranger would only discover after publishing:
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import json
@@ -30,6 +31,9 @@ for extra in (REPO / "scripts", REPO):
 
 import check_release_versions as gate  # noqa: E402
 import check_published_assets as published  # noqa: E402
+import check_bridge_release as bridge  # noqa: E402
+from ainative.lifecycle import provider as providerlib  # noqa: E402
+from ainative.lifecycle.errors import LifecycleError  # noqa: E402
 
 
 def make_wheel(dist: Path, version: str) -> Path:
@@ -143,6 +147,84 @@ class GateNonVacuity(unittest.TestCase):
     def test_a_tag_that_does_not_name_the_version_fails(self):
         with self.assertRaises(gate.ReleaseVersionMismatch):
             gate.check_labels(REPO, "v999.0.0")
+
+
+class BridgeReleaseGate(unittest.TestCase):
+    """A V3 publication is blocked until a V2-consumable bridge exists (#157)."""
+
+    class FakeProvider:
+        def __init__(self, outcome: object) -> None:
+            self.outcome = outcome
+
+        def latest(self, channel: str):
+            if isinstance(self.outcome, Exception):
+                raise self.outcome
+            return self.outcome
+
+    def release(self, version: str = "2.5.0", digest: str | None = "a" * 64):
+        return providerlib.Release(version=version, url="https://example.invalid/b.zip",
+                                   digest=digest)
+
+    def test_a_verifiable_bridge_release_passes(self):
+        record = bridge.verify_bridge_release("2.5.0", provider=self.FakeProvider(self.release()))
+        self.assertEqual(record["bridge_version"], "2.5.0")
+        self.assertEqual(record["lifecycle_bundle"], "ainative-lifecycle-v2-2.5.0.zip")
+        self.assertEqual(record["sha256"], "a" * 64)
+
+    def test_a_missing_or_unpublished_bridge_release_blocks(self):
+        provider = self.FakeProvider(LifecycleError("UPDATE_CHECK_FAILED", "HTTP 404"))
+        with self.assertRaises(bridge.BridgeReleaseUnverified) as raised:
+            bridge.verify_bridge_release("2.5.0", provider=provider)
+        self.assertIn("UPDATE_CHECK_FAILED", str(raised.exception))
+
+    def test_a_bridge_without_a_lifecycle_bundle_blocks(self):
+        provider = self.FakeProvider(
+            LifecycleError("UPDATE_INTEGRITY_METADATA_MISSING", "no bundle"))
+        with self.assertRaises(bridge.BridgeReleaseUnverified) as raised:
+            bridge.verify_bridge_release("2.5.0", provider=provider)
+        self.assertIn("UPDATE_INTEGRITY_METADATA_MISSING", str(raised.exception))
+
+    def test_a_future_protocol_release_is_not_a_bridge(self):
+        provider = self.FakeProvider(
+            LifecycleError("CLI_UPDATE_REQUIRED", "publishes lifecycle protocol 3"))
+        with self.assertRaises(bridge.BridgeReleaseUnverified) as raised:
+            bridge.verify_bridge_release("2.5.0", provider=provider)
+        self.assertIn("CLI_UPDATE_REQUIRED", str(raised.exception))
+
+    def test_a_release_declaring_another_version_blocks(self):
+        provider = self.FakeProvider(self.release(version="2.4.9"))
+        with self.assertRaises(bridge.BridgeReleaseUnverified) as raised:
+            bridge.verify_bridge_release("2.5.0", provider=provider)
+        self.assertIn("declares version", str(raised.exception))
+
+    def test_a_bridge_without_a_published_digest_blocks(self):
+        provider = self.FakeProvider(self.release(digest=None))
+        with self.assertRaises(bridge.BridgeReleaseUnverified):
+            bridge.verify_bridge_release("2.5.0", provider=provider)
+
+    def test_a_non_semver_bridge_version_blocks(self):
+        with self.assertRaises(bridge.BridgeReleaseUnverified):
+            bridge.verify_bridge_release("latest", provider=self.FakeProvider(self.release()))
+
+    def test_a_missing_bridge_version_is_a_configuration_error(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = bridge.main(["--bridge-version", ""])
+        self.assertEqual(code, 2)
+        self.assertIn("BLOCK RELEASE", stderr.getvalue())
+
+    def test_the_gate_resolves_through_the_v2_selection_path(self):
+        """Not a mock of the gate: the real provider, the real selection rules."""
+
+        document = json.dumps({"tag_name": "v2.5.0", "assets": [
+            {"name": "ainative-lifecycle-v2-2.5.0.zip",
+             "browser_download_url": "https://example.invalid/b.zip",
+             "digest": "sha256:" + "b" * 64}]}).encode("utf-8")
+        provider = providerlib.ReleaseApiProvider(
+            "https://example.invalid/releases/tags/v2.5.0")
+        provider._get = lambda url, limit: document
+        record = bridge.verify_bridge_release("2.5.0", provider=provider)
+        self.assertEqual(record["sha256"], "b" * 64)
 
 
 if __name__ == "__main__":

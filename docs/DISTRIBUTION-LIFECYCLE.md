@@ -468,6 +468,22 @@ pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.
 cd your-project && ainative update
 ```
 
+**A newer lifecycle protocol, stated precisely.** A release that publishes a
+lifecycle bundle or manifest for a protocol newer than the running runtime's
+(`ainative-lifecycle-v3-*`, `ainative-release-v3.json`) is not a broken
+release: `update check` reports it as available with a CLI upgrade required,
+and `ainative update` refuses it with `CLI_UPDATE_REQUIRED`, before any
+download or write, naming the upgrade command. A release that publishes no
+lifecycle bundle at all keeps its refusal:
+`UPDATE_INTEGRITY_METADATA_MISSING`. A runtime older than the bridge release
+sees a V3 release as `UPDATE_INTEGRITY_METADATA_MISSING`; its documented
+escape path is the same upgrade command, applied manually, then
+`ainative update`. Before the first V3 publication the release workflow
+verifies the declared `V3_BRIDGE_RELEASE` with
+`scripts/check_bridge_release.py`, which resolves it through these same
+selection rules and blocks the publication (`BLOCK RELEASE`) when the bridge
+cannot be verified.
+
 **The release chain, stated precisely.** For a published release:
 
 ```
