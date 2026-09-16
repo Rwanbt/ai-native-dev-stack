@@ -34,7 +34,7 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 |---|---|
 | Generic Git | GREEN — `feature switch none`, zero-feature states valid, observation resolves `UNAVAILABLE` |
 | GitHub.com | GREEN for the release source (existing qualified releases + provider contract tests); GREEN for work management (mapping + observation) |
-| GitLab.com | Provider implemented and contract-tested against a scripted GitLab API. **Live-service qualification UNTESTED — not declared supported** |
+| GitLab.com | **GREEN — qualified live** (2026-09-16) against a public test project (`barat.erwan/ai-native-dev-stack-probe`): Generic Package Registry published `ai-native-dev-stack` 2.4.4 (manifest 514 B `sha256:84a921eb…`, bundle 119 895 B `sha256:67670398…`) plus release `v2.4.4`. Authenticated enumeration (`PRIVATE-TOKEN`), anchor read from the package-file API's `file_sha256` + `size`, anchored manifest parsed, exact version chain held, artifact downloaded with size + SHA-256 verified, lifecycle protocol 3 accepted, and `update check` reported `UPDATE_AVAILABLE 2.4.4` with the exact-runtime gate (`runtime_ready=false` for the 2.4.3 runtime) |
 | GitLab Self-Managed | UNTESTED — not supported |
 | GitHub Enterprise Server | UNTESTED — not supported |
 
@@ -43,7 +43,7 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 | # | Scenario | Evidence | Status |
 |---|---|---|---|
 | A | Generic Git | `test_lifecycle_features` (switch none, zero features), `test_forge_claims` (UNAVAILABLE) | GREEN |
-| B | New GitLab project | feature switch to `forge-gitlab` + GitLab provider tests (scripted) | PARTIAL — no live GitLab project exists to qualify |
+| B | New GitLab project | live qualification probe (above) + feature switch to `forge-gitlab` | GREEN |
 | C | Legacy GitHub project | V1 projection + migration tests | GREEN |
 | D | GitHub → GitLab → none → GitHub | `test_a_round_trip_loses_no_user_data` | GREEN |
 | E | Fork origin/upstream ambiguity | resolver + `forge detect` rendering (AMBIGUOUS, exit 0) | GREEN |
@@ -78,21 +78,18 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 ## Known limitations and remaining work
 
 **P1 — the declared-support gate:**
-- GitLab.com live qualification (requires a real GitLab project publishing
-  `ai-native-dev-stack` generic packages and an `ainative-release-v3.json`
-  manifest). Until then GitLab.com stays UNTESTED and is not declared
-  supported.
 - Full CI matrix (Linux/Windows/macOS, py3.11/3.13) — runs on the `dev`
-  proposals; the first run of the complete implementation was green 52/52.
+  proposals; every run so far has been green (52/52, then 76/76).
 - The V2 bridge release and the V3 release have not been published: the plan's
   release choreography (§92) starts after the branch is promoted to `dev`, and
   the first V3 publication stays gated by `V3_BRIDGE_RELEASE`.
 
-**Resolved since the first draft of this report:** scenario Q (mandatory
-secret patterns with operator extras), scenario J (GitLab object-storage
-blob), scenario M (legacy GitLab remote warning), scenario P (one
-cross-command selector-conflict E2E) and the EN/FR documentation parity
-automation (`tests/purity/test_docs_parity.py`: heading hierarchy, operational
-surface, critical security statements — no raw line-count equality).
+**Resolved since the first draft of this report:** the GitLab.com **live**
+qualification (scenario B), scenario Q (mandatory secret patterns with
+operator extras), scenario J (GitLab object-storage blob), scenario M (legacy
+GitLab remote warning), scenario P (one cross-command selector-conflict E2E)
+and the EN/FR documentation parity automation
+(`tests/purity/test_docs_parity.py`: heading hierarchy, operational surface,
+critical security statements — no raw line-count equality).
 
 **P0:** none known.
