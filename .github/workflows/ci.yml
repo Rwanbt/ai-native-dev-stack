@@ -210,6 +210,9 @@ jobs:
       - name: Release source resolution and diagnostics
         run: python -m unittest tests.test_release_source -v
 
+      - name: Release V3 contract, manifest and version chain
+        run: python -m unittest tests.test_release_v3 -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 
