@@ -216,6 +216,9 @@ jobs:
       - name: Release V3 providers (GitHub, anonymous, local mirror)
         run: python -m unittest tests.test_release_providers -v
 
+      - name: Release V3 update path end to end
+        run: python -m unittest tests.test_lifecycle_update_v3 -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 

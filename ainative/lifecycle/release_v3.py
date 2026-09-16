@@ -29,6 +29,9 @@ from .errors import LifecycleError
 
 MANIFEST_SCHEMA = "ainative.release"
 MANIFEST_PROTOCOL = "v3"
+# The `lifecycle-protocol.json` a V3 bundle carries at its root; the V2 bundle
+# keeps protocol 2 (provider.UPDATE_PROTOCOL_VERSION).
+BUNDLE_PROTOCOL_VERSION = 3
 ARTIFACT_KIND_LIFECYCLE = "lifecycle"
 ARTIFACT_KINDS = (ARTIFACT_KIND_LIFECYCLE,)
 
@@ -367,6 +370,19 @@ def _filename_version(artifact: ManifestArtifact) -> str:
     return inner
 
 
+def fetch_manifest_for(provider: ReleaseProvider,
+                       candidate: ReleaseCandidate) -> ReleaseManifest:
+    """Fetch, anchor-verify, parse and chain-check one candidate's manifest."""
+
+    payload = provider.fetch_manifest(candidate)
+    verify_external_anchor(payload, sha256=candidate.manifest_sha256,
+                           size=candidate.manifest_size)
+    manifest = parse_manifest(payload)
+    artifact = manifest.lifecycle_artifact()
+    require_exact_version_chain(candidate, manifest, artifact)
+    return manifest
+
+
 def resolve_manifest(provider: ReleaseProvider, query: ReleaseQuery
                      ) -> tuple[ReleaseCandidate, ReleaseManifest]:
     """enumerate -> select -> anchor-verified manifest -> exact chain.
@@ -378,19 +394,14 @@ def resolve_manifest(provider: ReleaseProvider, query: ReleaseQuery
 
     result = provider.enumerate(query)
     candidate = select_candidate(result, query)
-    payload = provider.fetch_manifest(candidate)
-    verify_external_anchor(payload, sha256=candidate.manifest_sha256,
-                           size=candidate.manifest_size)
-    manifest = parse_manifest(payload)
-    artifact = manifest.lifecycle_artifact()
-    require_exact_version_chain(candidate, manifest, artifact)
-    return candidate, manifest
+    return candidate, fetch_manifest_for(provider, candidate)
 
 
 __all__ = [
     "ReleaseQuery", "ReleaseCandidate", "EnumerationResult", "ManifestArtifact",
     "ReleaseManifest", "ReleaseProvider", "canonical_version", "select_candidate",
     "verify_external_anchor", "parse_manifest", "lifecycle_bundle_name",
-    "require_exact_version_chain", "resolve_manifest",
-    "MANIFEST_SCHEMA", "MANIFEST_PROTOCOL", "ARTIFACT_KIND_LIFECYCLE",
+    "require_exact_version_chain", "resolve_manifest", "fetch_manifest_for",
+    "MANIFEST_SCHEMA", "MANIFEST_PROTOCOL", "BUNDLE_PROTOCOL_VERSION",
+    "ARTIFACT_KIND_LIFECYCLE",
 ]

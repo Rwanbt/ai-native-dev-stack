@@ -444,6 +444,28 @@ def build(channel: str = "stable") -> UpdateProvider:
     return ReleaseApiProvider(url=source.metadata_url, endpoint=source.endpoint)
 
 
+def build_v3(channel: str = "stable"):
+    """The V3 provider for the resolved source (ADR-0019 section 11).
+
+    The second generation of the same seam: the V2 path speaks a `Release`
+    listing, the V3 path speaks bounded enumeration plus an anchored manifest.
+    The updater prefers V3 and falls back to V2 only when a complete
+    enumeration proves the channel is V2-era.
+    """
+
+    from . import release_providers as release_providerslib
+    from . import release_source as release_sourcelib
+
+    source = release_sourcelib.resolve_release_source()
+    if source.kind == release_sourcelib.KIND_LOCAL:
+        return release_providerslib.LocalReleaseProvider(source.directory)
+    if source.kind == release_sourcelib.KIND_ANONYMOUS:
+        return release_providerslib.AnonymousReleaseApiProvider(source.metadata_url,
+                                                                source.endpoint)
+    # github and named providers are both GitHub-Release-API-compatible.
+    return release_providerslib.GitHubReleaseProvider(source.endpoint)
+
+
 def copy_tree(source: Path, destination: Path) -> None:
     """Used by the local provider's tests to stage a fixture distribution."""
 
