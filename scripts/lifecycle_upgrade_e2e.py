@@ -123,11 +123,16 @@ def relabel_tree(source_root: Path, destination: Path, version: str) -> Path:
     start = text.index(marker) + len(marker)
     end = text.index('"', start)
     init.write_text(text[:start] + version + text[end:], encoding="utf-8")
-    agents = destination / "AGENTS.md"
-    text = agents.read_text(encoding="utf-8")
-    relabelled = re.sub(r"(stack-version:\s*)[0-9][0-9A-Za-z.\-]*",
-                        rf"\g<1>{version}", text, count=1)
-    agents.write_text(relabelled, encoding="utf-8")
+    # Both policy files carry the version label: the repository's own AGENTS.md
+    # and the distributed template the engineering-method component installs
+    # (ADR-0018). Relabelling only one of them left the managed payload
+    # byte-identical between N and N+1, and the update plan became a no-op.
+    for relative in ("AGENTS.md", "templates/AGENTS.md"):
+        agents = destination / relative
+        text = agents.read_text(encoding="utf-8")
+        relabelled = re.sub(r"(stack-version:\s*)[0-9][0-9A-Za-z.\-]*",
+                            rf"\g<1>{version}", text, count=1)
+        agents.write_text(relabelled, encoding="utf-8")
     return destination
 
 
@@ -258,7 +263,9 @@ def main() -> int:
         if state["stack_version"] != to_version or state["source_version"] != to_version:
             raise Failure(f"update did not land: {state['stack_version']}/"
                           f"{state['source_version']}, expected {to_version}")
-        expected_agents = (probe_tree / "AGENTS.md").read_bytes()
+        # The engineering-method component installs the distributed template
+        # (ADR-0018), not the repository's own AGENTS.md.
+        expected_agents = (probe_tree / "templates" / "AGENTS.md").read_bytes()
         if (project / "AGENTS.md").read_bytes() != expected_agents:
             raise Failure("project assets are not the probe release's assets")
         ok(f"project updated to {to_version}: state, source_version and assets agree")
