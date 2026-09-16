@@ -437,5 +437,16 @@ class FeatureSwitching(LifecycleTestCase):
         self.assertEqual(self.features_now(), [GITLAB])
 
 
+    def test_status_reports_the_same_effective_features_as_the_projection(self):
+        path = statelib.state_path(self.project)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["schema_version"] = 1
+        record.pop("active_features", None)
+        statelib.write_atomic(path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+        report = json.loads(self.cli("status", "--json").stdout)
+        self.assertEqual(report["features"], [LEGACY])
+        self.assertTrue(report["features_projected_from_legacy"])
+
+
 if __name__ == "__main__":
     unittest.main()

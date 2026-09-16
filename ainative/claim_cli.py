@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Callable
 
 from . import claims
+from .cli_support import project_from, report as _report
 
 
 def add_claim_parser(commands) -> None:
@@ -54,8 +54,8 @@ def _attempt_text(attempt: claims.ClaimAttempt) -> str:
     return "\n".join(lines)
 
 
-def run_claim_command(args: argparse.Namespace, *, project: Path,
-                      report: Callable[[dict, str], int]) -> int:
+def run_claim_command(args: argparse.Namespace) -> int:
+    project = project_from(args)
     if args.claim_command == "list":
         attempts = claims.list_attempts(project)
         record = {"attempts": [attempt.to_record() for attempt in attempts],
@@ -65,12 +65,12 @@ def run_claim_command(args: argparse.Namespace, *, project: Path,
         for attempt in attempts:
             lines.append(f"  {attempt.state:<10} {attempt.attempt_id}  "
                          f"item {attempt.item}")
-        return report(record, "\n".join(lines))
+        return _report(args, record, "\n".join(lines))
     if args.claim_command == "inspect":
         attempt = claims.load_attempt(project, args.attempt_id)
-        return report(attempt.to_record(), _attempt_text(attempt))
+        return _report(args, attempt.to_record(), _attempt_text(attempt))
     attempt = claims.abandon(project, args.attempt_id, confirm=args.confirm)
-    return report(attempt.to_record(), _attempt_text(attempt))
+    return _report(args, attempt.to_record(), _attempt_text(attempt))
 
 
 __all__ = ["add_claim_parser", "run_claim_command"]

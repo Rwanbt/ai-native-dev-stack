@@ -14,12 +14,14 @@ command that a script would parse takes `--json`.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 
 from .lifecycle.errors import EXIT_FAILED, EXIT_INVALID_REQUEST, EXIT_OK, LifecycleError
+from .cli_support import (ACTION_LABELS, action_label as _action_label,  # noqa: F401
+                          emit as _emit, plan_text as _plan_text,
+                          project_from as _project, report as _report)
 
 # Routed to the Verified Work Plane, unchanged. Their exit codes and output are
 # the Work Plane's contract and are not reinterpreted here.
@@ -35,14 +37,6 @@ PROFILE_PROMPT = """Choose an AI Native profile:
    Standard + governed Work Contracts and deterministic verification.
    Recommended for production, teams and autonomous agents.
 """
-
-
-def _emit(payload: object) -> None:
-    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
-
-
-def _project(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "project", None) or Path.cwd())
 
 
 def _add_common(parser: argparse.ArgumentParser, *, dry_run: bool = True,
@@ -178,10 +172,12 @@ def build_parser() -> argparse.ArgumentParser:
     from ainative.knowledge.cli import add_context_parser, add_knowledge_parser
     from ainative.lifecycle.feature_cli import add_feature_parser
     from ainative.claim_cli import add_claim_parser
+    from ainative.forge_cli import add_forge_parser
     add_knowledge_parser(commands)
     add_context_parser(commands)
     add_feature_parser(commands)
     add_claim_parser(commands)
+    add_forge_parser(commands)
 
     for name in VERIFIED_COMMANDS:
         commands.add_parser(name, add_help=False,
@@ -228,55 +224,6 @@ def _choose_profile(args: argparse.Namespace) -> str:
         "Use `ainative init --profile standard` or `--profile verified`.")
 
 
-def _report(args: argparse.Namespace, record: dict, text: str) -> int:
-    if getattr(args, "json", False):
-        _emit(record)
-    else:
-        print(text)
-    return EXIT_OK
-
-
-# What the plan says, as opposed to what the journal records. `BLOCK_WRITE`
-# read to a user as "blocked" while the operation actually proceeded; the
-# internal names stay stable for journals, the labels must not lie.
-ACTION_LABELS = {
-    "CREATE": "create",
-    "REPLACE": "replace",
-    "REMOVE": "remove",
-    "SKIP": "skip",
-    "PRESERVE": "preserve",
-    "CONFLICT": "conflict",
-    "REGION_WRITE": "configure-region",
-    "REGION_REMOVE": "remove-region",
-    "HOOK_WRITE": "configure-hook",
-    "HOOK_REMOVE": "remove-hook",
-    "BLOCK_WRITE": "configure-region",
-    "BLOCK_REMOVE": "remove-region",
-}
-
-
-def _action_label(action: str) -> str:
-    return ACTION_LABELS.get(action, action.lower())
-
-
-def _plan_text(result) -> str:
-    plan = result.plan
-    header = "(dry-run — nothing was written)\n" if result.dry_run else ""
-    counts = ", ".join(f"{_action_label(action)} {count}"
-                       for action, count in sorted(plan.counts().items())) or "no changes"
-    lines = [f"{header}{plan.operation}: {plan.from_profile or 'none'} -> "
-             f"{plan.to_profile or 'none'}", f"  {counts}"]
-    for change in plan.changes:
-        if change.action in ("SKIP",) and not result.dry_run:
-            continue
-        lines.append(f"  {_action_label(change.action):<18} {change.path}"
-                     + (f"   ({change.reason})" if change.reason else ""))
-    for notice in result.notices:
-        lines.append("")
-        lines.append(notice)
-    return "\n".join(lines)
-
-
 def _cmd_init(args: argparse.Namespace) -> int:
     from .lifecycle import installer
 
@@ -313,16 +260,19 @@ def _cmd_profile(args: argparse.Namespace) -> int:
 def _cmd_feature(args: argparse.Namespace) -> int:
     from .lifecycle.feature_cli import run_feature_command
 
-    return run_feature_command(args, project=_project(args),
-                               report=lambda record, text: _report(args, record, text),
-                               plan_text=_plan_text)
+    return run_feature_command(args)
 
 
 def _cmd_claim_attempt(args: argparse.Namespace) -> int:
     from .claim_cli import run_claim_command
 
-    return run_claim_command(args, project=_project(args),
-                             report=lambda record, text: _report(args, record, text))
+    return run_claim_command(args)
+
+
+def _cmd_forge(args: argparse.Namespace) -> int:
+    from .forge_cli import run_forge_command
+
+    return run_forge_command(args)
 
 
 def _confirm_purge(args: argparse.Namespace, project: Path) -> bool:
@@ -389,16 +339,21 @@ def _doctor_collect(project: Path, check_updates: bool):
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
+    from . import observation
     from .lifecycle import environment, recovery, updater
     from .knowledge import doctor as knowledgedoctor
 
     project = _project(args)
     diagnosis, knowledge, checks, healthy = _doctor_collect(
         project, args.check_updates)
+    view = observation.project_view(project)
     if args.json:
         record = diagnosis.to_record()
         record["knowledge"] = knowledge
         record["environment"] = checks
+        record["features"] = view["features"]
+        record["forge"] = view["forge"]
+        record["claim_attempts"] = view["claim_attempts"]
         _emit(record)
     else:
         print(f"Project: {diagnosis.project}")
@@ -417,6 +372,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             # (#131 / AUD-202).
             print("Updates")
             print(f"  {updater.notice_line(diagnosis.update)}")
+        for line in observation.doctor_lines(view):
+            print(line)
         print("Knowledge:")
         print(f"  status: {knowledge['status']}   store: {knowledge['store']}")
         if knowledge["status"] != knowledgedoctor.STATUS_FAIL:
@@ -721,6 +678,7 @@ LIFECYCLE_COMMANDS = {
     "profile": _cmd_profile,
     "feature": _cmd_feature,
     "claim-attempt": _cmd_claim_attempt,
+    "forge": _cmd_forge,
     "status": _cmd_status,
     "doctor": _cmd_doctor,
     "repair": _cmd_repair,

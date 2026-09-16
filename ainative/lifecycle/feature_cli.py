@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Callable
 
+from ..cli_support import plan_text as _plan_text, project_from, report as _report
 from . import features as featureslib
 from . import installer
 from . import manifest as manifestlib
@@ -75,12 +75,11 @@ def status_record(project: Path) -> tuple[dict, str]:
     return record, "\n".join(lines)
 
 
-def run_feature_command(args: argparse.Namespace, *, project: Path,
-                        report: Callable[[dict, str], int],
-                        plan_text: Callable[[object], str]) -> int:
+def run_feature_command(args: argparse.Namespace) -> int:
+    project = project_from(args)
     if args.feature_command == "status":
         record, text = status_record(project)
-        return report(record, text)
+        return _report(args, record, text)
 
     transition = {"enable": None, "disable": None, "switch_to": None}
     if args.feature_command == "enable":
@@ -91,7 +90,7 @@ def run_feature_command(args: argparse.Namespace, *, project: Path,
         transition["switch_to"] = args.target
     result = installer.set_features(project, dry_run=args.dry_run,
                                     force_unlock=args.force_unlock, **transition)
-    return report(result.to_record(), plan_text(result))
+    return _report(args, result.to_record(), _plan_text(result))
 
 
 __all__ = ["add_feature_parser", "run_feature_command", "status_record"]

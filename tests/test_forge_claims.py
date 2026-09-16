@@ -11,6 +11,7 @@ an unreadable journal fails closed.
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -274,6 +275,72 @@ class ClaimJournal(LifecycleTestCase):
         self.assertEqual(abandoned["state"], claims.ABANDONED)
         self.assertEqual(json.loads(self.cli("claim-attempt", "list", "--json").stdout)
                          ["unresolved"], [])
+
+
+class ForgeObservation(LifecycleTestCase):
+    """`forge detect|status` and the doctor extension: observe, never mutate."""
+
+    def snapshot(self) -> dict:
+        from ainative.lifecycle.digest import digest_file
+
+        return {path.relative_to(self.project).as_posix(): digest_file(path) or ""
+                for path in self.project.rglob("*") if path.is_file()}
+
+    def remote(self, name: str, url: str) -> None:
+        subprocess.run(["git", "-C", str(self.project), "remote", "add", name, url],
+                       check=True, capture_output=True)
+
+    def test_detect_resolves_a_single_hosted_remote(self):
+        self.remote("origin", "git@github.com:o/r.git")
+        record = json.loads(self.cli("forge", "detect", "--json").stdout)
+        self.assertEqual(record["resolution"]["state"], "RESOLVED")
+        self.assertEqual(record["resolution"]["authority"],
+                         {"provider": "github", "project": "o/r"})
+
+    def test_a_fork_renders_ambiguous_without_preferring_origin(self):
+        self.remote("origin", "https://github.com/me/fork.git")
+        self.remote("upstream", "https://github.com/org/project.git")
+        completed = self.cli("forge", "detect", "--json")
+        self.assertEqual(completed.returncode, 0, "detection is diagnostic, not a failure")
+        record = json.loads(completed.stdout)
+        self.assertEqual(record["resolution"]["state"], "AMBIGUOUS")
+        self.assertEqual([item["name"] for item in record["remotes"]],
+                         ["origin", "upstream"])
+        self.assertIn("Resolution: AMBIGUOUS", self.cli("forge", "detect").stdout)
+
+    def test_an_unknown_host_is_unavailable_not_guessed(self):
+        self.remote("origin", "https://git.example.com/o/r.git")
+        record = json.loads(self.cli("forge", "detect", "--json").stdout)
+        self.assertEqual(record["remotes"][0]["provider"], "unknown")
+        self.assertEqual(record["resolution"]["state"], "UNAVAILABLE")
+
+    def test_forge_status_reports_features_and_claim_attempts(self):
+        self.install("standard")
+        claims.begin(self.project, claims.new_attempt(
+            authority=forgelib.WorkAuthorityRef(provider="github", project="o/r"),
+            item="42", principal=claims.principal("github", "alice")))
+        record = json.loads(self.cli("forge", "status", "--json").stdout)
+        self.assertEqual(record["features"]["active"], ["forge-github"])
+        self.assertEqual(len(record["claim_attempts"]["unresolved"]), 1)
+
+    def test_observation_commands_never_write(self):
+        self.install("standard")
+        self.remote("origin", "git@github.com:o/r.git")
+        before = self.snapshot()
+        self.cli("forge", "detect")
+        self.cli("forge", "status")
+        self.cli("doctor")
+        self.assertEqual(self.snapshot(), before,
+                         "an observation command touched the project")
+
+    def test_doctor_reports_features_forge_and_claims(self):
+        self.install("standard")
+        self.remote("origin", "git@gitlab.com:g/p.git")
+        record = json.loads(self.cli("doctor", "--json").stdout)
+        self.assertEqual(record["features"]["active"], ["forge-github"])
+        self.assertEqual(record["forge"]["resolution"]["authority"]["provider"], "gitlab")
+        self.assertEqual(record["claim_attempts"]["journal"], "ok")
+        self.assertEqual(record["claim_attempts"]["unresolved"], [])
 
 
 if __name__ == "__main__":
