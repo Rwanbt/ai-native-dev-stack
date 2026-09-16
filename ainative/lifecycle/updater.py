@@ -236,6 +236,11 @@ def resolve_v3_candidate(channel: str):
             "the release source answered a full page; its enumeration bounds "
             "were reached before exhaustion")
     if not any(candidate.channel == channel for candidate in result.candidates):
+        if not provider.supports_v2_fallback:
+            raise LifecycleError(
+                "RELEASE_NO_CANDIDATE",
+                f"the {channel!r} channel of this source is complete and holds "
+                "no V3 release")
         return None
     candidate = release_v3lib.select_candidate(result, release_v3lib.ReleaseQuery(channel))
     return candidate, provider

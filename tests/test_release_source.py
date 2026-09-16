@@ -127,6 +127,32 @@ class MachineConfig(TempHome):
             sourcelib.resolve_release_source(environ={}, home=self.home)
         self.assertEqual(raised.exception.code, "RELEASE_CONFIG_INVALID")
 
+    def test_the_gitlab_provider_requires_a_project_reference(self):
+        with self.assertRaises(LifecycleError) as raised:
+            sourcelib.resolve_release_source(
+                environ={"AINATIVE_UPDATE_PROVIDER": "gitlab"}, home=self.home)
+        self.assertEqual(raised.exception.code, "RELEASE_CONFIG_INVALID")
+
+    def test_the_gitlab_provider_resolves_with_its_configured_project(self):
+        self.write_config({"schema_version": 1, "providers": {
+            "gitlab": {"release_project_ref": "group/sub/project"}}})
+        source = sourcelib.resolve_release_source(
+            environ={"AINATIVE_UPDATE_PROVIDER": "gitlab"}, home=self.home)
+        self.assertEqual(source.kind, sourcelib.KIND_GITLAB)
+        self.assertEqual(source.project_ref, "group/sub/project")
+        self.assertTrue(source.authenticated)
+        self.assertEqual(source.endpoint.auth_header, "PRIVATE-TOKEN")
+        self.assertEqual(source.endpoint.auth_origin, "https://gitlab.com")
+        self.assertEqual(source.endpoint.api_base_url, "https://gitlab.com/api/v4")
+
+    def test_a_gitlab_project_reference_is_not_a_url(self):
+        self.write_config({"schema_version": 1, "providers": {
+            "gitlab": {"release_project_ref": "https://gitlab.com/group/project"}}})
+        with self.assertRaises(LifecycleError) as raised:
+            sourcelib.resolve_release_source(
+                environ={"AINATIVE_UPDATE_PROVIDER": "gitlab"}, home=self.home)
+        self.assertEqual(raised.exception.code, "RELEASE_CONFIG_INVALID")
+
     def test_a_custom_auth_origin_is_refused_in_v1(self):
         self.write_config({"schema_version": 1, "providers": {
             "internal": {"api_base_url": "https://x.example/api",

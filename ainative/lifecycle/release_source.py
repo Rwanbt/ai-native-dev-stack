@@ -42,7 +42,12 @@ CONFIG_RELATIVE = Path(".ai-native") / "release-providers.json"
 RESERVED_PROVIDERS = ("github", "gitlab", "local")
 CONFIG_SCHEMA_VERSION = 1
 
+GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"
+GITLAB_AUTH_ORIGIN = "https://gitlab.com"
+GITLAB_TOKEN_ENV = "GITLAB_TOKEN"
+
 KIND_GITHUB = "github"
+KIND_GITLAB = "gitlab"
 KIND_LOCAL = "local"
 KIND_ANONYMOUS = "anonymous"
 KIND_NAMED = "named"
@@ -58,6 +63,7 @@ class ReleaseSource:
     endpoint: transportlib.ReleaseProviderEndpointConfig | None = None
     directory: Path | None = None
     metadata_url: str | None = None
+    project_ref: str | None = None
 
     @property
     def authenticated(self) -> bool:
@@ -69,6 +75,7 @@ class ReleaseSource:
                 "authenticated": self.authenticated,
                 "auth_origin": self.endpoint.auth_origin if self.endpoint else None,
                 "api_base_url": self.endpoint.api_base_url if self.endpoint else None,
+                "release_project_ref": self.project_ref,
                 "directory": str(self.directory) if self.directory else None}
 
 
@@ -100,7 +107,10 @@ def load_machine_config(home: Path | None = None) -> dict:
         raise LifecycleError("RELEASE_CONFIG_INVALID",
                              f"{path}: providers must be an object")
     for name in providers:
-        if name in RESERVED_PROVIDERS:
+        # `gitlab` is a built-in provider that *is* configured here (its
+        # project reference has to live somewhere machine-scoped); the other
+        # built-ins cannot be redefined.
+        if name in RESERVED_PROVIDERS and name != "gitlab":
             raise LifecycleError(
                 "RELEASE_CONFIG_INVALID",
                 f"{path}: provider {name!r} is built in and cannot be redefined")
@@ -128,6 +138,45 @@ def _named_source(name: str, entry: object) -> ReleaseSource:
                          endpoint=transportlib.anonymous_endpoint(base),
                          metadata_url=base.rstrip("/") + "/releases/latest",
                          reason=f"named provider {name!r} (machine configuration)")
+
+
+def _gitlab_source(entry: object) -> ReleaseSource:
+    """The built-in GitLab provider, configured per machine (ADR-0019 §61).
+
+    The project reference has to live somewhere machine-scoped; it is a
+    numeric project id or a namespace path, never a URL.
+    """
+
+    if not isinstance(entry, dict):
+        raise LifecycleError(
+            "RELEASE_CONFIG_INVALID",
+            "provider 'gitlab' requires a machine configuration entry with "
+            "release_project_ref")
+    project_ref = entry.get("release_project_ref")
+    if not isinstance(project_ref, str) or not project_ref.strip():
+        raise LifecycleError(
+            "RELEASE_CONFIG_INVALID",
+            "provider 'gitlab': release_project_ref is required (a numeric "
+            "project id or namespace/project)")
+    if project_ref.strip().lower().startswith(("http://", "https://")):
+        raise LifecycleError(
+            "RELEASE_CONFIG_INVALID",
+            "provider 'gitlab': release_project_ref is a project reference, "
+            "not a URL")
+    api_base = str(entry.get("api_base_url") or GITLAB_API_BASE_URL).strip()
+    if not api_base.lower().startswith("https://"):
+        raise LifecycleError("RELEASE_CONFIG_INVALID",
+                             "provider 'gitlab': api_base_url must be an HTTPS URL")
+    origin = str(entry.get("auth_origin") or GITLAB_AUTH_ORIGIN).strip()
+    endpoint = transportlib.ReleaseProviderEndpointConfig(
+        provider="gitlab", api_base_url=api_base.rstrip("/"), auth_origin=origin,
+        api_version=str(entry.get("api_version") or "v4"),
+        credential_source=str(entry.get("credential_source")
+                              or f"environment:{GITLAB_TOKEN_ENV}"),
+        auth_header="PRIVATE-TOKEN", auth_prefix="")
+    return ReleaseSource(kind=KIND_GITLAB, provider_name="gitlab",
+                         endpoint=endpoint, project_ref=project_ref.strip(),
+                         reason="gitlab provider (machine configuration)")
 
 
 def _builtin_github(reason: str) -> ReleaseSource:
@@ -192,6 +241,8 @@ def _local_mirror(local_dir: str) -> ReleaseSource:
 def _selected_provider(provider: str, config: dict) -> ReleaseSource:
     if provider in ("github", "release-api"):
         return _builtin_github(f"built-in GitHub.com ({PROVIDER_ENV})")
+    if provider == "gitlab":
+        return _gitlab_source((config.get("providers") or {}).get("gitlab"))
     entry = (config.get("providers") or {}).get(provider)
     if entry is None:
         # Preserves the long-standing refusal for a name nothing declares; a
@@ -214,6 +265,8 @@ def _default_source(config: dict) -> ReleaseSource:
         return ReleaseSource(kind=KIND_LOCAL, provider_name="local",
                              directory=Path(directory).expanduser(),
                              reason="machine default provider 'local'")
+    if default == "gitlab":
+        return _gitlab_source((config.get("providers") or {}).get("gitlab"))
     if default == "github":
         return _builtin_github("machine default provider 'github'")
     if default:
@@ -248,5 +301,6 @@ def describe_lines(record: dict | None = None) -> list[str]:
 __all__ = ["ReleaseSource", "resolve_release_source", "load_machine_config",
            "config_path", "describe", "describe_lines", "PROVIDER_ENV",
            "LOCAL_SOURCE_ENV", "RELEASE_URL_ENV", "CONFIG_RELATIVE",
-           "RESERVED_PROVIDERS", "KIND_GITHUB", "KIND_LOCAL", "KIND_ANONYMOUS",
-           "KIND_NAMED"]
+           "RESERVED_PROVIDERS", "KIND_GITHUB", "KIND_GITLAB", "KIND_LOCAL",
+           "KIND_ANONYMOUS", "KIND_NAMED", "GITLAB_API_BASE_URL",
+           "GITLAB_AUTH_ORIGIN", "GITLAB_TOKEN_ENV"]

@@ -20,17 +20,20 @@ picking the best of what it happened to see.
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 
 from . import release_v3 as release_v3lib
 from . import transport as transportlib
+from . import version as versionlib
 from .errors import LifecycleError
 from .paths import validate_relative
 
 MANIFEST_ASSET_NAME = "ainative-release-v3.json"
 MAX_MANIFEST_BYTES = 1 << 20      # 1 MiB of release manifest is already absurd
 MAX_ARCHIVE_BYTES = 256 << 20     # 256 MiB — mirrors the V2 bound
-MAX_ENUMERATION_ENTRIES = 30      # one GitHub API page; beyond it, incomplete
+MAX_ENUMERATION_ENTRIES = 30      # one API page; beyond it, incomplete
+GITLAB_PACKAGE_NAME = "ai-native-dev-stack"
 
 
 def _json_object(payload: bytes, source: str) -> dict:
@@ -319,6 +322,200 @@ class LocalReleaseProvider(release_v3lib.ReleaseProvider):
                                   description=f"artifact {artifact.name!r}")
 
 
+class GitLabReleaseProvider(release_v3lib.ReleaseProvider):
+    """GitLab.com as a V3 source: Releases for discovery, the Generic Package
+    Registry as the canonical distribution and integrity surface (ADR-0019
+    section 11).
+
+    Release Link URLs are presentation, never integrity roots: the anchor is
+    the package file API's `file_sha256` and `size`. One project identity
+    (`release_project_ref`) is used for Releases, packages and package files —
+    there is no second project configuration. GitLab is V3-only: it has no V2
+    fallback, and a complete channel without a V3 candidate refuses.
+    """
+
+    name = "gitlab"
+    supports_v2_fallback = False
+
+    def __init__(self, endpoint, project_ref: str,
+                 page_bound: int = MAX_ENUMERATION_ENTRIES) -> None:
+        self.endpoint = endpoint
+        self.project_ref = project_ref
+        self.page_bound = page_bound
+        self._downloads: dict[str, dict[str, str]] = {}
+
+    # --- requests -------------------------------------------------------
+
+    def _token(self) -> str:
+        if self.endpoint.auth_origin is None:
+            return ""
+        from . import provider as providerlib
+
+        return providerlib.environment_gitlab_token()
+
+    def _project_url(self) -> str:
+        encoded = urllib.parse.quote(self.project_ref, safe="")
+        return f"{self.endpoint.api_base_url}/projects/{encoded}"
+
+    def _get_json(self, url: str) -> object:
+        payload = transportlib.get(url, limit=MAX_MANIFEST_BYTES, endpoint=self.endpoint,
+                                   kind=transportlib.METADATA,
+                                   accept=transportlib.ACCEPT_GITHUB_JSON,
+                                   token=self._token())
+        try:
+            return json.loads(payload.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as error:
+            raise LifecycleError("UPDATE_CHECK_FAILED",
+                                 f"GitLab answered {url} with invalid JSON: "
+                                 f"{error}") from error
+
+    def _get_bytes(self, url: str, limit: int) -> bytes:
+        return transportlib.get(url, limit=limit, endpoint=self.endpoint,
+                                kind=transportlib.ARTIFACT,
+                                accept=transportlib.ACCEPT_OCTET_STREAM,
+                                token=self._token())
+
+    # --- enumeration ----------------------------------------------------
+
+    def enumerate(self, query: release_v3lib.ReleaseQuery) -> release_v3lib.EnumerationResult:
+        releases, releases_complete = self._releases()
+        packages, packages_complete = self._packages()
+        candidates = self._candidates(releases, packages)
+        return release_v3lib.EnumerationResult(
+            tuple(candidates), complete=releases_complete and packages_complete)
+
+    def _releases(self) -> tuple[list, bool]:
+        url = f"{self._project_url()}/releases?per_page={self.page_bound}"
+        document = self._get_json(url)
+        if not isinstance(document, list):
+            raise LifecycleError("UPDATE_CHECK_FAILED",
+                                 f"GitLab releases from {url} are not a list")
+        return document, len(document) < self.page_bound
+
+    def _packages(self) -> tuple[dict, bool]:
+        url = (f"{self._project_url()}/packages?package_type=generic"
+               f"&package_name={GITLAB_PACKAGE_NAME}&per_page={self.page_bound}")
+        document = self._get_json(url)
+        if not isinstance(document, list):
+            raise LifecycleError("UPDATE_CHECK_FAILED",
+                                 f"GitLab packages from {url} are not a list")
+        by_version: dict[str, list] = {}
+        for record in document:
+            if not isinstance(record, dict):
+                continue
+            if (record.get("package_type") != "generic"
+                    or record.get("name") != GITLAB_PACKAGE_NAME):
+                continue
+            parsed = versionlib.parse(record.get("version")) \
+                if isinstance(record.get("version"), str) else None
+            if parsed is None:
+                continue
+            by_version.setdefault(str(parsed), []).append(record)
+        return by_version, len(document) < self.page_bound
+
+    def _candidates(self, releases: list, packages: dict) -> list:
+        candidates = []
+        for release in releases:
+            parsed = versionlib.parse(release.get("tag_name")) \
+                if isinstance(release, dict) else None
+            if parsed is None or release.get("upcoming_release"):
+                continue
+            records = packages.get(str(parsed))
+            if not records:
+                continue
+            if len(records) > 1:
+                raise LifecycleError(
+                    "RELEASE_DUPLICATE_VERSION",
+                    f"project {self.project_ref} publishes {len(records)} generic "
+                    f"packages for version {parsed}; exactly one is required")
+            identity = str(release.get("tag_name"))
+            package_id = records[0].get("id")
+            files = self._package_files(package_id)
+            digest, size = self._anchor(files, identity)
+            self._downloads[identity] = self._download_urls(package_id, files)
+            candidates.append(release_v3lib.ReleaseCandidate(
+                version=str(parsed), identity=identity,
+                channel="beta" if parsed.pre else "stable",
+                manifest_sha256=digest, manifest_size=size))
+        return candidates
+
+    def _package_files(self, package_id: object) -> list:
+        url = (f"{self._project_url()}/packages/{package_id}/package_files"
+               f"?per_page={self.page_bound}")
+        document = self._get_json(url)
+        if not isinstance(document, list):
+            raise LifecycleError("UPDATE_CHECK_FAILED",
+                                 f"GitLab package files from {url} are not a list")
+        if len(document) >= self.page_bound:
+            raise LifecycleError(
+                "RELEASE_ENUMERATION_INCOMPLETE",
+                f"package {package_id} answered a full page of files; the "
+                "listing bounds were reached before exhaustion")
+        return [entry for entry in document if isinstance(entry, dict)]
+
+    def _download_urls(self, package_id: object, files: list) -> dict:
+        return {str(entry.get("file_name")):
+                f"{self._project_url()}/packages/{package_id}/package_files/"
+                f"{entry.get('id')}/download"
+                for entry in files if entry.get("id") is not None}
+
+    def _anchor(self, files: list, identity: str) -> tuple[str, int]:
+        manifests = [entry for entry in files
+                     if entry.get("file_name") == MANIFEST_ASSET_NAME]
+        if not manifests:
+            raise LifecycleError("RELEASE_MANIFEST_MISSING",
+                                 f"release {identity} carries no {MANIFEST_ASSET_NAME}")
+        if len(manifests) > 1:
+            raise LifecycleError("RELEASE_MANIFEST_AMBIGUOUS",
+                                 f"release {identity} carries {len(manifests)} "
+                                 f"{MANIFEST_ASSET_NAME} files")
+        entry = manifests[0]
+        digest = entry.get("file_sha256")
+        if not isinstance(digest, str) or not digest.strip():
+            raise LifecycleError(
+                "RELEASE_INTEGRITY_METADATA_MISSING",
+                f"package file of release {identity} publishes no file_sha256")
+        cleaned = digest.strip().lower()
+        if len(cleaned) != 64 or any(character not in "0123456789abcdef"
+                                     for character in cleaned):
+            raise LifecycleError(
+                "RELEASE_INTEGRITY_METADATA_INVALID",
+                f"package file of release {identity} carries a malformed file_sha256")
+        size = entry.get("size")
+        if size is None:
+            raise LifecycleError(
+                "RELEASE_INTEGRITY_METADATA_MISSING",
+                f"package file of release {identity} publishes no size")
+        if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+            raise LifecycleError(
+                "RELEASE_INTEGRITY_METADATA_INVALID",
+                f"package file of release {identity} carries a malformed size")
+        return cleaned, size
+
+    # --- fetching -------------------------------------------------------
+
+    def _download(self, identity: str, name: str, limit: int) -> bytes:
+        downloads = self._downloads.get(identity)
+        if downloads is None:
+            raise LifecycleError("UPDATE_CHECK_FAILED",
+                                 "the provider must enumerate before it fetches")
+        url = downloads.get(name)
+        if not url:
+            raise LifecycleError("UPDATE_UNAVAILABLE",
+                                 f"release {identity} publishes no package file "
+                                 f"{name!r}")
+        return self._get_bytes(url, limit)
+
+    def fetch_manifest(self, candidate: release_v3lib.ReleaseCandidate) -> bytes:
+        return self._download(candidate.identity, MANIFEST_ASSET_NAME,
+                              MAX_MANIFEST_BYTES)
+
+    def fetch_artifact(self, candidate: release_v3lib.ReleaseCandidate,
+                       artifact: release_v3lib.ManifestArtifact) -> bytes:
+        return self._download(candidate.identity, artifact.name, MAX_ARCHIVE_BYTES)
+
+
 __all__ = ["GitHubReleaseProvider", "AnonymousReleaseApiProvider",
-           "LocalReleaseProvider", "MANIFEST_ASSET_NAME", "MAX_MANIFEST_BYTES",
-           "MAX_ARCHIVE_BYTES", "MAX_ENUMERATION_ENTRIES"]
+           "LocalReleaseProvider", "GitLabReleaseProvider", "MANIFEST_ASSET_NAME",
+           "GITLAB_PACKAGE_NAME", "MAX_MANIFEST_BYTES", "MAX_ARCHIVE_BYTES",
+           "MAX_ENUMERATION_ENTRIES"]

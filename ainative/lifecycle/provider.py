@@ -32,7 +32,8 @@ from .digest import digest_bytes
 from .errors import LifecycleError
 # The selector names live with their owner (release_source); re-exported here
 # because they have always been importable through the provider module.
-from .release_source import LOCAL_SOURCE_ENV, PROVIDER_ENV, RELEASE_URL_ENV
+from .release_source import (GITLAB_TOKEN_ENV, LOCAL_SOURCE_ENV, PROVIDER_ENV,
+                             RELEASE_URL_ENV)
 
 
 def _update_token() -> str:
@@ -53,6 +54,12 @@ def environment_token() -> str:
     """
 
     return _update_token()
+
+
+def environment_gitlab_token() -> str:
+    """The GitLab token this environment offers, if any. Never logged anywhere."""
+
+    return (os.environ.get(GITLAB_TOKEN_ENV) or "").strip()
 
 DEFAULT_RELEASE_URL = "https://api.github.com/repos/Rwanbt/ai-native-dev-stack/releases/latest"
 # Authenticated checks, when the environment provides a token. Never logged,
@@ -439,6 +446,9 @@ def build(channel: str = "stable") -> UpdateProvider:
     from . import release_source as release_sourcelib
 
     source = release_sourcelib.resolve_release_source()
+    if source.kind == release_sourcelib.KIND_GITLAB:
+        raise LifecycleError("UPDATE_CHECK_FAILED",
+                             "the gitlab provider speaks Release V3 only")
     if source.kind == release_sourcelib.KIND_LOCAL:
         return LocalDirectoryProvider(source.directory)
     return ReleaseApiProvider(url=source.metadata_url, endpoint=source.endpoint)
@@ -462,6 +472,9 @@ def build_v3(channel: str = "stable"):
     if source.kind == release_sourcelib.KIND_ANONYMOUS:
         return release_providerslib.AnonymousReleaseApiProvider(source.metadata_url,
                                                                 source.endpoint)
+    if source.kind == release_sourcelib.KIND_GITLAB:
+        return release_providerslib.GitLabReleaseProvider(source.endpoint,
+                                                          source.project_ref)
     # github and named providers are both GitHub-Release-API-compatible.
     return release_providerslib.GitHubReleaseProvider(source.endpoint)
 
@@ -481,4 +494,5 @@ __all__ = [
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
     "ReleaseProviderEndpointConfig",
     "upgrade_command", "UPGRADE_COMMAND_TEMPLATE", "environment_token",
+    "environment_gitlab_token",
 ]

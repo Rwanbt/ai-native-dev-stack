@@ -75,7 +75,7 @@ here rather than restating it.
 
 <!-- Canonical details live in docs/FORGE-WORKFLOW.md; this section is the always-on policy. -->
 
-- **The project's work authority is the canonical actionable backlog.**
+- **The project's Work Authority is the canonical actionable backlog.**
   WorkItem state, review state and completion live there — never in this
   repository, never in the Vault. Skills = procedures; ADRs = accepted
   architecture; Work Contracts = deterministic verification when policy

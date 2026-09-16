@@ -46,8 +46,11 @@ class ScriptedServer:
 
     def send(self, request: urllib.request.Request):
         url = request.full_url
-        self.observed.append((url, request.get_header("Authorization"),
-                              request.get_header("Accept")))
+        headers = {key.lower(): value for key, value in request.headers.items()}
+        self.observed.append((url,
+                              headers.get("authorization")
+                              or headers.get("private-token"),
+                              headers.get("accept")))
         if url not in self.hops:
             raise AssertionError(f"unexpected request: {url}")
         answer = self.hops[url]
@@ -318,6 +321,163 @@ class LocalMirror(unittest.TestCase):
                     name="never-shipped.zip", kind="lifecycle", version=self.VERSION,
                     sha256="b" * 64, size=1))
         self.assertEqual(raised.exception.code, "UPDATE_UNAVAILABLE")
+
+
+GITLAB_ENDPOINT = transportlib.ReleaseProviderEndpointConfig(
+    provider="gitlab", api_base_url="https://gitlab.com/api/v4",
+    auth_origin="https://gitlab.com", auth_header="PRIVATE-TOKEN", auth_prefix="")
+
+RELEASES_URL = "https://gitlab.com/api/v4/projects/group%2Fproject/releases?per_page=30"
+PACKAGES_URL = ("https://gitlab.com/api/v4/projects/group%2Fproject/packages"
+                "?package_type=generic&package_name=ai-native-dev-stack&per_page=30")
+MANIFEST_DOWNLOAD = ("https://gitlab.com/api/v4/projects/group%2Fproject/packages/77"
+                     "/package_files/101/download")
+BUNDLE_DOWNLOAD = ("https://gitlab.com/api/v4/projects/group%2Fproject/packages/77"
+                   "/package_files/102/download")
+
+
+def package_files(manifest_bytes: bytes, *, duplicate_manifest: bool = False,
+                  digest: bool = True, digest_value: str | None = None,
+                  size: bool = True) -> list:
+    manifest_entry = {"id": 101, "file_name": "ainative-release-v3.json"}
+    if digest:
+        manifest_entry["file_sha256"] = digest_value or sha256(manifest_bytes).hexdigest()
+    if size:
+        manifest_entry["size"] = len(manifest_bytes)
+    files = [manifest_entry, {"id": 102, "file_name": release_v3lib.lifecycle_bundle_name("2.5.0"),
+                              "file_sha256": "b" * 64, "size": 20}]
+    if duplicate_manifest:
+        files.append({"id": 103, "file_name": "ainative-release-v3.json",
+                      "file_sha256": "c" * 64, "size": 10})
+    return files
+
+
+class GitLabProvider(unittest.TestCase):
+
+    def server(self, *, files: list | None = None, releases: list | None = None,
+               packages: list | None = None, manifest: bytes | None = None,
+               page_bound: int = 30) -> ScriptedServer:
+        manifest = manifest if manifest is not None else anchored_manifest()
+        releases_url = (f"https://gitlab.com/api/v4/projects/group%2Fproject/releases"
+                        f"?per_page={page_bound}")
+        packages_url = ("https://gitlab.com/api/v4/projects/group%2Fproject/packages"
+                        f"?package_type=generic&package_name=ai-native-dev-stack"
+                        f"&per_page={page_bound}")
+        files_url = ("https://gitlab.com/api/v4/projects/group%2Fproject/packages/77"
+                     f"/package_files?per_page={page_bound}")
+        hops = {
+            releases_url: json.dumps(releases if releases is not None else [
+                {"tag_name": "v2.6.0", "upcoming_release": True},
+                {"tag_name": "v2.5.0", "upcoming_release": False},
+                {"tag_name": "nightly", "upcoming_release": False},
+            ]).encode("utf-8"),
+            packages_url: json.dumps(packages if packages is not None else [
+                {"id": 77, "package_type": "generic", "name": "ai-native-dev-stack",
+                 "version": "2.5.0"},
+                {"id": 78, "package_type": "generic", "name": "other", "version": "9.9.9"},
+            ]).encode("utf-8"),
+            files_url: json.dumps(files if files is not None else package_files(manifest)
+                                  ).encode("utf-8"),
+            MANIFEST_DOWNLOAD: manifest,
+            BUNDLE_DOWNLOAD: b"bundle-bytes",
+        }
+        return ScriptedServer(hops)
+
+    def provider(self, server: ScriptedServer, **kwargs):
+        return providerslib.GitLabReleaseProvider(GITLAB_ENDPOINT, "group/project", **kwargs)
+
+    def test_enumeration_matches_release_and_package_identities(self):
+        server = self.server()
+        provider = self.provider(server)
+        with mock.patch.object(transportlib, "_send", server.send):
+            result = provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        self.assertTrue(result.complete)
+        self.assertEqual([candidate.version for candidate in result.candidates], ["2.5.0"])
+        candidate = result.candidates[0]
+        self.assertEqual(candidate.identity, "v2.5.0")
+        self.assertEqual(candidate.channel, "stable")
+        self.assertEqual(candidate.manifest_size, len(anchored_manifest()))
+
+    def test_the_token_travels_as_a_private_token_only_at_the_origin(self):
+        server = self.server()
+        provider = self.provider(server)
+        with mock.patch.object(transportlib, "_send", server.send), \
+                mock.patch.dict("os.environ", {"GITLAB_TOKEN": "glpat-" + "x" * 20}):
+            provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        headers = {url: token for url, token, _accept in server.observed}
+        self.assertEqual(headers[RELEASES_URL], "glpat-" + "x" * 20)
+
+    def test_an_anonymous_endpoint_wears_no_gitlab_token(self):
+        endpoint = transportlib.anonymous_endpoint("https://mirror.example/api/v4")
+        provider = providerslib.GitLabReleaseProvider(endpoint, "group/project")
+        server = ScriptedServer({})
+        server.hops = {RELEASES_URL.replace("https://gitlab.com/api/v4", "https://mirror.example/api/v4"): b"[]",
+                       PACKAGES_URL.replace("https://gitlab.com/api/v4", "https://mirror.example/api/v4"): b"[]"}
+        with mock.patch.object(transportlib, "_send", server.send), \
+                mock.patch.dict("os.environ", {"GITLAB_TOKEN": "glpat-" + "x" * 20}):
+            provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        self.assertEqual([token for _url, token, _a in server.observed], [None, None])
+
+    def test_a_duplicate_package_for_one_version_is_refused(self):
+        server = self.server(packages=[
+            {"id": 77, "package_type": "generic", "name": "ai-native-dev-stack",
+             "version": "2.5.0"},
+            {"id": 78, "package_type": "generic", "name": "ai-native-dev-stack",
+             "version": "2.5.0"}])
+        provider = self.provider(server)
+        with mock.patch.object(transportlib, "_send", server.send):
+            with self.assertRaises(LifecycleError) as raised:
+                provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        self.assertEqual(raised.exception.code, "RELEASE_DUPLICATE_VERSION")
+
+    def test_manifest_lookup_refusals(self):
+        cases = (
+            (package_files(anchored_manifest())[1:], "RELEASE_MANIFEST_MISSING"),
+            (package_files(anchored_manifest(), duplicate_manifest=True),
+             "RELEASE_MANIFEST_AMBIGUOUS"),
+            (package_files(anchored_manifest(), digest=False),
+             "RELEASE_INTEGRITY_METADATA_MISSING"),
+            (package_files(anchored_manifest(), digest_value="nope"),
+             "RELEASE_INTEGRITY_METADATA_INVALID"),
+            (package_files(anchored_manifest(), size=False),
+             "RELEASE_INTEGRITY_METADATA_MISSING"),
+        )
+        for files, code in cases:
+            with self.subTest(code=code):
+                server = self.server(files=files)
+                provider = self.provider(server)
+                with mock.patch.object(transportlib, "_send", server.send):
+                    with self.assertRaises(LifecycleError) as raised:
+                        provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+                self.assertEqual(raised.exception.code, code)
+
+    def test_a_full_release_page_is_an_incomplete_enumeration(self):
+        server = self.server(releases=[{"tag_name": "v2.5.0", "upcoming_release": False},
+                                       {"tag_name": "v2.4.0", "upcoming_release": False},
+                                       {"tag_name": "v2.3.0", "upcoming_release": False}],
+                             page_bound=3)
+        provider = self.provider(server, page_bound=3)
+        with mock.patch.object(transportlib, "_send", server.send):
+            result = provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        self.assertFalse(result.complete)
+
+    def test_the_whole_chain_runs_against_a_scripted_gitlab(self):
+        manifest = anchored_manifest()
+        server = self.server(manifest=manifest)
+        provider = self.provider(server)
+        with mock.patch.object(transportlib, "_send", server.send):
+            candidate, parsed = release_v3lib.resolve_manifest(
+                provider, release_v3lib.ReleaseQuery("stable"))
+            payload = provider.fetch_artifact(candidate, parsed.lifecycle_artifact())
+        self.assertEqual(candidate.version, "2.5.0")
+        self.assertEqual(payload, b"bundle-bytes")
+
+    def test_fetching_before_enumerating_is_a_programming_refusal(self):
+        provider = providerslib.GitLabReleaseProvider(GITLAB_ENDPOINT, "group/project")
+        with self.assertRaises(LifecycleError) as raised:
+            provider.fetch_manifest(release_v3lib.ReleaseCandidate(
+                version="2.5.0", identity="v2.5.0"))
+        self.assertEqual(raised.exception.code, "UPDATE_CHECK_FAILED")
 
 
 if __name__ == "__main__":

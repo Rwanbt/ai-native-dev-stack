@@ -130,9 +130,15 @@ class ReleaseManifest:
 
 
 class ReleaseProvider:
-    """The V3 provider contract. Implementations fetch; this module decides."""
+    """The V3 provider contract. Implementations fetch; this module decides.
+
+    `supports_v2_fallback` says whether a complete channel without a V3
+    candidate is a V2-era source (GitHub.com and mirrors are; GitLab is
+    V3-only and refuses instead).
+    """
 
     name = "abstract"
+    supports_v2_fallback = True
 
     def enumerate(self, query: ReleaseQuery) -> EnumerationResult:
         raise NotImplementedError

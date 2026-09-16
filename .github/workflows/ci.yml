@@ -219,6 +219,10 @@ jobs:
       - name: Release V3 update path end to end
         run: python -m unittest tests.test_lifecycle_update_v3 -v
 
+      - name: Purity - neutral layer, contracts, distributed policy
+        run: |
+          python -m unittest tests.purity.test_dependency_purity tests.purity.test_contract_purity tests.purity.test_distributed_policy_purity -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 
