@@ -40,6 +40,10 @@ ERROR_EXIT_CODES = {
     "CLI_UPDATE_REQUIRED": EXIT_FAILED,
     "ROLLBACK_UNAVAILABLE": EXIT_FAILED,
     "APPLY_FAILED": EXIT_FAILED,
+    # Features (ADR-0017). A project has at most one work forge; two is a
+    # refusal, never a silent pick.
+    "STATE_CONFLICTING_WORK_FORGE_FEATURES": EXIT_FAILED,
+    "FEATURE_UNKNOWN": EXIT_INVALID_REQUEST,
     # Machine-wide integration (`ainative machine`, `ainative setup`).
     "MACHINE_MANIFEST_UNREADABLE": EXIT_INVALID_REQUEST,
     "MACHINE_VAULT_PAIR_REQUIRED": EXIT_INVALID_REQUEST,

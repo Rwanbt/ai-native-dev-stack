@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import environment
+from . import features as featureslib
 from . import legacy as legacylib
 from . import manifest as manifestlib
 from . import planner as plannerlib
@@ -93,9 +94,19 @@ def _blocking_transaction(project: Path) -> None:
             transactions=txnlib.summarise(pending))
 
 
-def _fresh_state(source: DistributionSource, profile: str) -> InstallState:
+def _fresh_state(source: DistributionSource, profile: str,
+                 distribution: Distribution) -> InstallState:
+    """A new project starts on the catalogue's legacy default feature.
+
+    That default is the compatibility rule ADR-0017 section 4 fixes for V1
+    projects; without it a fresh Standard install would stop shipping the
+    GitHub templates every install has shipped so far — a behavior change
+    nobody asked for. `feature switch none` opts out explicitly.
+    """
+
     return InstallState(stack_version=source.version, source_version=source.version,
-                        active_profile=profile)
+                        active_profile=profile,
+                        active_features=[featureslib.legacy_default(distribution)])
 
 
 def _commit_state(project: Path, state: InstallState, plan: Plan,
@@ -141,9 +152,14 @@ def plan_profile(project: Path, distribution: Distribution, source: Distribution
     current = state if state is not None else statelib.load(project)
     adoption = legacylib.Adoption(False, (), (), (), ())
     if current is None:
-        current = _fresh_state(source, target_profile)
+        current = _fresh_state(source, target_profile, distribution)
         adoption = legacylib.adopt(project, distribution, source, target_profile)
         current = legacylib.apply_to_state(current, adoption, stack_version=source.version)
+    else:
+        # A V1 state migrates inside this operation (state-last, ADR-0017
+        # section 5). The migration itself plans no file change: a managed file
+        # that is already absent stays absent.
+        current = featureslib.migrate_state(current, distribution)
     plan = plannerlib.build_install_plan(project, distribution, source, current,
                                          target_profile, operation=operation)
     return plan, current, adoption
@@ -169,11 +185,14 @@ def install(project: Path, target_profile: str, *, dry_run: bool = False,
 
     if dry_run or plan.is_noop:
         if plan.is_noop and not dry_run:
-            # Nothing had to change on disk, but the profile may still need
-            # recording. That is a write to the install state, so it takes the
-            # lock like every other write — an unlocked commit here could
-            # interleave with another operation's own commit.
-            if statelib.load(project) is None or state.active_profile != target_profile:
+            # Nothing had to change on disk, but the profile — or the schema a
+            # V1 state is still on — may need recording. That is a write to the
+            # install state, so it takes the lock like every other write — an
+            # unlocked commit here could interleave with another operation's
+            # own commit.
+            loaded = statelib.load(project)
+            if (loaded is None or state.active_profile != target_profile
+                    or loaded.schema_version < statelib.SCHEMA_VERSION):
                 with locklib.acquire(project, operation, force=force_unlock):
                     state.active_profile = target_profile
                     for identifier in distribution.effective_component_ids(target_profile):

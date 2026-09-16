@@ -201,6 +201,9 @@ jobs:
       - name: Ownership, user modifications and external config
         run: python -m unittest tests.test_lifecycle_ownership -v
 
+      - name: Features, State V2 and the shared projection
+        run: python -m unittest tests.test_lifecycle_features -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 

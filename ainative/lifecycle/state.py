@@ -25,7 +25,7 @@ from typing import Any, Iterable
 
 from .errors import LifecycleError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 LIFECYCLE_DIRNAME = Path(".ai-native") / "lifecycle"
 STATE_RELATIVE = LIFECYCLE_DIRNAME / "state.json"
@@ -152,6 +152,11 @@ class InstallState:
     source_version: str = "0.0.0"
     source_revision: str | None = None
     installed_components: list[str] = field(default_factory=list)
+    # V2 (ADR-0017): the optional project-scope features this project activates.
+    # Empty on a V1 state (the schema that predates the field) and migrated
+    # explicitly; never derived here, because the catalogue of features is not
+    # this module's to know.
+    active_features: list[str] = field(default_factory=list)
     managed_files: list[ManagedFile] = field(default_factory=list)
     last_transaction: str | None = None
     update_channel: str = "stable"
@@ -189,6 +194,7 @@ class InstallState:
                                    sorted(self.managed_files,
                                           key=lambda item: (item.component, item.path))]
         record["installed_components"] = sorted(set(self.installed_components))
+        record["active_features"] = sorted(set(self.active_features))
         return record
 
     @classmethod
@@ -210,6 +216,14 @@ class InstallState:
         if not isinstance(components, list) or not all(isinstance(i, str) for i in components):
             raise LifecycleError("INSTALL_STATE_CORRUPTED",
                                  "installed_components must be a list of strings")
+        # V1 (the schema before features) has no `active_features` and must keep
+        # loading; anything that is present but not a list of strings is corrupt,
+        # not "an old state": guessing is how a state naming nothing becomes a
+        # state pretending to name something.
+        features = raw.get("active_features", []) if version >= 2 else []
+        if not isinstance(features, list) or not all(isinstance(item, str) for item in features):
+            raise LifecycleError("INSTALL_STATE_CORRUPTED",
+                                 "active_features must be a list of strings")
         files = raw.get("managed_files", [])
         if not isinstance(files, list):
             raise LifecycleError("INSTALL_STATE_CORRUPTED", "managed_files must be a list")
@@ -227,6 +241,7 @@ class InstallState:
             source_version=str(raw.get("source_version", "0.0.0")),
             source_revision=raw.get("source_revision"),
             installed_components=list(components),
+            active_features=list(features),
             managed_files=[ManagedFile.from_record(item) for item in files],
             last_transaction=raw.get("last_transaction"),
             update_channel=str(raw.get("update_channel", "stable")),

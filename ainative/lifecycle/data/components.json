@@ -147,6 +147,21 @@
       "title": "GitHub contribution templates",
       "description": "Generic bug/feature issue templates and PR template, installed as individually-owned managed files."
     },
+    "gitlab-templates": {
+      "version": 1,
+      "kind": "tree",
+      "source": "templates/gitlab",
+      "destination": ".gitlab",
+      "include": [
+        "issue_templates/bug.md",
+        "issue_templates/feature.md",
+        "merge_request_templates/default.md"
+      ],
+      "ownership": "MANAGED_MUTABLE",
+      "required": false,
+      "title": "GitLab contribution templates",
+      "description": "GitLab issue and merge-request templates, installed as individually-owned managed files. Owned by the forge-gitlab feature (ADR-0017)."
+    },
     "verified-workplane": {
       "version": 1,
       "kind": "marker",

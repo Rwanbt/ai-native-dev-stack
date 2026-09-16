@@ -82,13 +82,35 @@ class Profile:
     components: tuple[str, ...]
 
 
+# The only feature scope V1 knows: a feature is an optional project-scope
+# capability. Machine-scope integration stays with `ainative machine` and is not
+# a feature (ADR-0017 section 9).
+FEATURE_SCOPE_PROJECT = "project"
+FEATURE_SCOPES = (FEATURE_SCOPE_PROJECT,)
+
+
+@dataclass(frozen=True)
+class Feature:
+    """An optional capability, declared independently of any profile."""
+
+    name: str
+    scope: str
+    work_forge: bool
+    title: str
+    summary: str
+    components: tuple[str, ...]
+    conflicts: tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class Distribution:
-    """The component and profile catalogue, already validated."""
+    """The component, profile and feature catalogue, already validated."""
 
     components: Mapping[str, Component]
     profiles: Mapping[str, Profile]
     default_profile: str
+    features: Mapping[str, Feature] = field(default_factory=dict)
+    legacy_default_feature: str = ""
     schema_version: int = 1
     _cache: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -99,6 +121,14 @@ class Distribution:
             known = ", ".join(sorted(self.profiles))
             raise LifecycleError("PROFILE_INVALID",
                                  f"unknown profile {name!r} (known: {known})") from None
+
+    def feature(self, name: str) -> Feature:
+        try:
+            return self.features[name]
+        except KeyError:
+            known = ", ".join(sorted(self.features))
+            raise LifecycleError("FEATURE_UNKNOWN",
+                                 f"unknown feature {name!r} (known: {known})") from None
 
     def component(self, identifier: str) -> Component:
         try:
@@ -222,6 +252,67 @@ def _build_profile(name: str, raw: Any) -> Profile:
     )
 
 
+def _build_feature(name: str, raw: Any,
+                   components: Mapping[str, Component]) -> Feature:
+    if not isinstance(raw, dict):
+        raise LifecycleError("MANIFEST_INVALID", f"feature {name!r} is not an object")
+    scope = raw.get("scope")
+    if scope not in FEATURE_SCOPES:
+        raise LifecycleError(
+            "MANIFEST_INVALID",
+            f"feature {name!r}: scope {scope!r} is not a project feature; "
+            "machine-scope integration is not a feature (ADR-0017 section 9)")
+    identifiers = _strings(raw.get("components"), "components", name)
+    for identifier in identifiers:
+        if identifier not in components:
+            raise LifecycleError(
+                "MANIFEST_INVALID",
+                f"feature {name!r} references unknown component {identifier!r}")
+    return Feature(
+        name=name,
+        scope=scope,
+        work_forge=bool(raw.get("work_forge", False)),
+        title=str(raw.get("title", name)),
+        summary=str(raw.get("summary", "")),
+        components=identifiers,
+        conflicts=_strings(raw.get("conflicts"), "conflicts", name),
+    )
+
+
+def _link_features(features: Mapping[str, Feature]) -> None:
+    """Refuse a catalogue whose conflicts or component claims cannot be honored.
+
+    Two features sharing a component would make disable/enable ambiguous (whose
+    file is it?); an asymmetric conflict would let one side activate what the
+    other refuses; both are catalogue defects, not states a later stage could
+    resolve.
+    """
+
+    claimed: dict[str, str] = {}
+    for name, feature in features.items():
+        if name in feature.conflicts:
+            raise LifecycleError("MANIFEST_INVALID",
+                                 f"feature {name!r} conflicts with itself")
+        for other in feature.conflicts:
+            if other not in features:
+                raise LifecycleError(
+                    "MANIFEST_INVALID",
+                    f"feature {name!r} conflicts with unknown feature {other!r}")
+            if name not in features[other].conflicts:
+                raise LifecycleError(
+                    "MANIFEST_INVALID",
+                    f"the conflict between {name!r} and {other!r} must be "
+                    "declared symmetrically")
+        for identifier in feature.components:
+            if identifier in claimed:
+                raise LifecycleError(
+                    "MANIFEST_INVALID",
+                    f"component {identifier!r} is claimed by features "
+                    f"{claimed[identifier]!r} and {name!r}; a component belongs "
+                    "to exactly one feature")
+            claimed[identifier] = name
+
+
 def _reject_collisions(components: Mapping[str, Component]) -> None:
     """Two destinations that differ only in case are one path on Windows.
 
@@ -266,7 +357,21 @@ def load(data_dir: Path | None = None) -> Distribution:
     if default not in profiles:
         raise LifecycleError("MANIFEST_INVALID", f"default profile {default!r} is not declared")
 
-    distribution = Distribution(components=components, profiles=profiles, default_profile=default,
+    feature_payload = _read_json(directory / "features.json")
+    raw_features = feature_payload.get("features")
+    if not isinstance(raw_features, dict) or not raw_features:
+        raise LifecycleError("MANIFEST_INVALID", "features.json declares no features")
+    features = {name: _build_feature(name, raw, components)
+                for name, raw in sorted(raw_features.items())}
+    _link_features(features)
+    legacy = feature_payload.get("legacy_default")
+    if not isinstance(legacy, str) or legacy not in features:
+        raise LifecycleError("MANIFEST_INVALID",
+                             f"legacy_default {legacy!r} is not a declared feature")
+
+    distribution = Distribution(components=components, profiles=profiles,
+                                default_profile=default, features=features,
+                                legacy_default_feature=legacy,
                                 schema_version=int(profile_payload.get("schema_version", 1)))
     for name in profiles:
         distribution.effective_component_ids(name)  # proves the graph resolves
@@ -274,8 +379,9 @@ def load(data_dir: Path | None = None) -> Distribution:
 
 
 __all__ = [
-    "Component", "Profile", "Distribution", "load", "DATA_DIR",
+    "Component", "Profile", "Feature", "Distribution", "load", "DATA_DIR",
     "KIND_TREE", "KIND_FILE", "KIND_TEMPLATE", "KIND_EXTERNAL_BLOCK",
     "KIND_JSON_HOOK", "KIND_MARKER", "KIND_DATA_ROOT", "KINDS",
     "MANAGED_IMMUTABLE", "MANAGED_MUTABLE", "USER_DATA", "EXTERNAL_CONFIG", "OWNERSHIPS",
+    "FEATURE_SCOPE_PROJECT", "FEATURE_SCOPES",
 ]

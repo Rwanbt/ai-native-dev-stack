@@ -212,6 +212,13 @@ class TamperedManifests(unittest.TestCase):
         (directory / "profiles.json").write_text(
             json.dumps({"schema_version": 1, "default": "standard", "profiles": profiles}),
             encoding="utf-8")
+        # The feature catalogue is a third required manifest (ADR-0017); these
+        # fixtures are about components and profiles, so it is minimal.
+        (directory / "features.json").write_text(
+            json.dumps({"schema_version": 1, "legacy_default": "forge",
+                        "features": {"forge": {"scope": "project", "work_forge": True,
+                                               "components": [], "conflicts": []}}}),
+            encoding="utf-8")
         return directory
 
     def setUp(self) -> None:
