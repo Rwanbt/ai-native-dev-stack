@@ -44,6 +44,16 @@ def _update_token() -> str:
             return value
     return ""
 
+
+def environment_token() -> str:
+    """The token this environment offers, if any. Never logged anywhere.
+
+    Public for the V3 providers, which attach it only when the transport's
+    endpoint rule allows the origin (PR-0A).
+    """
+
+    return _update_token()
+
 DEFAULT_RELEASE_URL = "https://api.github.com/repos/Rwanbt/ai-native-dev-stack/releases/latest"
 # Authenticated checks, when the environment provides a token. Never logged,
 # never persisted: NAT-shared users hit the anonymous rate limit otherwise.
@@ -448,5 +458,5 @@ __all__ = [
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
     "ReleaseProviderEndpointConfig",
-    "upgrade_command", "UPGRADE_COMMAND_TEMPLATE",
+    "upgrade_command", "UPGRADE_COMMAND_TEMPLATE", "environment_token",
 ]

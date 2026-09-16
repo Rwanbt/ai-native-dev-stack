@@ -51,6 +51,8 @@ class ReleaseCandidate:
     `manifest_sha256` and `manifest_size` are the external integrity anchor:
     they come from the provider's own metadata (a release asset listing, a
     mirror index), never from the manifest bytes themselves.
+    `manifest_locator` is the provider-internal way to fetch the manifest
+    (an asset API URL, a mirror path); it is opaque to this module.
     """
 
     version: str
@@ -58,6 +60,7 @@ class ReleaseCandidate:
     channel: str = "stable"
     manifest_sha256: str | None = None
     manifest_size: int | None = None
+    manifest_locator: str | None = None
 
     def to_record(self) -> dict:
         return {"version": self.version, "identity": self.identity,
