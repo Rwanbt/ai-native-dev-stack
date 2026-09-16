@@ -55,9 +55,6 @@ DISABLED = "DISABLED"
 
 DISABLE_ENV = "AINATIVE_NO_UPDATE_CHECK"
 STAGED_RELATIVE = statelib.LIFECYCLE_DIRNAME / "staged"
-UPGRADE_COMMAND_TEMPLATE = (
-    'pip install --upgrade '
-    '"git+https://github.com/Rwanbt/ai-native-dev-stack.git@v{version}"')
 
 # A zip that expands to more than this, or holds more entries, is refused before
 # a single byte is written. Both are classic archive bombs.
@@ -116,10 +113,10 @@ def runtime_version() -> str:
     return __version__
 
 
-def upgrade_command(version: str) -> str:
-    """The exact command that installs the runtime a target release needs."""
-
-    return UPGRADE_COMMAND_TEMPLATE.format(version=version)
+# Moved to `provider`: a release-source refusal (a future lifecycle protocol,
+# #157) must name the upgrade path, and provider must not import this module.
+# Re-exported here for the callers that have always named it through `updater`.
+upgrade_command = providerlib.upgrade_command
 
 
 def _runtime_fields(result: CheckResult) -> CheckResult:
@@ -235,6 +232,18 @@ def check(project: Path, *, force: bool = False, allow_network: bool = True,
         try:
             release = providerlib.build(channel).latest(channel)
         except LifecycleError as error:
+            if error.code == "CLI_UPDATE_REQUIRED":
+                # A future-protocol release IS available; this runtime cannot
+                # apply it. The old "no bundle to verify" answer sent users
+                # looking for a publishing defect instead of upgrading (#157).
+                target = error.detail.get("target_version")
+                result = _runtime_fields(CheckResult(
+                    UPDATE_AVAILABLE if isinstance(target, str) else CHECK_FAILED,
+                    current, latest=target if isinstance(target, str) else None,
+                    detail=error.message, checked_at=statelib.now()))
+                if record:
+                    _write_cache(project, result)
+                return result
             status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
             result = _runtime_fields(CheckResult(status, current, detail=error.message,
                                                  checked_at=statelib.now()))

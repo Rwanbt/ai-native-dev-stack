@@ -27,20 +27,48 @@ The **Release assets** workflow then runs, in order:
 
 1. the tag points at `origin/main`;
 2. `check_release_versions.py --tag` (tag == VERSION == package == AGENTS.md);
-3. wheel, sdist, lifecycle bundle build; the bundle is
+3. when `V3_BRIDGE_RELEASE` is declared, the bridge gate resolves it through
+   the V2 selection rules and blocks a V3 publication without a verifiable
+   bridge;
+4. wheel, sdist, lifecycle bundle build; the bundle is
    `ainative-lifecycle-v2-<version>.zip`;
-4. `check_release_versions.py --dist` re-reads every artifact (filenames, wheel
+5. `check_release_versions.py --dist` re-reads every artifact (filenames, wheel
    METADATA, sdist PKG-INFO, protocol document, payload VERSION);
-5. `SHA256SUMS` is written;
-6. **build provenance is attested** for every artifact
+6. `SHA256SUMS` is written;
+7. **build provenance is attested** for every artifact
    (`actions/attest-build-provenance`): GitHub signs a statement that these
    bytes came from this workflow, this repository, this commit;
-7. the release is created as a **draft**, assets are uploaded (no `--clobber`),
+8. the release is created as a **draft**, assets are uploaded (no `--clobber`),
    `check_published_assets.py` compares the uploaded names, sizes and digests
    against `dist/`, and only then is the draft published.
 
 A failure at any step leaves a draft release (or none) - never a visible
 release with a partial asset set.
+
+## V2 bridge gate (before the first V3 publication)
+
+The first V3 release cannot be applied by any runtime older than V3, so every
+installed runtime must be able to reach the bridge release first. The bridge is
+a normal release that ships the PR-0B bridge: a V2 runtime meeting a future
+protocol reports `CLI_UPDATE_REQUIRED` with the upgrade path, instead of
+`UPDATE_INTEGRITY_METADATA_MISSING`.
+
+Before publishing a V3 release, set the repository variable
+`V3_BRIDGE_RELEASE` to the bridge version. The release workflow then runs
+`scripts/check_bridge_release.py --bridge-version "<bridge>"`, which resolves
+the bridge release through the same selection rules a user's updater uses and
+blocks the publication (`BLOCK RELEASE`, exit 1) unless the release exists, is
+published, and publishes `ainative-lifecycle-v2-<bridge>.zip` with a digest.
+When the variable is unset (V2 releases), the step reports an explicit SKIP.
+
+A runtime older than the bridge sees the V3 release as
+`UPDATE_INTEGRITY_METADATA_MISSING`; its documented escape path is the same
+upgrade command:
+
+```bash
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v<bridge>"
+cd your-project && ainative update
+```
 
 ## PyPI
 

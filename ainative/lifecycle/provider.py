@@ -72,6 +72,22 @@ def protocol_document(version: str) -> dict:
             "release_version": version, "payload_root": "stack"}
 
 
+UPGRADE_COMMAND_TEMPLATE = (
+    'pip install --upgrade '
+    '"git+https://github.com/Rwanbt/ai-native-dev-stack.git@v{version}"')
+
+
+def upgrade_command(version: str) -> str:
+    """The exact command that installs the runtime a target release needs.
+
+    Lives here rather than in `updater` because a release-source refusal (a
+    future lifecycle protocol, #157) must name the upgrade path, and this
+    module must not import the updater that consumes it.
+    """
+
+    return UPGRADE_COMMAND_TEMPLATE.format(version=version)
+
+
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 # Short on purpose: an update check runs in the background of a status command,
@@ -287,6 +303,34 @@ def _asset_url(asset: dict) -> str | None:
     return None
 
 
+# A release that publishes one of these names declares a lifecycle protocol.
+# Comparing that number with this runtime's own is what separates "a newer
+# release" from "a broken release" (#157): the first must tell the user to
+# upgrade the CLI, the second must keep the integrity refusal.
+_LIFECYCLE_ASSET_PATTERNS = (
+    re.compile(r"^ainative-lifecycle-v(?P<protocol>\d+)-.+\.zip$"),
+    re.compile(r"^ainative-release-v(?P<protocol>\d+)\.json$"),
+)
+
+
+def _future_lifecycle_protocol(assets: object) -> int | None:
+    """The newest declared lifecycle protocol above this runtime's, or None."""
+
+    newest = None
+    for asset in assets if isinstance(assets, list) else []:
+        if not isinstance(asset, dict):
+            continue
+        name = str(asset.get("name", ""))
+        for pattern in _LIFECYCLE_ASSET_PATTERNS:
+            match = pattern.match(name)
+            if match is None:
+                continue
+            protocol = int(match.group("protocol"))
+            if protocol > UPDATE_PROTOCOL_VERSION and (newest is None or protocol > newest):
+                newest = protocol
+    return newest
+
+
 def _select_asset(document: dict, expected_version: str) -> tuple[str | None, str | None]:
     """Pick the lifecycle bundle of `expected_version` and its digest, or refuse.
 
@@ -332,6 +376,20 @@ def _select_asset(document: dict, expected_version: str) -> tuple[str | None, st
                 "UPDATE_INTEGRITY_METADATA_MISSING",
                 f"release asset {name!r} carries a malformed sha256 digest")
         return url, sha
+    future = _future_lifecycle_protocol(assets)
+    if future is not None:
+        raise LifecycleError(
+            "CLI_UPDATE_REQUIRED",
+            f"release {expected_version} publishes lifecycle protocol {future}; "
+            f"this runtime speaks protocol {UPDATE_PROTOCOL_VERSION} and the "
+            "release must be applied by a newer CLI runtime.\n\n"
+            "Upgrade the CLI first:\n"
+            f"  {upgrade_command(expected_version)}\n\n"
+            "Then run:\n"
+            "  ainative update",
+            target_version=expected_version, protocol=future,
+            runtime_protocol=UPDATE_PROTOCOL_VERSION,
+            upgrade_command=upgrade_command(expected_version))
     raise LifecycleError(
         "UPDATE_INTEGRITY_METADATA_MISSING",
         f"release publishes no {LIFECYCLE_BUNDLE_PREFIX}*{LIFECYCLE_BUNDLE_SUFFIX} "
@@ -389,4 +447,5 @@ __all__ = [
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
     "ReleaseProviderEndpointConfig",
+    "upgrade_command", "UPGRADE_COMMAND_TEMPLATE",
 ]
