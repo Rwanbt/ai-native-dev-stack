@@ -207,6 +207,9 @@ jobs:
       - name: Work authority, claim grammar and the claim journal
         run: python -m unittest tests.test_forge_claims -v
 
+      - name: Release source resolution and diagnostics
+        run: python -m unittest tests.test_release_source -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 

@@ -340,7 +340,7 @@ def _doctor_collect(project: Path, check_updates: bool):
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     from . import observation
-    from .lifecycle import environment, recovery, updater
+    from .lifecycle import environment, recovery, release_source, updater
     from .knowledge import doctor as knowledgedoctor
 
     project = _project(args)
@@ -354,6 +354,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         record["features"] = view["features"]
         record["forge"] = view["forge"]
         record["claim_attempts"] = view["claim_attempts"]
+        record["release_source"] = release_source.describe()
         _emit(record)
     else:
         print(f"Project: {diagnosis.project}")
@@ -372,6 +373,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             # (#131 / AUD-202).
             print("Updates")
             print(f"  {updater.notice_line(diagnosis.update)}")
+        for line in release_source.describe_lines():
+            print(line)
         for line in observation.doctor_lines(view):
             print(line)
         print("Knowledge:")

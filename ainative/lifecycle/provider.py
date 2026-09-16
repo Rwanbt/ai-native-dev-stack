@@ -30,6 +30,9 @@ from . import transport as transportlib
 from . import version as versionlib
 from .digest import digest_bytes
 from .errors import LifecycleError
+# The selector names live with their owner (release_source); re-exported here
+# because they have always been importable through the provider module.
+from .release_source import LOCAL_SOURCE_ENV, PROVIDER_ENV, RELEASE_URL_ENV
 
 
 def _update_token() -> str:
@@ -42,9 +45,6 @@ def _update_token() -> str:
     return ""
 
 DEFAULT_RELEASE_URL = "https://api.github.com/repos/Rwanbt/ai-native-dev-stack/releases/latest"
-PROVIDER_ENV = "AINATIVE_UPDATE_PROVIDER"     # "github" (default) | "local"
-LOCAL_SOURCE_ENV = "AINATIVE_UPDATE_LOCAL_DIR"
-RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
 # Authenticated checks, when the environment provides a token. Never logged,
 # never persisted: NAT-shared users hit the anonymous rate limit otherwise.
 TOKEN_ENVS = ("GITHUB_TOKEN", "GH_TOKEN")
@@ -419,18 +419,19 @@ def verify_archive(payload: bytes, expected: str | None) -> str:
 
 
 def build(channel: str = "stable") -> UpdateProvider:
-    """The provider this environment selects. One variable, no discovery."""
+    """The provider this environment selects. One resolver, no discovery.
 
-    selected = (os.environ.get(PROVIDER_ENV) or "").strip().lower()
-    if selected == "local":
-        root = os.environ.get(LOCAL_SOURCE_ENV)
-        if not root:
-            raise LifecycleError("UPDATE_CHECK_FAILED",
-                                 f"{PROVIDER_ENV}=local requires {LOCAL_SOURCE_ENV}")
-        return LocalDirectoryProvider(Path(root))
-    if selected in ("", "github", "release-api"):
-        return ReleaseApiProvider()
-    raise LifecycleError("UPDATE_CHECK_FAILED", f"unknown update provider {selected!r}")
+    The decision lives in `release_source.resolve_release_source()` so
+    `update`, `update check`, `status` and `doctor` cannot disagree about it
+    (ADR-0019 section 1); this function only constructs the selected provider.
+    """
+
+    from . import release_source as release_sourcelib
+
+    source = release_sourcelib.resolve_release_source()
+    if source.kind == release_sourcelib.KIND_LOCAL:
+        return LocalDirectoryProvider(source.directory)
+    return ReleaseApiProvider(url=source.metadata_url, endpoint=source.endpoint)
 
 
 def copy_tree(source: Path, destination: Path) -> None:
