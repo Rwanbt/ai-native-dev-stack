@@ -133,7 +133,8 @@ class OfficialReleaseDocument(LifecycleTestCase):
         mutated[-1] ^= 0xFF
         provider = self.provider(self.document(), bytes(mutated))
         before = self.snapshot()
-        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider), \
+                mock.patch.object(providerlib, "build_v3", lambda channel="stable": None):
             with self.assertRaises(LifecycleError) as raised:
                 updaterlib.apply(self.project, distribution=self.distribution)
         self.assertEqual(raised.exception.code, "UPDATE_INTEGRITY_FAILED")
@@ -142,7 +143,8 @@ class OfficialReleaseDocument(LifecycleTestCase):
 
     def test_the_official_path_updates_end_to_end(self):
         provider = self.provider(self.document(), self.archive_bytes)
-        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider), \
+                mock.patch.object(providerlib, "build_v3", lambda channel="stable": None):
             result = updaterlib.apply(self.project, distribution=self.distribution)
         self.assertTrue(result.applied)
         self.assertEqual(result.to_version, "2.0.0")

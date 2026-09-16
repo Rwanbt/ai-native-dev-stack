@@ -30,6 +30,10 @@ from . import transport as transportlib
 from . import version as versionlib
 from .digest import digest_bytes
 from .errors import LifecycleError
+# The selector names live with their owner (release_source); re-exported here
+# because they have always been importable through the provider module.
+from .release_source import (GITLAB_TOKEN_ENV, LOCAL_SOURCE_ENV, PROVIDER_ENV,
+                             RELEASE_URL_ENV)
 
 
 def _update_token() -> str:
@@ -41,10 +45,23 @@ def _update_token() -> str:
             return value
     return ""
 
+
+def environment_token() -> str:
+    """The token this environment offers, if any. Never logged anywhere.
+
+    Public for the V3 providers, which attach it only when the transport's
+    endpoint rule allows the origin (PR-0A).
+    """
+
+    return _update_token()
+
+
+def environment_gitlab_token() -> str:
+    """The GitLab token this environment offers, if any. Never logged anywhere."""
+
+    return (os.environ.get(GITLAB_TOKEN_ENV) or "").strip()
+
 DEFAULT_RELEASE_URL = "https://api.github.com/repos/Rwanbt/ai-native-dev-stack/releases/latest"
-PROVIDER_ENV = "AINATIVE_UPDATE_PROVIDER"     # "github" (default) | "local"
-LOCAL_SOURCE_ENV = "AINATIVE_UPDATE_LOCAL_DIR"
-RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
 # Authenticated checks, when the environment provides a token. Never logged,
 # never persisted: NAT-shared users hit the anonymous rate limit otherwise.
 TOKEN_ENVS = ("GITHUB_TOKEN", "GH_TOKEN")
@@ -419,18 +436,47 @@ def verify_archive(payload: bytes, expected: str | None) -> str:
 
 
 def build(channel: str = "stable") -> UpdateProvider:
-    """The provider this environment selects. One variable, no discovery."""
+    """The provider this environment selects. One resolver, no discovery.
 
-    selected = (os.environ.get(PROVIDER_ENV) or "").strip().lower()
-    if selected == "local":
-        root = os.environ.get(LOCAL_SOURCE_ENV)
-        if not root:
-            raise LifecycleError("UPDATE_CHECK_FAILED",
-                                 f"{PROVIDER_ENV}=local requires {LOCAL_SOURCE_ENV}")
-        return LocalDirectoryProvider(Path(root))
-    if selected in ("", "github", "release-api"):
-        return ReleaseApiProvider()
-    raise LifecycleError("UPDATE_CHECK_FAILED", f"unknown update provider {selected!r}")
+    The decision lives in `release_source.resolve_release_source()` so
+    `update`, `update check`, `status` and `doctor` cannot disagree about it
+    (ADR-0019 section 1); this function only constructs the selected provider.
+    """
+
+    from . import release_source as release_sourcelib
+
+    source = release_sourcelib.resolve_release_source()
+    if source.kind == release_sourcelib.KIND_GITLAB:
+        raise LifecycleError("UPDATE_CHECK_FAILED",
+                             "the gitlab provider speaks Release V3 only")
+    if source.kind == release_sourcelib.KIND_LOCAL:
+        return LocalDirectoryProvider(source.directory)
+    return ReleaseApiProvider(url=source.metadata_url, endpoint=source.endpoint)
+
+
+def build_v3(channel: str = "stable"):
+    """The V3 provider for the resolved source (ADR-0019 section 11).
+
+    The second generation of the same seam: the V2 path speaks a `Release`
+    listing, the V3 path speaks bounded enumeration plus an anchored manifest.
+    The updater prefers V3 and falls back to V2 only when a complete
+    enumeration proves the channel is V2-era.
+    """
+
+    from . import release_providers as release_providerslib
+    from . import release_source as release_sourcelib
+
+    source = release_sourcelib.resolve_release_source()
+    if source.kind == release_sourcelib.KIND_LOCAL:
+        return release_providerslib.LocalReleaseProvider(source.directory)
+    if source.kind == release_sourcelib.KIND_ANONYMOUS:
+        return release_providerslib.AnonymousReleaseApiProvider(source.metadata_url,
+                                                                source.endpoint)
+    if source.kind == release_sourcelib.KIND_GITLAB:
+        return release_providerslib.GitLabReleaseProvider(source.endpoint,
+                                                          source.project_ref)
+    # github and named providers are both GitHub-Release-API-compatible.
+    return release_providerslib.GitHubReleaseProvider(source.endpoint)
 
 
 def copy_tree(source: Path, destination: Path) -> None:
@@ -447,5 +493,6 @@ __all__ = [
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
     "ReleaseProviderEndpointConfig",
-    "upgrade_command", "UPGRADE_COMMAND_TEMPLATE",
+    "upgrade_command", "UPGRADE_COMMAND_TEMPLATE", "environment_token",
+    "environment_gitlab_token",
 ]

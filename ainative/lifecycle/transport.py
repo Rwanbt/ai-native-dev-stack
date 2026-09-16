@@ -66,6 +66,10 @@ class ReleaseProviderEndpointConfig:
     where the credential comes from and is resolved by the provider, not here.
     An endpoint with `auth_origin=None` is anonymous by construction: no
     credential can be attached whatever the environment holds.
+
+    `auth_header` and `auth_prefix` exist because providers disagree on the
+    shape of authentication: GitHub wants `Authorization: Bearer <token>`,
+    GitLab wants `PRIVATE-TOKEN: <token>`. The default is GitHub's.
     """
 
     provider: str
@@ -73,6 +77,8 @@ class ReleaseProviderEndpointConfig:
     auth_origin: str | None = None
     api_version: str = ""
     credential_source: str = ""
+    auth_header: str = "Authorization"
+    auth_prefix: str = "Bearer"
 
 
 GITHUB_ENDPOINT = ReleaseProviderEndpointConfig(
@@ -136,7 +142,8 @@ def _request_headers(endpoint: ReleaseProviderEndpointConfig, origin: str, *,
     if endpoint.api_version:
         headers["X-GitHub-Api-Version"] = endpoint.api_version
     if token and _may_receive(endpoint, origin):
-        headers["Authorization"] = f"Bearer {token}"
+        value = f"{endpoint.auth_prefix} {token}".strip() if endpoint.auth_prefix else token
+        headers[endpoint.auth_header] = value
     return headers
 
 

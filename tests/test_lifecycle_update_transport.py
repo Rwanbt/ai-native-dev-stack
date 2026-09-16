@@ -368,7 +368,8 @@ class FutureProtocolBridge(LifecycleTestCase):
     def test_check_reports_a_future_release_as_available_with_a_cli_upgrade(self):
         self.install("standard")
         provider = self.provider(self.v3_document())
-        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider), \
+                mock.patch.object(providerlib, "build_v3", lambda channel="stable": None):
             result = updaterlib.check(self.project, force=True, record=False)
         self.assertEqual(result.status, updaterlib.UPDATE_AVAILABLE)
         self.assertEqual(result.latest, "3.0.0")
@@ -378,7 +379,8 @@ class FutureProtocolBridge(LifecycleTestCase):
         self.install("standard")
         provider = self.provider(self.v3_document())
         before = self.snapshot()
-        with mock.patch.object(providerlib, "build", lambda channel="stable": provider):
+        with mock.patch.object(providerlib, "build", lambda channel="stable": provider), \
+                mock.patch.object(providerlib, "build_v3", lambda channel="stable": None):
             with self.assertRaises(LifecycleError) as raised:
                 updaterlib.apply(self.project, distribution=self.distribution)
         self.assertEqual(raised.exception.code, "CLI_UPDATE_REQUIRED")
