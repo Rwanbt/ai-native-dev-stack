@@ -81,6 +81,7 @@ class OfficialReleaseDocument(LifecycleTestCase):
             return responses[url]
 
         provider._get = fake_get
+        provider._fetch_artifact = fake_get
         return provider
 
     def snapshot(self) -> dict[str, str]:
