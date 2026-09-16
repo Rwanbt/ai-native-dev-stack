@@ -31,6 +31,10 @@ SECRET_PATTERNS = [
     (re.compile(r'AIza[0-9A-Za-z\-_]{35}'), "Google API key"),
     (re.compile(r'gh[pousr]_[A-Za-z0-9]{36,}'), "GitHub token"),
     (re.compile(r'xox[baprs]-[A-Za-z0-9-]{10,}'), "Slack token"),
+    (re.compile(r'glpat-[A-Za-z0-9_\-]{20,}'), "GitLab personal access token"),
+    (re.compile(r'gldt-[A-Za-z0-9_\-]{20,}'), "GitLab deploy token"),
+    (re.compile(r'glrt-[A-Za-z0-9_\-]{20,}'), "GitLab runner token"),
+    (re.compile(r'glsoat-[A-Za-z0-9_\-]{20,}'), "GitLab service account token"),
     (re.compile(r'-----BEGIN [A-Z ]+PRIVATE KEY-----'), "Private key"),
     (re.compile(r'(?i)(?:api[_-]?key|secret|token|passwd|password|access[_-]?key|client[_-]?secret)\s*[:=]\s*["\'][A-Za-z0-9+/_\-]{16,}["\']'), "generic credential"),
 ]

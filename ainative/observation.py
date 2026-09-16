@@ -86,7 +86,8 @@ def project_view(project: Path) -> dict:
     return {
         "features": {"active": list(effective.active_features) if effective else [],
                      "projected_from_legacy": bool(
-                         effective and effective.projected_from_legacy)},
+                         effective and effective.projected_from_legacy),
+                     "legacy_default": featureslib.legacy_default(distribution)},
         "forge": forge_picture(project),
         "claim_attempts": _claim_summary(project),
     }
@@ -110,6 +111,15 @@ def doctor_lines(view: dict) -> list[str]:
     for remote in view["forge"]["remotes"]:
         lines.append(f"  {remote['name']:<10} {remote['provider']:<8} "
                      f"{remote['project'] or '-'}")
+    if features["projected_from_legacy"] and any(
+            remote["provider"] == "gitlab" for remote in view["forge"]["remotes"]):
+        # A legacy project with a GitLab remote keeps the compatibility default
+        # until it says otherwise; the switch is explicit, never inferred from
+        # the remote (ADR-0017 section 4 / scenario M).
+        lines.append("  note: a GitLab remote is observed while the legacy "
+                     f"{features.get('legacy_default', 'forge-github')} default is "
+                     "projected; run `ainative feature switch forge-gitlab` to "
+                     "switch explicitly")
     if summary["journal"] == "ok":
         lines.append(f"Claim attempts: {len(summary['unresolved'])} unresolved")
     else:

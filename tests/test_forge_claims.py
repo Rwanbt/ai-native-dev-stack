@@ -335,12 +335,28 @@ class ForgeObservation(LifecycleTestCase):
 
     def test_doctor_reports_features_forge_and_claims(self):
         self.install("standard")
-        self.remote("origin", "git@gitlab.com:g/p.git")
+        self.remote("origin", "https://gitlab.com/g/p.git")
         record = json.loads(self.cli("doctor", "--json").stdout)
         self.assertEqual(record["features"]["active"], ["forge-github"])
         self.assertEqual(record["forge"]["resolution"]["authority"]["provider"], "gitlab")
         self.assertEqual(record["claim_attempts"]["journal"], "ok")
         self.assertEqual(record["claim_attempts"]["unresolved"], [])
+
+    def test_a_legacy_gitlab_remote_keeps_the_default_with_a_warning(self):
+        """Scenario M: the choice stays explicit; the doctor says so."""
+
+        self.install("standard")
+        self.remote("origin", "https://gitlab.com/g/p.git")
+        path = statelib.state_path(self.project)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["schema_version"] = 1
+        record.pop("active_features", None)
+        statelib.write_atomic(path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+        text = self.cli("doctor").stdout
+        self.assertIn("feature switch forge-gitlab", text)
+        reported = json.loads(self.cli("doctor", "--json").stdout)
+        self.assertEqual(reported["features"]["active"], ["forge-github"])
+        self.assertTrue(reported["features"]["projected_from_legacy"])
 
 
 if __name__ == "__main__":

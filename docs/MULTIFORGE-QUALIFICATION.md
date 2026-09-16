@@ -51,14 +51,14 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 | G | Private GitHub asset → anonymous CDN | asset API flow test (scripted transport) | GREEN (scripted) |
 | H | Tampered ReleaseManifest V3 | `test_release_v3` + `test_lifecycle_update_v3` (zero writes) | GREEN |
 | I | Duplicate GitLab package/manifest | provider tests (`RELEASE_DUPLICATE_VERSION`, `RELEASE_MANIFEST_AMBIGUOUS`) | GREEN |
-| J | GitLab object-storage blob | shared transport policy test (API → CDN strips credentials); no GitLab-specific 302 fixture yet | PARTIAL |
+| J | GitLab object-storage blob | provider test: the manifest download 302s to an object store; the token is stripped on the blob hop and the bytes arrive | GREEN |
 | K | Claim crash after POST | journal tests (`UNCERTAIN` unresolved, no retry, explicit `abandon`) | GREEN |
 | L | Planner refusal during V1 projection | two-work-forge state refuses; projection never writes | GREEN |
-| M | Legacy GitLab remote keeps GitHub compatibility default | projection test; the *warning* surfacing is not implemented | PARTIAL |
+| M | Legacy GitLab remote keeps GitHub compatibility default | projection test + the doctor warning naming `feature switch forge-gitlab` | GREEN |
 | N | Read-only V1 projection == persisted V2 | migration parity test + `status` parity test | GREEN |
 | O | Missing legacy managed template not resurrected | `test_the_migration_does_not_resurrect_an_absent_template` | GREEN |
-| P | Selector conflict identical across commands | one resolver consumed by update/check/status/doctor; conflicts tested at the resolver; no single cross-command E2E test | PARTIAL |
-| Q | Mandatory secret patterns survive operator configuration | **not implemented** — the anti-debt scanner contract (`extra_secret_patterns`) is still pending | PENDING |
+| P | Selector conflict identical across commands | one resolver; a single E2E asserting update check / update / status / doctor all surface `UPDATE_SOURCE_CONFLICT` | GREEN |
+| Q | Mandatory secret patterns survive operator configuration | `MANDATORY_SECRET_PATTERNS` (private keys, AWS, GitHub, Slack, GitLab `glpat-`/`gldt-`/`glrt-`/`glsoat-`) with `extra_secret_patterns` as a union; the constructor accepts no replacement parameter; the anti-debt owner and the vault-sync fallback carry the same GitLab prefixes | GREEN |
 
 ## Security, migration, claims, integrity
 
@@ -77,24 +77,22 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 
 ## Known limitations and remaining work
 
-**P1 — blocks the declared-support gate:**
+**P1 — the declared-support gate:**
 - GitLab.com live qualification (requires a real GitLab project publishing
   `ai-native-dev-stack` generic packages and an `ainative-release-v3.json`
-  manifest).
-- Scenario Q: mandatory secret patterns (`MANDATORY_SECRET_PATTERNS` ∪
-  operator extras) and the GitLab token-prefix qualification tuple.
+  manifest). Until then GitLab.com stays UNTESTED and is not declared
+  supported.
 - Full CI matrix (Linux/Windows/macOS, py3.11/3.13) — runs on the `dev`
-  proposal.
-- EN/FR documentation parity automation (plan §75).
-
-**P2 — known gaps, documented rather than hidden:**
-- Scenario J: no GitLab-specific object-storage 302 fixture (the shared
-  transport policy covers the behavior).
-- Scenario M: the "legacy GitLab remote" case projects correctly but no
-  warning line is rendered yet.
-- Scenario P: no single cross-command selector-conflict E2E test.
+  proposals; the first run of the complete implementation was green 52/52.
 - The V2 bridge release and the V3 release have not been published: the plan's
   release choreography (§92) starts after the branch is promoted to `dev`, and
   the first V3 publication stays gated by `V3_BRIDGE_RELEASE`.
+
+**Resolved since the first draft of this report:** scenario Q (mandatory
+secret patterns with operator extras), scenario J (GitLab object-storage
+blob), scenario M (legacy GitLab remote warning), scenario P (one
+cross-command selector-conflict E2E) and the EN/FR documentation parity
+automation (`tests/purity/test_docs_parity.py`: heading hierarchy, operational
+surface, critical security statements — no raw line-count equality).
 
 **P0:** none known.
