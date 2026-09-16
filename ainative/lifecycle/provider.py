@@ -23,11 +23,10 @@ import json
 import os
 import re
 import shutil
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from . import transport as transportlib
 from . import version as versionlib
 from .digest import digest_bytes
 from .errors import LifecycleError
@@ -77,7 +76,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 # Short on purpose: an update check runs in the background of a status command,
 # and a user must never wait on a slow endpoint to be told their profile.
-NETWORK_TIMEOUT_SECONDS = 5
+NETWORK_TIMEOUT_SECONDS = transportlib.NETWORK_TIMEOUT_SECONDS
 MAX_METADATA_BYTES = 1 << 20      # 1 MiB of release JSON is already absurd
 MAX_ARCHIVE_BYTES = 256 << 20     # 256 MiB
 
@@ -185,43 +184,62 @@ class ReleaseApiProvider(UpdateProvider):
 
     Everything read here is attacker-influenceable in the sense that matters:
     it arrives over the network. So the size is bounded before it is parsed, the
-    version must be SemVer, the archive URL must be HTTPS, and the bundle's
-    SHA-256 must be published by the source — `_select_asset` refuses anything
-    less, which is what makes `verify_archive` a comparison rather than a
-    computation.
+    version must be SemVer, the bundle's SHA-256 must be published by the source
+    — `_select_asset` refuses anything less, which is what makes
+    `verify_archive` a comparison rather than a computation — and every request
+    goes through `transport.get`, which sends a credential only to the origin
+    the endpoint config declares (PR-0A, #158).
+
+    The selector decides which of two endpoints this is:
+
+    * the built-in GitHub.com endpoint — credential origin `api.github.com`, so
+      metadata and the asset API are authenticated and a `302` to the CDN is
+      followed anonymously;
+    * the anonymous endpoint — any URL supplied as the constructor argument or
+      through `AINATIVE_UPDATE_URL`. It never receives a credential: its
+      metadata may name any artifact URL, and a custom source must not be able
+      to obtain the user's provider token by naming one.
     """
 
     name = "release-api"
 
-    def __init__(self, url: str | None = None) -> None:
-        self.url = url or os.environ.get(RELEASE_URL_ENV) or DEFAULT_RELEASE_URL
+    def __init__(self, url: str | None = None, *,
+                 endpoint: transportlib.ReleaseProviderEndpointConfig | None = None) -> None:
+        if endpoint is not None:
+            self.endpoint = endpoint
+            self.url = url or endpoint.api_base_url
+            return
+        override = (url if url is not None
+                    else os.environ.get(RELEASE_URL_ENV) or "").strip()
+        if override:
+            self.endpoint = transportlib.anonymous_endpoint(override)
+            self.url = override
+        else:
+            self.endpoint = transportlib.GITHUB_ENDPOINT
+            self.url = DEFAULT_RELEASE_URL
+
+    def _token(self) -> str:
+        """The credential this endpoint may use. Anonymous endpoints never do."""
+
+        if self.endpoint.auth_origin is None:
+            return ""
+        return _update_token()
 
     def _get(self, url: str, limit: int) -> bytes:
-        if not url.lower().startswith("https://"):
-            raise LifecycleError("UPDATE_CHECK_FAILED", f"refusing a non-HTTPS source: {url}")
-        headers = {"User-Agent": "ainative-lifecycle",
-                   "Accept": "application/vnd.github+json"}
-        token = _update_token()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        request = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
-                payload = response.read(limit + 1)
-        except urllib.error.HTTPError as error:
-            # The status is the diagnosis; the message never echoes headers.
-            detail = ("the release source rate-limited this check; set GITHUB_TOKEN "
-                      "or GH_TOKEN to raise the limit"
-                      if error.code in (403, 429)
-                      else f"the release source answered HTTP {error.code}")
-            raise LifecycleError("UPDATE_CHECK_FAILED", detail) from error
-        except (urllib.error.URLError, OSError, ValueError) as error:
-            raise LifecycleError("UPDATE_CHECK_FAILED",
-                                 f"cannot reach the release source: {error}") from error
-        if len(payload) > limit:
-            raise LifecycleError("UPDATE_INTEGRITY_FAILED",
-                                 f"response from {url} exceeds {limit} bytes")
-        return payload
+        """Fetch the release document; redirects may not leave its origin."""
+
+        return transportlib.get(url, limit=limit, endpoint=self.endpoint,
+                                kind=transportlib.METADATA,
+                                accept=transportlib.ACCEPT_GITHUB_JSON,
+                                token=self._token())
+
+    def _fetch_artifact(self, url: str, limit: int) -> bytes:
+        """Fetch release bytes; a cross-origin redirect is followed anonymously."""
+
+        return transportlib.get(url, limit=limit, endpoint=self.endpoint,
+                                kind=transportlib.ARTIFACT,
+                                accept=transportlib.ACCEPT_OCTET_STREAM,
+                                token=self._token())
 
     def latest(self, channel: str) -> Release:
         raw = self._get(self.url, MAX_METADATA_BYTES)
@@ -248,7 +266,25 @@ class ReleaseApiProvider(UpdateProvider):
     def fetch(self, release: Release) -> bytes:
         if not release.url:
             raise LifecycleError("UPDATE_UNAVAILABLE", "release declares no archive")
-        return self._get(release.url, MAX_ARCHIVE_BYTES)
+        return self._fetch_artifact(release.url, MAX_ARCHIVE_BYTES)
+
+
+def _asset_url(asset: dict) -> str | None:
+    """The URL this stack fetches an asset from, or None when it publishes none.
+
+    GitHub serves the asset API URL (`assets[].url`) and, for a private
+    repository, a `browser_download_url` that only anonymizes for public
+    assets. The API URL is also the only one the transport will authenticate,
+    because it lives on the configured API origin; the browser URL stays as the
+    fallback so a GitHub-API-compatible mirror that publishes only that field
+    keeps working.
+    """
+
+    for key in ("url", "browser_download_url"):
+        value = asset.get(key)
+        if isinstance(value, str) and value.lower().startswith("https://"):
+            return value
+    return None
 
 
 def _select_asset(document: dict, expected_version: str) -> tuple[str | None, str | None]:
@@ -272,10 +308,11 @@ def _select_asset(document: dict, expected_version: str) -> tuple[str | None, st
         if not isinstance(asset, dict):
             continue
         name = str(asset.get("name", ""))
-        url = asset.get("browser_download_url")
         if not (name.startswith(LIFECYCLE_BUNDLE_PREFIX)
-                and name.endswith(LIFECYCLE_BUNDLE_SUFFIX)
-                and isinstance(url, str)):
+                and name.endswith(LIFECYCLE_BUNDLE_SUFFIX)):
+            continue
+        url = _asset_url(asset)
+        if url is None:
             continue
         if name != expected:
             raise LifecycleError(
@@ -351,4 +388,5 @@ __all__ = [
     "PROVIDER_ENV", "LOCAL_SOURCE_ENV", "RELEASE_URL_ENV", "DEFAULT_RELEASE_URL",
     "LIFECYCLE_BUNDLE_PREFIX", "LIFECYCLE_BUNDLE_SUFFIX",
     "NETWORK_TIMEOUT_SECONDS", "MAX_ARCHIVE_BYTES", "MAX_METADATA_BYTES",
+    "ReleaseProviderEndpointConfig",
 ]

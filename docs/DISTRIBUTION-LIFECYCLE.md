@@ -371,6 +371,36 @@ anonymous rate limit); the token is never logged, never written to the cache,
 and never included in an error message. A 403/429 answer is reported as a
 rate-limit diagnosis with the same remedy.
 
+### Sources and credential confinement
+
+The source is selected by one environment variable, with no discovery:
+
+```text
+AINATIVE_UPDATE_PROVIDER=local  + AINATIVE_UPDATE_LOCAL_DIR   → local mirror
+AINATIVE_UPDATE_PROVIDER=github (default)                     → official releases
+AINATIVE_UPDATE_URL                                           → custom release document
+```
+
+`AINATIVE_UPDATE_URL` names a custom HTTPS source whose release document is
+GitHub-Release-API-compatible. It is **anonymous by construction**: it never
+receives `GITHUB_TOKEN`, `GH_TOKEN` or any other provider credential, because
+its metadata may name any artifact URL and that must not be enough to obtain a
+token. The credential is sent to exactly one origin — `api.github.com`, the
+built-in endpoint's declared `auth_origin` — and nowhere else, on any hop:
+
+- release metadata may only redirect within its own origin; a cross-origin
+  metadata redirect is refused;
+- a release artifact may redirect across origins (GitHub answers `302` to its
+  CDN): the redirect is followed anonymously, with every credential stripped;
+- private GitHub release assets are fetched through the release asset API with
+  `Accept: application/octet-stream`; the browser download URL is never
+  authenticated;
+- `https → http` downgrades, URLs carrying `user:password@`, and redirect
+  chains beyond the bound are refused before a socket is opened.
+
+There is no unverified fallback: a source that cannot publish the bundle's
+SHA-256 is refused rather than trusted.
+
 `ainative update check` exits 0 whatever the answer: `exit 0` means "the answer
 is what it is", never "the source was reachable". A CI gate that needs the
 second statement runs `ainative update check --strict`, which exits 1 on
