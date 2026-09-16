@@ -204,6 +204,9 @@ jobs:
       - name: Features, State V2 and the shared projection
         run: python -m unittest tests.test_lifecycle_features -v
 
+      - name: Work authority, claim grammar and the claim journal
+        run: python -m unittest tests.test_forge_claims -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 

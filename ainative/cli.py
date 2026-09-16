@@ -177,9 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     from ainative.knowledge.cli import add_context_parser, add_knowledge_parser
     from ainative.lifecycle.feature_cli import add_feature_parser
+    from ainative.claim_cli import add_claim_parser
     add_knowledge_parser(commands)
     add_context_parser(commands)
     add_feature_parser(commands)
+    add_claim_parser(commands)
 
     for name in VERIFIED_COMMANDS:
         commands.add_parser(name, add_help=False,
@@ -314,6 +316,13 @@ def _cmd_feature(args: argparse.Namespace) -> int:
     return run_feature_command(args, project=_project(args),
                                report=lambda record, text: _report(args, record, text),
                                plan_text=_plan_text)
+
+
+def _cmd_claim_attempt(args: argparse.Namespace) -> int:
+    from .claim_cli import run_claim_command
+
+    return run_claim_command(args, project=_project(args),
+                             report=lambda record, text: _report(args, record, text))
 
 
 def _confirm_purge(args: argparse.Namespace, project: Path) -> bool:
@@ -711,6 +720,7 @@ LIFECYCLE_COMMANDS = {
     "context": _cmd_context,
     "profile": _cmd_profile,
     "feature": _cmd_feature,
+    "claim-attempt": _cmd_claim_attempt,
     "status": _cmd_status,
     "doctor": _cmd_doctor,
     "repair": _cmd_repair,

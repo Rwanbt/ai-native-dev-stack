@@ -47,6 +47,16 @@ ERROR_EXIT_CODES = {
     # Enabling a feature that conflicts with an active one: the remedy is an
     # explicit switch, not an implicit disable.
     "FEATURE_CONFLICT": EXIT_INVALID_REQUEST,
+    # Work Authority resolution (ADR-0018). Ambiguity stops remote mutation.
+    "WORK_AUTHORITY_UNAVAILABLE": EXIT_INVALID_REQUEST,
+    "WORK_AUTHORITY_AMBIGUOUS": EXIT_INVALID_REQUEST,
+    "WORK_AUTHORITY_MISMATCH": EXIT_INVALID_REQUEST,
+    # Claims (ADR-0018). The journal is written before the remote POST, and
+    # an unknown outcome is never retried automatically.
+    "CLAIM_INVALID": EXIT_INVALID_REQUEST,
+    "CLAIM_CONFLICT": EXIT_FAILED,
+    "CLAIM_UNCERTAIN": EXIT_FAILED,
+    "CLAIM_JOURNAL_UNAVAILABLE": EXIT_FAILED,
     # Machine-wide integration (`ainative machine`, `ainative setup`).
     "MACHINE_MANIFEST_UNREADABLE": EXIT_INVALID_REQUEST,
     "MACHINE_VAULT_PAIR_REQUIRED": EXIT_INVALID_REQUEST,
