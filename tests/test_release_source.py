@@ -220,6 +220,25 @@ class Diagnostics(LifecycleTestCase):
         self.assertEqual(doctor["release_source"]["reason"],
                          report["release_source"]["reason"])
 
+    def test_a_selector_conflict_is_identical_across_commands(self):
+        """Scenario P: one resolver, one refusal, everywhere."""
+
+        self.install("standard")
+        environment = {"AINATIVE_UPDATE_LOCAL_DIR": str(self.root / "mirror")}
+        with mock.patch.dict(os.environ, environment):
+            check = self.cli("update", "check", "--strict", "--json")
+            self.assertEqual(check.returncode, 1)
+            checked = json.loads(check.stdout)
+            self.assertEqual(checked["status"], "CHECK_FAILED")
+            self.assertIn("never ordered", checked["detail"])
+            update = self.cli("update", "--json")
+            self.assertEqual(update.returncode, 2)
+            self.assertEqual(json.loads(update.stdout)["error"], "UPDATE_SOURCE_CONFLICT")
+            status = json.loads(self.cli("status", "--json").stdout)
+            self.assertEqual(status["release_source"]["state"], "UPDATE_SOURCE_CONFLICT")
+            doctor = json.loads(self.cli("doctor", "--json").stdout)
+            self.assertEqual(doctor["release_source"]["state"], "UPDATE_SOURCE_CONFLICT")
+
 
 if __name__ == "__main__":
     unittest.main()

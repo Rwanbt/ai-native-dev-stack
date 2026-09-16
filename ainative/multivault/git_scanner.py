@@ -20,7 +20,11 @@ from typing import Mapping
 from .schema import digest as canonical_digest
 
 
-DEFAULT_SECRET_PATTERNS: tuple[bytes, ...] = (
+# The mandatory floor (ADR-0019 section 12): provider token prefixes and
+# private-key markers every scanner in the stack keeps. Operators may ADD
+# patterns (`extra_secret_patterns`), never remove, replace, disable or shadow
+# these — which is why no constructor parameter accepts a replacement set.
+MANDATORY_SECRET_PATTERNS: tuple[bytes, ...] = (
     b"-----BEGIN RSA PRIVATE KEY",
     b"-----BEGIN OPENSSH PRIVATE KEY",
     b"-----BEGIN EC PRIVATE KEY",
@@ -29,6 +33,10 @@ DEFAULT_SECRET_PATTERNS: tuple[bytes, ...] = (
     b"github_pat_",
     b"ghp_",
     b"xoxb-",
+    b"glpat-",
+    b"gldt-",
+    b"glrt-",
+    b"glsoat-",
 )
 
 LARGE_BINARY_THRESHOLD_BYTES = 10 * 1024 * 1024
@@ -113,7 +121,7 @@ class CandidateObjectScanner:
         repository: Path,
         *,
         forbidden_paths: tuple[str, ...] = (),
-        secret_patterns: tuple[bytes, ...] = DEFAULT_SECRET_PATTERNS,
+        extra_secret_patterns: tuple[bytes, ...] = (),
         max_binary_bytes: int = LARGE_BINARY_THRESHOLD_BYTES,
         git_executable: str | None = None,
         environment: Mapping[str, str] | None = None,
@@ -127,7 +135,8 @@ class CandidateObjectScanner:
         self._git = executable
         self._repository = Path(repository)
         self._forbidden_paths = tuple(forbidden_paths)
-        self._secret_patterns = tuple(secret_patterns)
+        # Extra patterns extend the mandatory floor; nothing replaces it.
+        self._secret_patterns = MANDATORY_SECRET_PATTERNS + tuple(extra_secret_patterns)
         self._max_binary_bytes = max_binary_bytes
         if environment is not None:
             validate_git_environment(environment)
