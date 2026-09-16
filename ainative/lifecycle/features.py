@@ -123,4 +123,47 @@ def migrate_state(state: statelib.InstallState,
     return state
 
 
-__all__ = ["EffectiveState", "project_install_state", "legacy_default", "migrate_state"]
+def transition(distribution: manifestlib.Distribution, current: tuple[str, ...], *,
+               enable: str | None = None, disable: str | None = None,
+               switch_to: str | None = None) -> tuple[str, ...]:
+    """The feature set a requested transition produces, or a refusal.
+
+    Exactly one of `enable` / `disable` / `switch_to` is given. A transition is
+    idempotent: asking for the set the project already has returns it
+    unchanged. Enabling a feature that conflicts with an active one refuses
+    with the remedy stated — the conflict is never resolved by an implicit
+    disable. `switch_to="none"` is the Generic Git shape: it removes every
+    work forge and nothing else.
+    """
+
+    requested = [value for value in (enable, disable) if value is not None]
+    if len(requested) + (1 if switch_to is not None else 0) != 1:
+        raise ValueError(
+            "a feature transition takes exactly one of enable/disable/switch_to")
+
+    if enable is not None:
+        candidate = distribution.feature(enable)
+        for name in current:
+            if name in candidate.conflicts:
+                raise LifecycleError(
+                    "FEATURE_CONFLICT",
+                    f"feature {enable!r} conflicts with the active feature {name!r}; "
+                    f"use `ainative feature switch {enable}`",
+                    requested=enable, active=name)
+        return current if enable in current else current + (enable,)
+
+    if disable is not None:
+        distribution.feature(disable)
+        return tuple(name for name in current if name != disable)
+
+    if switch_to == "none":
+        return tuple(name for name in current if not distribution.feature(name).work_forge)
+
+    distribution.feature(switch_to)
+    conflicts = set(distribution.feature(switch_to).conflicts)
+    kept = tuple(name for name in current if name not in conflicts and name != switch_to)
+    return kept + (switch_to,)
+
+
+__all__ = ["EffectiveState", "project_install_state", "legacy_default",
+           "migrate_state", "transition"]

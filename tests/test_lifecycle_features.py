@@ -280,5 +280,149 @@ class StateMigration(LifecycleTestCase):
         self.assertEqual(before.active_profile, after.active_profile)
 
 
+class FeatureSwitching(LifecycleTestCase):
+    """One transaction per transition; ownership decides every file."""
+
+    TEMPLATES = {
+        "github": {"ISSUE_TEMPLATE/bug.md": "# bug\n",
+                   "ISSUE_TEMPLATE/feature.md": "# feature\n",
+                   "PULL_REQUEST_TEMPLATE.md": "# pr\n"},
+        "gitlab": {"issue_templates/bug.md": "# bug\n",
+                   "issue_templates/feature.md": "# feature\n",
+                   "merge_request_templates/default.md": "# mr\n"},
+    }
+
+    def setUp(self) -> None:
+        super().setUp()
+        for forge, files in self.TEMPLATES.items():
+            for relative, content in files.items():
+                write_text(self.distribution_root / "templates" / forge / relative, content)
+        self.install("standard")
+
+    def switch_features(self, **kwargs):
+        from ainative.lifecycle import installer
+
+        return installer.set_features(self.project, distribution=self.distribution,
+                                      source=self.source, **kwargs)
+
+    def features_now(self) -> list[str]:
+        return statelib.load(self.project).active_features
+
+    def state_digest(self) -> str:
+        from ainative.lifecycle.digest import digest_file
+
+        return digest_file(statelib.state_path(self.project))
+
+    def test_switch_replaces_the_work_forge_in_one_transaction(self):
+        result = self.switch_features(switch_to=GITLAB)
+        self.assertTrue(result.applied)
+        self.assertEqual(self.features_now(), [GITLAB])
+        self.assertFalse(self.exists(".github/PULL_REQUEST_TEMPLATE.md"),
+                         "the previous forge's template survived the switch")
+        self.assertTrue(self.exists(".gitlab/issue_templates/bug.md"))
+        self.assertEqual(self.read(".gitlab/issue_templates/bug.md"), "# bug\n")
+        state = statelib.load(self.project)
+        self.assertEqual([entry.path for entry
+                          in state.files_for_component("gitlab-templates")],
+                         [".gitlab/issue_templates/bug.md",
+                          ".gitlab/issue_templates/feature.md",
+                          ".gitlab/merge_request_templates/default.md"])
+
+    def test_switch_none_leaves_generic_git(self):
+        self.switch_features(switch_to="none")
+        self.assertEqual(self.features_now(), [])
+        self.assertFalse(self.exists(".github/PULL_REQUEST_TEMPLATE.md"))
+
+    def test_disable_preserves_a_modified_file(self):
+        self.write(".github/PULL_REQUEST_TEMPLATE.md", "# mine\n")
+        self.switch_features(disable=LEGACY)
+        self.assertEqual(self.features_now(), [])
+        self.assertEqual(self.read(".github/PULL_REQUEST_TEMPLATE.md"), "# mine\n")
+        self.assertFalse(self.exists(".github/ISSUE_TEMPLATE/bug.md"),
+                         "an unchanged template was not removed by disable")
+
+    def test_enable_seeds_the_absent_files(self):
+        self.switch_features(switch_to="none")
+        self.switch_features(enable=GITLAB)
+        self.assertTrue(self.exists(".gitlab/merge_request_templates/default.md"))
+
+    def test_enable_of_an_active_feature_is_a_no_op(self):
+        before = self.state_digest()
+        result = self.switch_features(enable=LEGACY)
+        self.assertFalse(result.applied)
+        self.assertTrue(result.plan.is_noop)
+        self.assertEqual(self.state_digest(), before)
+
+    def test_enable_of_a_conflicting_feature_names_the_remedy(self):
+        before = self.state_digest()
+        with self.assertRaises(LifecycleError) as raised:
+            self.switch_features(enable=GITLAB)
+        self.assertEqual(raised.exception.code, "FEATURE_CONFLICT")
+        self.assertIn(f"feature switch {GITLAB}", raised.exception.message)
+        self.assertEqual(self.features_now(), [LEGACY])
+        self.assertEqual(self.state_digest(), before)
+
+    def test_an_unknown_feature_is_refused(self):
+        with self.assertRaises(LifecycleError) as raised:
+            self.switch_features(enable="forge-sourceforge")
+        self.assertEqual(raised.exception.code, "FEATURE_UNKNOWN")
+
+    def test_a_feature_command_needs_an_installed_project(self):
+        empty = self.root / "empty"
+        empty.mkdir()
+        from ainative.lifecycle import installer
+
+        with self.assertRaises(LifecycleError) as raised:
+            installer.set_features(empty, disable=LEGACY, distribution=self.distribution,
+                                   source=self.source)
+        self.assertEqual(raised.exception.code, "NOT_INSTALLED")
+
+    def test_an_absent_feature_file_stays_absent_through_an_install(self):
+        self.switch_features(switch_to=GITLAB)
+        (self.project / ".gitlab" / "issue_templates" / "bug.md").unlink()
+        self.install("standard")
+        self.assertFalse(self.exists(".gitlab/issue_templates/bug.md"),
+                         "an install re-seeded a feature file the user removed")
+        self.switch_features(switch_to="none")
+        self.switch_features(enable=GITLAB)
+        self.assertTrue(self.exists(".gitlab/issue_templates/bug.md"),
+                        "an explicit enable did not seed the feature's files")
+
+    def test_the_migration_does_not_resurrect_an_absent_template(self):
+        """ADR-0017 section 5: the fixture pinned by PR-1B."""
+
+        path = statelib.state_path(self.project)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["schema_version"] = 1
+        record.pop("active_features", None)
+        statelib.write_atomic(path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+        (self.project / ".github" / "PULL_REQUEST_TEMPLATE.md").unlink()
+        self.install("standard")
+        self.assertFalse(self.exists(".github/PULL_REQUEST_TEMPLATE.md"),
+                         "the migration resurrected an absent managed file")
+        state = statelib.load(self.project)
+        self.assertEqual(state.schema_version, statelib.SCHEMA_VERSION)
+        self.assertEqual(state.active_features, [LEGACY])
+
+    def test_a_round_trip_loses_no_user_data(self):
+        self.write(".github/ISSUE_TEMPLATE/bug.md", "# mine\n")
+        self.switch_features(switch_to=GITLAB)
+        self.switch_features(switch_to="none")
+        self.switch_features(enable=LEGACY)
+        self.assertEqual(self.read(".github/ISSUE_TEMPLATE/bug.md"), "# mine\n")
+        self.assertEqual(self.features_now(), [LEGACY])
+        self.assertTrue(self.exists(".github/PULL_REQUEST_TEMPLATE.md"),
+                        "the unmodified templates were not restored by the enable")
+
+    def test_the_cli_switches_and_reports(self):
+        status = json.loads(self.cli("feature", "status", "--json").stdout)
+        self.assertEqual(status["active_features"], [LEGACY])
+        self.assertTrue(status["installed"])
+        switched = json.loads(self.cli("feature", "switch", GITLAB, "--json").stdout)
+        self.assertTrue(switched["applied"])
+        self.assertEqual(switched["active_features"], [GITLAB])
+        self.assertEqual(self.features_now(), [GITLAB])
+
+
 if __name__ == "__main__":
     unittest.main()

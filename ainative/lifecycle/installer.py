@@ -65,6 +65,7 @@ class OperationResult:
             "transaction": self.transaction,
             "notices": list(self.notices),
             "active_profile": self.state.active_profile if self.state else None,
+            "active_features": sorted(self.state.active_features) if self.state else None,
         }
         if self.legacy is not None and self.legacy.detected:
             record["legacy_adoption"] = self.legacy.to_record()
@@ -109,14 +110,17 @@ def _fresh_state(source: DistributionSource, profile: str,
                         active_features=[featureslib.legacy_default(distribution)])
 
 
-def _commit_state(project: Path, state: InstallState, plan: Plan,
-                  distribution: Distribution, source: DistributionSource,
-                  journal_id: str) -> None:
-    """Fold a successfully applied plan into the install state."""
+def _fold_plan(state: InstallState, plan: Plan, distribution: Distribution,
+               target_features: tuple[str, ...] | None) -> None:
+    """Record a plan's outcome in the install state (no write, no metadata)."""
 
     for identifier in plan.components_removed:
         state.drop_component(identifier)
-    for identifier in distribution.effective_component_ids(plan.to_profile or state.active_profile):
+    if target_features is not None:
+        state.active_features = sorted(target_features)
+    features = tuple(state.active_features)
+    for identifier in plannerlib.wanted_component_ids(
+            distribution, plan.to_profile or state.active_profile, features):
         component = distribution.component(identifier)
         entries = plannerlib.managed_entries(component, plan.changes)
         # A CONFLICT leaves the file alone; keep whatever we already knew about
@@ -133,6 +137,22 @@ def _commit_state(project: Path, state: InstallState, plan: Plan,
         state.replace_component_files(identifier, merged.values())
         if identifier not in state.installed_components:
             state.installed_components.append(identifier)
+
+
+def _commit_state(project: Path, state: InstallState, plan: Plan,
+                  distribution: Distribution, source: DistributionSource,
+                  journal_id: str, *,
+                  target_features: tuple[str, ...] | None = None) -> None:
+    """Fold a successfully applied plan into the install state."""
+
+    _fold_plan(state, plan, distribution, target_features)
+    if plan.to_profile and plan.to_profile != state.active_profile:
+        state.previous_profile = state.active_profile
+        state.active_profile = plan.to_profile
+    state.stack_version = source.version
+    state.source_version = source.version
+    state.last_transaction = journal_id
+    statelib.save(project, state)
 
     if plan.to_profile and plan.to_profile != state.active_profile:
         state.previous_profile = state.active_profile
@@ -151,7 +171,8 @@ def plan_profile(project: Path, distribution: Distribution, source: Distribution
     distribution.profile(target_profile)  # refuse an unknown profile up front
     current = state if state is not None else statelib.load(project)
     adoption = legacylib.Adoption(False, (), (), (), ())
-    if current is None:
+    fresh = current is None
+    if fresh:
         current = _fresh_state(source, target_profile, distribution)
         adoption = legacylib.adopt(project, distribution, source, target_profile)
         current = legacylib.apply_to_state(current, adoption, stack_version=source.version)
@@ -161,7 +182,8 @@ def plan_profile(project: Path, distribution: Distribution, source: Distribution
         # that is already absent stays absent.
         current = featureslib.migrate_state(current, distribution)
     plan = plannerlib.build_install_plan(project, distribution, source, current,
-                                         target_profile, operation=operation)
+                                         target_profile, operation=operation,
+                                         seed_feature_files=fresh)
     return plan, current, adoption
 
 
@@ -266,5 +288,70 @@ def switch(project: Path, target_profile: str, **kwargs) -> OperationResult:
     return install(project, target_profile, operation="profile-switch", **kwargs)
 
 
-__all__ = ["OperationResult", "install", "switch", "plan_profile", "require_project",
-           "trust_anchor_present", "TRUST_ANCHOR_RELATIVE", "VERIFIED_BOOTSTRAP_NOTICE"]
+def set_features(project: Path, *, enable: str | None = None, disable: str | None = None,
+                 switch_to: str | None = None, dry_run: bool = False,
+                 distribution: Distribution | None = None,
+                 source: DistributionSource | None = None,
+                 force_unlock: bool = False) -> OperationResult:
+    """Enable, disable or switch features in one lifecycle transaction.
+
+    The sequence is the profile path's, unchanged (ADR-0017 section 6): take
+    the project lifecycle lock, reload the state, project the effective V2 set,
+    plan, apply, verify, write the state last, commit. A V1 state migrates
+    inside the same transaction and the migration plans no file change of its
+    own, so a managed file that is already absent stays absent.
+    """
+
+    from . import features as featureslib
+    from . import lock as locklib
+
+    project = require_project(project)
+    distribution = distribution or manifestlib.load()
+    source = source or sourcelib.resolve()
+    _blocking_transaction(project)
+
+    with locklib.acquire(project, "feature", force=force_unlock):
+        _blocking_transaction(project)
+        state = statelib.load(project)
+        if state is None:
+            raise LifecycleError("NOT_INSTALLED",
+                                 f"no AI Native installation recorded in {project}")
+        was_legacy = state.schema_version < statelib.SCHEMA_VERSION
+        state = featureslib.migrate_state(state, distribution)
+        effective = featureslib.project_install_state(state, distribution)
+        current = effective.active_features
+        target = featureslib.transition(distribution, current, enable=enable,
+                                        disable=disable, switch_to=switch_to)
+        enabling = [name for name in target if name not in current]
+        notices = [f"feature {name!r} enabled" for name in enabling]
+        notices += [f"feature {name!r} disabled" for name in current
+                    if name not in target]
+        plan = plannerlib.build_install_plan(project, distribution, source, state,
+                                             state.active_profile, operation="feature",
+                                             target_features=target,
+                                             seed_feature_files=bool(enabling))
+        if plan.is_noop or dry_run:
+            if not dry_run:
+                # A no-op transition changes nothing — including the state
+                # bytes — unless it still has something to record: the schema
+                # migration, a feature set that moved, or component records the
+                # plan proved are gone (a disable whose files were all
+                # preserved must still drop its records).
+                needs_recording = (was_legacy or tuple(state.active_features) != target
+                                   or bool(plan.components_removed))
+                if needs_recording:
+                    _fold_plan(state, plan, distribution, target)
+                    statelib.save(project, state)
+            return OperationResult("feature", plan, applied=False, dry_run=dry_run,
+                                   state=state, notices=notices)
+        applier = txnlib.Applier(project, distribution, source, plan)
+        journal = applier.run(lambda: _commit_state(project, state, plan, distribution,
+                                                    source, applier.journal.identifier,
+                                                    target_features=target))
+    return OperationResult("feature", plan, applied=True, dry_run=False, state=state,
+                           transaction=journal.identifier, notices=notices)
+
+
+__all__ = ["OperationResult", "install", "switch", "set_features", "plan_profile",
+           "require_project", "trust_anchor_present", "TRUST_ANCHOR_RELATIVE",
+           "VERIFIED_BOOTSTRAP_NOTICE"]

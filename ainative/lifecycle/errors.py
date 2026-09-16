@@ -44,6 +44,9 @@ ERROR_EXIT_CODES = {
     # refusal, never a silent pick.
     "STATE_CONFLICTING_WORK_FORGE_FEATURES": EXIT_FAILED,
     "FEATURE_UNKNOWN": EXIT_INVALID_REQUEST,
+    # Enabling a feature that conflicts with an active one: the remedy is an
+    # explicit switch, not an implicit disable.
+    "FEATURE_CONFLICT": EXIT_INVALID_REQUEST,
     # Machine-wide integration (`ainative machine`, `ainative setup`).
     "MACHINE_MANIFEST_UNREADABLE": EXIT_INVALID_REQUEST,
     "MACHINE_VAULT_PAIR_REQUIRED": EXIT_INVALID_REQUEST,

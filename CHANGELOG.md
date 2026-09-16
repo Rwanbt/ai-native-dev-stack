@@ -19,6 +19,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   workflow verifies a declared `V3_BRIDGE_RELEASE` through the V2 selection
   rules before publishing a V3 release; a missing, unpublished or bundle-less
   bridge blocks the release.
+- **Features: profiles and capabilities are independent** (#162, ADR-0017):
+  `ainative feature enable | disable | switch | status` manages optional
+  project-scope capabilities in one lifecycle transaction. `forge-github` is
+  the default; it conflicts with `forge-gitlab`; a project has at most one
+  work forge, and `feature switch none` is the Generic Git shape. State schema
+  V2 records `active_features`; a V1 state projects to the compatibility
+  default and migrates inside the next mutation without resurrecting an
+  absent managed file.
 
 ### Security
 
