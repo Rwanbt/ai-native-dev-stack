@@ -6,6 +6,41 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **V2 forward bridge: a future lifecycle protocol now says so** (#157): a
+  release that publishes a newer lifecycle protocol (`ainative-release-v3.json`
+  manifest or `ainative-lifecycle-v3-*` bundle) is reported as available with a
+  CLI upgrade required, and `ainative update` refuses it with
+  `CLI_UPDATE_REQUIRED` before any download or write. A release that publishes
+  no lifecycle bundle at all keeps `UPDATE_INTEGRITY_METADATA_MISSING`, so a
+  broken publication is still not mistaken for future protocol.
+- **Bridge publication gate** (`scripts/check_bridge_release.py`): the release
+  workflow verifies a declared `V3_BRIDGE_RELEASE` through the V2 selection
+  rules before publishing a V3 release; a missing, unpublished or bundle-less
+  bridge blocks the release.
+
+### Security
+
+- **Release transport confines provider credentials to their origin** (#158):
+  the update check attached `GITHUB_TOKEN`/`GH_TOKEN` to every request it made —
+  including an artifact URL named by the metadata of a custom
+  `AINATIVE_UPDATE_URL` — and urllib's redirect handling copied the header to
+  any redirect target. A private opener now follows redirects one
+  policy-checked hop at a time: release metadata must stay on its own origin,
+  an artifact redirect is followed anonymously, `https → http` downgrades and
+  URLs carrying userinfo are refused, and redirect chains are bounded. Private
+  GitHub release assets are fetched through the release asset API
+  (`Accept: application/octet-stream`); the `302` to the CDN is followed with
+  every credential stripped.
+
+### Breaking behavior
+
+- **`AINATIVE_UPDATE_URL` is anonymous only** (#158): a custom release source no
+  longer inherits `GITHUB_TOKEN`/`GH_TOKEN`. The environment token is sent only
+  to `api.github.com`; a custom source must serve its metadata anonymously.
+  Conflicting or unusable update sources are refused rather than falling back.
+
 ## [2.4.3] - 2026-09-14
 
 Patch release: the OpenCode plugin is runtime-compatible and ships in the
