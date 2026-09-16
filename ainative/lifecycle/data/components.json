@@ -43,12 +43,12 @@
     "engineering-method": {
       "version": 1,
       "kind": "file",
-      "source": "AGENTS.md",
+      "source": "templates/AGENTS.md",
       "destination": "AGENTS.md",
       "ownership": "MANAGED_MUTABLE",
       "required": true,
       "title": "Engineering method",
-      "description": "The shared cross-tool engineering rules every agent reads."
+      "description": "The shared cross-tool engineering rules every agent reads. The distributed copy (templates/AGENTS.md) speaks provider-neutral Work Authority; this repository's own AGENTS.md stays GitHub-specific (ADR-0018)."
     },
     "conventions": {
       "version": 1,

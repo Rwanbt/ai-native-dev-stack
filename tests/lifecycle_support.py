@@ -72,6 +72,9 @@ def build_distribution_tree(root: Path, version: str = "1.0.0", *,
     templates = root / "templates"
     templates.mkdir(parents=True, exist_ok=True)
     write_text(templates / "AI_CONTEXT_template.md", f"# context {version}\n")
+    # The engineering-method component installs from the distributed template,
+    # not from the repository's own AGENTS.md (ADR-0018).
+    write_text(templates / "AGENTS.md", f"# Engineering method {version}\n")
 
     skills = root / "skills"
     for name in ["demo-skill"] + ([extra_skill] if extra_skill else []):
