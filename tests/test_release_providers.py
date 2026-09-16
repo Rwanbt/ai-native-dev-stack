@@ -472,6 +472,26 @@ class GitLabProvider(unittest.TestCase):
         self.assertEqual(candidate.version, "2.5.0")
         self.assertEqual(payload, b"bundle-bytes")
 
+    def test_an_object_storage_redirect_strips_the_gitlab_token(self):
+        """Scenario J: the blob hop is anonymous, the API hop is not."""
+
+        manifest = anchored_manifest()
+        object_url = "https://objectstore.example/packages/77/blob"
+        server = self.server(manifest=manifest)
+        server.hops[MANIFEST_DOWNLOAD] = ("redirect", object_url)
+        server.hops[object_url] = manifest
+        provider = self.provider(server)
+        with mock.patch.object(transportlib, "_send", server.send), \
+                mock.patch.dict("os.environ", {"GITLAB_TOKEN": "glpat-" + "x" * 20}):
+            candidate = provider.enumerate(
+                release_v3lib.ReleaseQuery("stable")).candidates[0]
+            payload = provider.fetch_manifest(candidate)
+        self.assertEqual(payload, manifest)
+        hops = {url: token for url, token, _accept in server.observed}
+        self.assertEqual(hops[MANIFEST_DOWNLOAD], "glpat-" + "x" * 20)
+        self.assertIsNone(hops[object_url],
+                          "the object store received the GitLab token")
+
     def test_fetching_before_enumerating_is_a_programming_refusal(self):
         provider = providerslib.GitLabReleaseProvider(GITLAB_ENDPOINT, "group/project")
         with self.assertRaises(LifecycleError) as raised:

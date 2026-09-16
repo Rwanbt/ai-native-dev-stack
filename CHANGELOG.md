@@ -49,6 +49,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   canonical claim grammar and the durable
   `ainative claim-attempt list | inspect | abandon` journal — written before
   the remote signal, never retried blindly.
+- **Mandatory secret patterns can only be extended** (#166, ADR-0019 §12):
+  the candidate scanner takes `extra_secret_patterns` (a union with
+  `MANDATORY_SECRET_PATTERNS`) and no longer offers any replacement
+  parameter; the mandatory floor now includes the documented GitLab token
+  prefixes (`glpat-`, `gldt-`, `glrt-`, `glsoat-`) in the scanner, the
+  anti-debt owner and the vault-sync fallback. EN/FR documentation parity is
+  enforced structurally (heading hierarchy, operational surface, security
+  statements).
 
 ### Security
 
