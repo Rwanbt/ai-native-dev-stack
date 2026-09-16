@@ -577,6 +577,28 @@ ainative doctor                     # inclut la section Knowledge
 - Guides : docs/knowledge/KNOWLEDGE-CONVERGENCE-MATRIX.md et
   docs/knowledge/K1-K4-MEASUREMENT-GATE.md
 
+## Multi-Forge
+
+Generic Git est le produit de base ; GitHub et GitLab sont des capacités
+optionnelles, et le profil de gouvernance est indépendant d'elles
+(ADR-0017/0018/0019).
+
+```bash
+ainative feature status                 # l'ensemble effectif de features
+ainative feature switch forge-gitlab    # une transaction : GitHub -> GitLab
+ainative feature switch none            # Generic Git : aucune forge de travail
+ainative forge status                   # remotes observés + résolution Work Authority
+ainative claim-attempt list             # tentatives de claim journalisées (recovery)
+```
+
+Les sources de release sont résolues par une seule fonction aux sélecteurs
+fail-closed (GitHub.com par défaut ; un miroir local ; une
+`AINATIVE_UPDATE_URL` anonyme ; GitLab.com via un `release-providers.json` de
+portée machine). La gestion du travail est provider-neutre
+(`docs/FORGE-WORKFLOW.md`, avec les mappings GitHub et GitLab) ; la chaîne V3
+vérifie un manifeste ancré de l'extérieur avant tout parsing, et la matrice de
+support est dans `SUPPORT.md`.
+
 ## Démarrage rapide
 
 ### Installer sur un projet existant

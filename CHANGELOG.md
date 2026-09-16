@@ -27,6 +27,28 @@ project adheres to [Semantic Versioning](https://semver.org/).
   V2 records `active_features`; a V1 state projects to the compatibility
   default and migrates inside the next mutation without resurrecting an
   absent managed file.
+- **Multi-Forge release sources and Release V3** (#165, ADR-0019): one
+  `resolve_release_source()` with fail-closed selector conflicts and a
+  machine-scope `~/.ai-native/release-providers.json`; a V3 release manifest
+  whose SHA-256 and size are verified (from provider metadata) *before* the
+  document is parsed; an exact version chain across candidate, manifest,
+  runtime, artifact, filename and the lifecycle protocol document; bounded
+  enumeration; SemVer without build metadata; duplicates refused. GitHub.com,
+  anonymous and local providers are wired into `update`/`update check`
+  (V2-era sources keep working), and `status`/`doctor` show the effective
+  source, its reason and whether it is authenticated.
+- **GitLab provider (Release V3)** (#166): Releases for discovery, the
+  Generic Package Registry as the canonical integrity surface (`file_sha256`
+  + `size`), exact package lookup, bounded pagination, and `PRIVATE-TOKEN`
+  confined to the configured origin. GitLab.com live qualification is
+  UNTESTED and therefore not declared supported —
+  `docs/MULTIFORGE-QUALIFICATION.md` states exactly what was verified.
+- **Work Authority observation and claims** (#163/#164, ADR-0018):
+  `ainative forge detect | status` (zero network, credentials, writes or
+  persistent trust), the doctor extension, the pure local resolver, the
+  canonical claim grammar and the durable
+  `ainative claim-attempt list | inspect | abandon` journal — written before
+  the remote signal, never retried blindly.
 
 ### Security
 
