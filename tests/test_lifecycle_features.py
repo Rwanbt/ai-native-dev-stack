@@ -414,6 +414,19 @@ class FeatureSwitching(LifecycleTestCase):
         self.assertTrue(self.exists(".github/PULL_REQUEST_TEMPLATE.md"),
                         "the unmodified templates were not restored by the enable")
 
+    def test_a_user_file_where_a_feature_file_belongs_is_never_adopted(self):
+        self.write(".gitlab/issue_templates/bug.md", "# mine\n")
+        result = self.switch_features(switch_to=GITLAB)
+        self.assertEqual(self.read(".gitlab/issue_templates/bug.md"), "# mine\n")
+        conflicts = [change.path for change in result.plan.changes
+                     if change.action == "CONFLICT"]
+        self.assertEqual(conflicts, [".gitlab/issue_templates/bug.md"])
+        self.assertTrue(self.exists(".gitlab/issue_templates/feature.md"),
+                        "the other files of the enabled feature were not seeded")
+        state = statelib.load(self.project)
+        self.assertIsNone(state.file_for(".gitlab/issue_templates/bug.md"),
+                          "the user's file was adopted into the state")
+
     def test_the_cli_switches_and_reports(self):
         status = json.loads(self.cli("feature", "status", "--json").stdout)
         self.assertEqual(status["active_features"], [LEGACY])
