@@ -201,6 +201,21 @@ class GitHubFetching(unittest.TestCase):
                 version="2.5.0", identity="v2.5.0"))
         self.assertEqual(raised.exception.code, "UPDATE_CHECK_FAILED")
 
+    def test_github_requests_carry_the_api_version_header(self):
+        server = ScriptedServer({LIST_URL: json.dumps([release_document()]).encode("utf-8")})
+        captured = []
+
+        def spy(request):
+            captured.append({key.lower(): value for key, value in request.headers.items()})
+            return server.send(request)
+
+        provider = providerslib.GitHubReleaseProvider(transportlib.GITHUB_ENDPOINT,
+                                                      repository="o/r")
+        with mock.patch.object(transportlib, "_send", spy):
+            provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        self.assertEqual(captured[0]["x-github-api-version"], "2022-11-28")
+        self.assertEqual(captured[0]["accept"], "application/vnd.github+json")
+
     def test_resolve_manifest_runs_the_whole_chain(self):
         manifest = anchored_manifest()
         server = ScriptedServer({
@@ -471,6 +486,21 @@ class GitLabProvider(unittest.TestCase):
             payload = provider.fetch_artifact(candidate, parsed.lifecycle_artifact())
         self.assertEqual(candidate.version, "2.5.0")
         self.assertEqual(payload, b"bundle-bytes")
+
+    def test_gitlab_requests_carry_no_github_header(self):
+        server = self.server()
+        provider = self.provider(server)
+        captured = []
+
+        def spy(request):
+            captured.append({key.lower(): value for key, value in request.headers.items()})
+            return server.send(request)
+
+        with mock.patch.object(transportlib, "_send", spy):
+            provider.enumerate(release_v3lib.ReleaseQuery("stable"))
+        first = captured[0]
+        self.assertEqual(first["accept"], "application/json")
+        self.assertNotIn("x-github-api-version", first)
 
     def test_an_object_storage_redirect_strips_the_gitlab_token(self):
         """Scenario J: the blob hop is anonymous, the API hop is not."""

@@ -360,7 +360,7 @@ class GitLabReleaseProvider(release_v3lib.ReleaseProvider):
     def _get_json(self, url: str) -> object:
         payload = transportlib.get(url, limit=MAX_MANIFEST_BYTES, endpoint=self.endpoint,
                                    kind=transportlib.METADATA,
-                                   accept=transportlib.ACCEPT_GITHUB_JSON,
+                                   accept=transportlib.ACCEPT_JSON,
                                    token=self._token())
         try:
             return json.loads(payload.decode("utf-8"))

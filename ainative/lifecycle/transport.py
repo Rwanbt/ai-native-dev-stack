@@ -42,6 +42,7 @@ MAX_REDIRECTS = 5
 
 USER_AGENT = "ainative-lifecycle"
 ACCEPT_GITHUB_JSON = "application/vnd.github+json"
+ACCEPT_JSON = "application/json"
 ACCEPT_OCTET_STREAM = "application/octet-stream"
 
 GITHUB_PROVIDER = "github"
@@ -70,6 +71,9 @@ class ReleaseProviderEndpointConfig:
     `auth_header` and `auth_prefix` exist because providers disagree on the
     shape of authentication: GitHub wants `Authorization: Bearer <token>`,
     GitLab wants `PRIVATE-TOKEN: <token>`. The default is GitHub's.
+    `api_version_header` is the header name that carries `api_version` — a
+    GitHub-only header (`X-GitHub-Api-Version`); a provider that has no such
+    header leaves it empty, so the transport never invents one.
     """
 
     provider: str
@@ -79,6 +83,7 @@ class ReleaseProviderEndpointConfig:
     credential_source: str = ""
     auth_header: str = "Authorization"
     auth_prefix: str = "Bearer"
+    api_version_header: str = ""
 
 
 GITHUB_ENDPOINT = ReleaseProviderEndpointConfig(
@@ -86,7 +91,8 @@ GITHUB_ENDPOINT = ReleaseProviderEndpointConfig(
     api_base_url=GITHUB_API_BASE_URL,
     auth_origin=GITHUB_API_BASE_URL,
     api_version=GITHUB_API_VERSION,
-    credential_source=ENVIRONMENT_CREDENTIAL_SOURCE,
+    credential_source="environment:GITHUB_TOKEN,GH_TOKEN",
+    api_version_header="X-GitHub-Api-Version",
 )
 
 
@@ -139,8 +145,8 @@ def _may_receive(endpoint: ReleaseProviderEndpointConfig, origin: str) -> bool:
 def _request_headers(endpoint: ReleaseProviderEndpointConfig, origin: str, *,
                      accept: str, token: str) -> dict:
     headers = {"User-Agent": USER_AGENT, "Accept": accept}
-    if endpoint.api_version:
-        headers["X-GitHub-Api-Version"] = endpoint.api_version
+    if endpoint.api_version_header and endpoint.api_version:
+        headers[endpoint.api_version_header] = endpoint.api_version
     if token and _may_receive(endpoint, origin):
         value = f"{endpoint.auth_prefix} {token}".strip() if endpoint.auth_prefix else token
         headers[endpoint.auth_header] = value
@@ -173,12 +179,33 @@ def _redirect_target(current: str, error: urllib.error.HTTPError) -> str:
     return target
 
 
-def _http_refusal(error: urllib.error.HTTPError) -> LifecycleError:
-    # The status is the diagnosis; the message never echoes headers.
-    detail = ("the release source rate-limited this check; set GITHUB_TOKEN "
-              "or GH_TOKEN to raise the limit"
-              if error.code in (403, 429)
-              else f"the release source answered HTTP {error.code}")
+def _rate_limit_hint(endpoint: ReleaseProviderEndpointConfig) -> str:
+    """The honest remedy for a rate limit, from the endpoint's own config.
+
+    An environment credential source names the variables to set; an anonymous
+    endpoint gets no advice it cannot act on. Never a secret value.
+    """
+
+    source = endpoint.credential_source or ""
+    if not source.startswith("environment:"):
+        return ""
+    names = [part.strip() for part in source.split(":", 1)[1].split(",") if part.strip()]
+    if not names:
+        return ""
+    return "set " + " or ".join(names) + " to raise the limit"
+
+
+def _http_refusal(error: urllib.error.HTTPError,
+                  endpoint: ReleaseProviderEndpointConfig) -> LifecycleError:
+    # The status is the diagnosis; the message never echoes headers or itself
+    # suggests a credential the endpoint cannot use.
+    if error.code in (403, 429):
+        hint = _rate_limit_hint(endpoint)
+        detail = "the release source rate-limited this check"
+        if hint:
+            detail = f"{detail}; {hint}"
+    else:
+        detail = f"the release source answered HTTP {error.code}"
     return LifecycleError("UPDATE_CHECK_FAILED", detail)
 
 
@@ -205,7 +232,7 @@ def get(url: str, *, limit: int, endpoint: ReleaseProviderEndpointConfig,
                 payload = response.read(limit + 1)
         except urllib.error.HTTPError as error:
             if error.code not in _REDIRECT_CODES:
-                raise _http_refusal(error) from error
+                raise _http_refusal(error, endpoint) from error
             target = _redirect_target(current, error)
             if kind == METADATA and _origin_of(target) != metadata_origin:
                 raise LifecycleError(
@@ -232,7 +259,7 @@ def get(url: str, *, limit: int, endpoint: ReleaseProviderEndpointConfig,
 __all__ = [
     "ReleaseProviderEndpointConfig", "GITHUB_ENDPOINT", "anonymous_endpoint",
     "get", "METADATA", "ARTIFACT", "MAX_REDIRECTS", "NETWORK_TIMEOUT_SECONDS",
-    "USER_AGENT", "ACCEPT_GITHUB_JSON", "ACCEPT_OCTET_STREAM",
+    "USER_AGENT", "ACCEPT_GITHUB_JSON", "ACCEPT_JSON", "ACCEPT_OCTET_STREAM",
     "GITHUB_PROVIDER", "GITHUB_API_BASE_URL", "GITHUB_API_VERSION",
     "ANONYMOUS_PROVIDER", "ENVIRONMENT_CREDENTIAL_SOURCE",
 ]
