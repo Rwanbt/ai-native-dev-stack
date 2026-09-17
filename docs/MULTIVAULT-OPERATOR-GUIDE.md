@@ -59,7 +59,7 @@ history only. ENFORCED-DIAGNOSTIC and ENFORCED-AUTHENTICATED are not available.
 1. Install and initialize the stack (pinned release; see README for the current version):
 
    ```powershell
-   pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"
+   pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.5.0"
    ainative machine init      # installs the method and assets for every harness
    ainative machine doctor    # healthy, or exit 1 naming the failing asset
    ```

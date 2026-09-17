@@ -49,7 +49,7 @@ update each project. `ainative update` refuses the other order with
 
 ```bash
 # 1. the CLI / runtime
-pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"
+pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.5.0"
 
 # 2. each project
 ainative update check      # is there anything newer? (works with any runtime)

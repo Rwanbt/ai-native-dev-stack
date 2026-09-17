@@ -614,11 +614,11 @@ OpenCode et Cursor), pose `AGENTS.md` et `conventions.json`.
 #    Relancez la ligne d'installation quand une release change le runtime du
 #    lifecycle ; `ainative update` vous le dira (CLI_UPDATE_REQUIRED).
 #
-#    PyPI (ainative-dev-stack==2.4.4) est cable mais pas encore publie : il
+#    PyPI (ainative-dev-stack==2.5.0) est cable mais pas encore publie : il
 #    manque une configuration Trusted Publisher unique sur le compte PyPI
 #    (docs/RELEASING.md). D'ici la, la release GitHub epinglee ci-dessous est
 #    l'installation supportee.
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"   # release epinglee (reproductible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.5.0"   # release epinglee (reproductible)
 cd /chemin/vers/votre-projet
 
 ainative setup                         # guide : profil, integration machine, doctor

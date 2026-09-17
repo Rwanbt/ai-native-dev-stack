@@ -146,8 +146,11 @@ def build_wheel(tree: Path, output: Path) -> Path:
 
 
 def build_bundle(tree: Path, output: Path) -> Path:
+    # This probe exercises the V2 transport and transaction path on purpose:
+    # the builder defaults to protocol 3 since the Release V3 conversion, so
+    # the probe asks for the historical shape explicitly.
     run([sys.executable, str(tree / "scripts" / "build_lifecycle_bundle.py"),
-         "--outdir", output])
+         "--outdir", output, "--protocol", "2"])
     bundles = sorted(output.glob("ainative-lifecycle-v2-*.zip"))
     if len(bundles) != 1:
         raise Failure(f"expected one bundle from {tree}, found {bundles}")

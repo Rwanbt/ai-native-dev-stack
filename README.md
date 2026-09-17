@@ -607,11 +607,11 @@ manifest before parsing anything, and the support matrix is in `SUPPORT.md`.
 #    Re-run the install line when a release changes the lifecycle runtime;
 #    `ainative update` tells you when (CLI_UPDATE_REQUIRED).
 #
-#    PyPI (ainative-dev-stack==2.4.4) is wired but not yet published: it needs
+#    PyPI (ainative-dev-stack==2.5.0) is wired but not yet published: it needs
 #    a one-time Trusted Publisher setup on the PyPI account (docs/RELEASING.md,
 #    "PyPI"), so until then the pinned GitHub release below is the supported
 #    install.
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"   # pinned release (reproducible)
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.5.0"   # pinned release (reproducible)
 cd your-project
 
 ainative setup                         # guided: profile, machine integration, doctor
@@ -664,7 +664,7 @@ cp tools/ai_docs/config.sh.example tools/ai_docs/config.sh
 # Fill in Obsidian vault path, Python path, graphify binary
 
 # 4. Install the CLI; it configures the hook — no hand-edited JSON:
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.5.0"
 ainative init --profile standard   # merges ONE owned PostToolUse entry into .claude/settings.json
 #    (hand-registered before the lifecycle existed? init adopts it idempotently.)
 

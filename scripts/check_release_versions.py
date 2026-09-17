@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -42,6 +43,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from _payload_staging import assert_version_consistency  # noqa: E402
+from ainative.lifecycle import release_v3 as release_v3lib  # noqa: E402
+from ainative.lifecycle.errors import LifecycleError  # noqa: E402
 from ainative.lifecycle.provider import (PROTOCOL_MANIFEST,  # noqa: E402
                                          UPDATE_PROTOCOL_VERSION,
                                          lifecycle_bundle_name)
@@ -125,6 +128,86 @@ def _check_bundle(version: str, dist: Path, checked: set[str]) -> None:
     checked.add(bundle_name)
 
 
+def detect_protocol(dist: Path) -> int | None:
+    """The lifecycle protocol this dist carries, from the artifacts themselves."""
+
+    names = {item.name for item in dist.iterdir() if item.is_file()}
+    has_v3 = release_v3lib.MANIFEST_ASSET_NAME in names or any(
+        name.startswith("ainative-lifecycle-v3-") and name.endswith(".zip")
+        for name in names)
+    has_v2 = any(name.startswith("ainative-lifecycle-v2-") and name.endswith(".zip")
+                 for name in names)
+    if has_v3 and has_v2:
+        raise ReleaseVersionMismatch(
+            "the dist mixes a V2 lifecycle bundle with V3 artifacts; a release "
+            "is exactly one protocol")
+    if has_v3:
+        return release_v3lib.BUNDLE_PROTOCOL_VERSION
+    if has_v2:
+        return UPDATE_PROTOCOL_VERSION
+    return None
+
+
+def _check_v3(version: str, dist: Path, checked: set[str]) -> None:
+    """The V3 chain: manifest, exact version links, anchored artifact bytes."""
+
+    manifest_path = dist / release_v3lib.MANIFEST_ASSET_NAME
+    if not manifest_path.is_file():
+        raise ReleaseVersionMismatch(
+            f"the V3 manifest {release_v3lib.MANIFEST_ASSET_NAME!r} is missing "
+            f"from {dist}")
+    try:
+        manifest = release_v3lib.parse_manifest(manifest_path.read_bytes())
+        artifact = manifest.lifecycle_artifact()
+        candidate = release_v3lib.ReleaseCandidate(
+            version=manifest.version, identity=manifest.version)
+        release_v3lib.require_exact_version_chain(candidate, manifest, artifact)
+    except LifecycleError as refusal:
+        raise ReleaseVersionMismatch(
+            f"the V3 manifest is invalid: {refusal.code}: {refusal.message}") from refusal
+    if manifest.version != version:
+        raise ReleaseVersionMismatch(
+            f"the V3 manifest declares version {manifest.version!r} but the "
+            f"release is {version!r}")
+    if manifest.runtime_version != version:
+        raise ReleaseVersionMismatch(
+            f"the V3 manifest requires runtime {manifest.runtime_version!r} but "
+            f"the release is {version!r}")
+    bundle = dist / artifact.name
+    if not bundle.is_file():
+        raise ReleaseVersionMismatch(
+            f"the lifecycle artifact {artifact.name!r} is missing from {dist}")
+    payload = bundle.read_bytes()
+    actual_digest = hashlib.sha256(payload).hexdigest()
+    if len(payload) != artifact.size or actual_digest != artifact.sha256:
+        raise ReleaseVersionMismatch(
+            f"the lifecycle artifact {artifact.name!r} does not match the "
+            f"manifest (size {len(payload)} vs {artifact.size}, sha256 "
+            f"{actual_digest} vs {artifact.sha256})")
+    with zipfile.ZipFile(bundle) as archive:
+        names = archive.namelist()
+        if PROTOCOL_MANIFEST not in names:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {artifact.name!r} carries no {PROTOCOL_MANIFEST}")
+        document = json.loads(archive.read(PROTOCOL_MANIFEST).decode("utf-8"))
+        if document.get("protocol_version") != release_v3lib.BUNDLE_PROTOCOL_VERSION:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {artifact.name!r} declares protocol "
+                f"{document.get('protocol_version')!r}, expected "
+                f"{release_v3lib.BUNDLE_PROTOCOL_VERSION}")
+        if document.get("release_version") != version:
+            raise ReleaseVersionMismatch(
+                f"lifecycle bundle {artifact.name!r} declares release_version "
+                f"{document.get('release_version')!r}")
+        payload_root = str(document.get("payload_root", ""))
+        payload_version = archive.read(f"{payload_root}/VERSION").decode("utf-8").strip()
+    if payload_version != version:
+        raise ReleaseVersionMismatch(
+            f"lifecycle bundle {artifact.name!r} contains VERSION {payload_version!r}")
+    checked.add(manifest_path.name)
+    checked.add(artifact.name)
+
+
 def _check_wheel(version: str, dist: Path, checked: set[str]) -> None:
     wheels = sorted(dist.glob(f"ainative_dev_stack-{version}-*.whl"))
     if not wheels:
@@ -164,9 +247,13 @@ def _check_sdist(version: str, dist: Path, checked: set[str]) -> None:
         checked.add(sdist.name)
 
 
-def check_dist(version: str, dist: Path, *, require_bundle: bool = True) -> list[str]:
+def check_dist(version: str, dist: Path, *, require_bundle: bool = True,
+               protocol: int | None = None) -> list[str]:
     """Each built artifact must be named for, and declare, `version`.
 
+    The lifecycle protocol is detected from the artifacts themselves (a V3
+    manifest or V3 bundle means protocol 3; a V2 bundle means protocol 2; both
+    together are refused), unless `protocol` states the expectation.
     `require_bundle=False` is the PyPI path: PyPI ships the wheel and the
     sdist, not the lifecycle bundle, which GitHub Releases carries.
     """
@@ -175,7 +262,16 @@ def check_dist(version: str, dist: Path, *, require_bundle: bool = True) -> list
         raise ReleaseVersionMismatch(f"no dist directory at {dist}")
     checked: set[str] = set()
     if require_bundle:
-        _check_bundle(version, dist, checked)
+        actual = detect_protocol(dist)
+        if protocol is not None and actual is not None and actual != protocol:
+            raise ReleaseVersionMismatch(
+                f"the dist carries lifecycle protocol {actual} but protocol "
+                f"{protocol} was expected")
+        expected = protocol if protocol is not None else actual
+        if expected == release_v3lib.BUNDLE_PROTOCOL_VERSION:
+            _check_v3(version, dist, checked)
+        else:
+            _check_bundle(version, dist, checked)
     _check_wheel(version, dist, checked)
     _check_sdist(version, dist, checked)
     stale = _stale_artifacts(dist, checked, version)
@@ -193,6 +289,8 @@ def main() -> int:
                         help="the release tag being published, e.g. v2.2.2")
     parser.add_argument("--dist", type=Path, default=None,
                         help="also verify the built artifacts in this directory")
+    parser.add_argument("--protocol", type=int, choices=(2, 3), default=None,
+                        help="the lifecycle protocol to expect; default: from the dist")
     parser.add_argument("--without-bundle", action="store_true",
                         help="check only the wheel and the sdist (the PyPI surface)")
     args = parser.parse_args()
@@ -200,7 +298,8 @@ def main() -> int:
     try:
         version = check_labels(args.root, args.tag)
         artifacts = (check_dist(version, args.dist,
-                                require_bundle=not args.without_bundle)
+                                require_bundle=not args.without_bundle,
+                                protocol=args.protocol)
                      if args.dist else [])
     except ReleaseVersionMismatch as refusal:
         print(f"RELEASE_VERSION_MISMATCH: {refusal}", file=sys.stderr)
