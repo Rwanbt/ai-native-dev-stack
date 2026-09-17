@@ -27,6 +27,7 @@ import ainative                                                         # noqa: 
 from _payload_staging import (VersionMismatch, assert_version_consistency,  # noqa: E402
                               package_version, read_version, stage_payload)
 from ainative.lifecycle import source as sourcelib                      # noqa: E402
+from ainative.lifecycle.digest import digest_bytes                      # noqa: E402
 
 from tests.lifecycle_support import write_text                          # noqa: E402
 
@@ -63,21 +64,29 @@ class FreshCheckoutInvariants(unittest.TestCase):
         scripts = REPO / "scripts"
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
-        from build_lifecycle_bundle import build
+        from build_lifecycle_bundle import PROTOCOL_V3, build
 
+        version = ainative.__version__
         with tempfile.TemporaryDirectory(prefix="ainative-bundle-") as staging:
-            bundle = build(Path(staging) / "dist")
-            self.assertEqual(bundle.name,
-                             f"ainative-lifecycle-v2-{ainative.__version__}.zip")
+            bundle, manifest_path = build(Path(staging) / "dist")
+            # Protocol 3 is the default since the Release V3 conversion.
+            self.assertEqual(bundle.name, f"ainative-lifecycle-v3-{version}.zip")
             with zipfile.ZipFile(bundle) as archive:
                 document = json.loads(archive.read(
                     "lifecycle-protocol.json").decode("utf-8"))
-                self.assertEqual(document["protocol_version"], 2)
-                self.assertEqual(document["release_version"], ainative.__version__)
+                self.assertEqual(document["protocol_version"], PROTOCOL_V3)
+                self.assertEqual(document["release_version"], version)
                 payload_root = document["payload_root"]
                 self.assertEqual(
                     archive.read(f"{payload_root}/VERSION").decode("utf-8").strip(),
-                    ainative.__version__)
+                    version)
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["version"], version)
+            self.assertEqual(manifest["compatibility"]["runtime_version"], version)
+            artifact = manifest["artifacts"][0]
+            self.assertEqual(artifact["name"], bundle.name)
+            self.assertEqual(artifact["sha256"], digest_bytes(bundle.read_bytes()))
+            self.assertEqual(artifact["size"], bundle.stat().st_size)
 
     def test_two_disagreeing_labels_refuse_the_build(self):
         with tempfile.TemporaryDirectory(prefix="ainative-mismatch-") as staging:

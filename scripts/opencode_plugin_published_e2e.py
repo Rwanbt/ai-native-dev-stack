@@ -17,7 +17,7 @@ gate.
 
 Usage:
     python scripts/opencode_plugin_published_e2e.py
-    python scripts/opencode_plugin_published_e2e.py --wheel dist/ainative_dev_stack-2.4.3-py3-none-any.whl
+    python scripts/opencode_plugin_published_e2e.py --wheel dist/ainative_dev_stack-2.5.0-py3-none-any.whl
     python scripts/opencode_plugin_published_e2e.py --keep
 """
 

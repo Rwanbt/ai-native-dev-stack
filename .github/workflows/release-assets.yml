@@ -38,6 +38,8 @@ jobs:
         # disagree; the artifact cannot exist if the invariant is broken.
         run: python -m build
       - name: Build the lifecycle bundle consumed by `ainative update`
+        # Protocol 3 by default since the Release V3 conversion: the bundle
+        # plus the external `ainative-release-v3.json` manifest that anchors it.
         run: python scripts/build_lifecycle_bundle.py
       - name: Every built artifact must carry the release version
         # Filenames, wheel METADATA, sdist PKG-INFO and the protocol document
@@ -53,17 +55,21 @@ jobs:
           V3_BRIDGE_RELEASE: ${{ vars.V3_BRIDGE_RELEASE }}
         run: python scripts/check_release_gate.py --dist dist
       - name: Write SHA256SUMS
-        run: cd dist && sha256sum *.whl *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum *.whl *.tar.gz *.zip *.json > SHA256SUMS && cat SHA256SUMS
       - name: Attest the build provenance of every artifact
         # Standard, verifiable, automatable: GitHub attests that these bytes
         # were produced by this workflow, in this repository, at this commit.
         # Clients verify with `gh attestation verify <file> -R <repo>`.
+        # The V3 manifest is a published asset like the others: it is attested
+        # too (v2.5.0 shipped without this line and its manifest has no
+        # attestation; it is never replaced retroactively - #185).
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             dist/*.whl
             dist/*.tar.gz
             dist/*.zip
+            dist/*.json
       - name: Create the release as a draft
         # Draft first: a release uploaded asset by asset is briefly visible
         # with a partial set. Nothing is published until every asset is up and
@@ -78,7 +84,7 @@ jobs:
                  --title "${GITHUB_REF_NAME}"
           test "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq .isDraft)" = "true"
           gh release upload "${GITHUB_REF_NAME}" \
-            dist/*.whl dist/*.tar.gz dist/*.zip dist/SHA256SUMS
+            dist/*.whl dist/*.tar.gz dist/*.zip dist/*.json dist/SHA256SUMS
       - name: Verify the uploaded assets, then publish the release
         env:
           GH_TOKEN: ${{ github.token }}

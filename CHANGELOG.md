@@ -6,6 +6,36 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-17
+
+Release Protocol V3: the official release publishes an external
+`ainative-release-v3.json` manifest beside a protocol 3 lifecycle bundle
+(`ainative-lifecycle-v3-2.5.0.zip`). The manifest's SHA-256 and size travel
+as release-asset metadata (the external anchor), the runtime verifies them
+before parsing anything, and the whole version chain is validated by
+`scripts/check_release_versions.py --dist` before publication. The 2.4.4
+bridge remains the documented path from older runtimes.
+
+### Added
+
+- **External release manifest and protocol 3 bundles**: `scripts/build_lifecycle_bundle.py` builds protocol 3 by default and emits `ainative-release-v3.json`; the release workflow publishes both, and the protocol-aware bridge gate blocks any V3 publication without a verifiable bridge (`V3_BRIDGE_RELEASE`).
+- **Protocol-aware version gate**: `check_release_versions.py` detects the lifecycle protocol from the built artifacts and validates the manifest, the exact version chain and the anchored artifact bytes (a V2/V3 mix fails).
+
+### Changed
+
+- The lifecycle bundle default is protocol 3; `--protocol 2` remains for reproducing a bridge release.
+
+## [2.4.4] - 2026-09-17
+
+Multi-Forge v1: the first release carrying the generic-Git lifecycle, the
+feature model, the provider-neutral work policy and the Release Protocol V3
+runtime. This is the **V2 bridge release**: the runtime understands a future
+(V3) lifecycle publication and reports `CLI_UPDATE_REQUIRED` with the
+upgrade path, while its own lifecycle artifact deliberately remains protocol
+2 (`ainative-lifecycle-v2-2.4.4.zip`) so current runtimes can consume it
+(see `docs/RELEASING.md`).
+
+
 ### Added
 
 - **V2 forward bridge: a future lifecycle protocol now says so** (#157): a

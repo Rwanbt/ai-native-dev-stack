@@ -19,8 +19,8 @@ reminder; the gates fail closed and none of them fixes anything silently.
 
 ```bash
 git checkout main && git pull --ff-only
-git tag v2.4.3 <MAIN_SHA>
-git push origin v2.4.3
+git tag v2.5.0 <MAIN_SHA>
+git push origin v2.5.0
 ```
 
 The **Release assets** workflow then runs, in order:
@@ -38,7 +38,8 @@ The **Release assets** workflow then runs, in order:
    variable is never treated as proof of a V2 release;
 6. `SHA256SUMS` is written;
 7. **build provenance is attested** for every artifact
-   (`actions/attest-build-provenance`): GitHub signs a statement that these
+   (`actions/attest-build-provenance`) — wheel, sdist, lifecycle bundle **and
+   the V3 manifest** (`dist/*.json`): GitHub signs a statement that these
    bytes came from this workflow, this repository, this commit;
 8. the release is created as a **draft**, assets are uploaded (no `--clobber`),
    `check_published_assets.py` compares the uploaded names, sizes and digests
@@ -46,6 +47,36 @@ The **Release assets** workflow then runs, in order:
 
 A failure at any step leaves a draft release (or none) - never a visible
 release with a partial asset set.
+
+### V3 releases
+
+Since the Release Protocol V3 conversion, the workflow builds a **protocol 3**
+lifecycle bundle plus the external manifest, and the trust chain is:
+
+```text
+provider metadata (release assets)
+    ↓
+external manifest anchor: SHA-256 + size (GitHub asset metadata)
+    ↓
+ainative-release-v3.json
+    ↓
+lifecycle artifact: protocol 3, exact version, SHA-256, size
+```
+
+`check_release_versions.py --dist` validates the whole chain — manifest
+version, `compatibility.runtime_version`, artifact version, artifact filename,
+the anchored bytes and the bundle's own `lifecycle-protocol.json` — before
+anything is uploaded, and the protocol-aware bridge gate proves the bridge a
+V2 runtime needs. The documented upgrade path for an installed project is
+explicit:
+
+```text
+old runtime → bridge release → upgrade the CLI → V3 update (`ainative update`)
+```
+
+A protocol 2 bridge release is still reproducible with
+`python scripts/build_lifecycle_bundle.py --protocol 2`; its bundle is
+`ainative-lifecycle-v2-<version>.zip` and no manifest is generated.
 
 ## V2 bridge gate (before the first V3 publication)
 
@@ -100,29 +131,29 @@ workflow token, and GitHub does not let one workflow's token trigger another
 exists, upload an already-published release with:
 
 ```bash
-gh workflow run publish-pypi.yml -f tag=v2.4.3
+gh workflow run publish-pypi.yml -f tag=v2.5.0
 ```
 
 ```bash
 # what a user then runs
-pip install ainative-dev-stack==2.4.3
+pip install ainative-dev-stack==2.5.0
 # or, isolated:
-pipx install ainative-dev-stack==2.4.3
+pipx install ainative-dev-stack==2.5.0
 ```
 
 ## Verifying what was published
 
 ```bash
 # integrity: the bytes match the published sums
-gh release download v2.4.3 --dir dist
+gh release download v2.5.0 --dir dist
 cd dist && sha256sum -c SHA256SUMS
 
 # provenance: which workflow, repository and commit produced them
-gh attestation verify dist/ainative_dev_stack-2.4.3-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
+gh attestation verify dist/ainative_dev_stack-2.5.0-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
 
 # PyPI provenance (attestations are published with the files)
 python -m pip install --upgrade pypi-attestations
-python -m pypi_attestations verify dist/ainative_dev_stack-2.4.3-py3-none-any.whl
+python -m pypi_attestations verify dist/ainative_dev_stack-2.5.0-py3-none-any.whl
 ```
 
 `SHA256SUMS` alone proves integrity against the source that published it; it

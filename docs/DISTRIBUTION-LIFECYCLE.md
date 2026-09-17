@@ -429,12 +429,18 @@ that can refuse happens before the first project write: a refused update -
 wrong runtime, wrong version, bad digest, bad archive - leaves the project
 byte-identical, cache included.
 
-**The artifact, stated precisely.** The official provider consumes exactly one
-asset: the lifecycle bundle `ainative-lifecycle-v2-<version>.zip` published
-beside the wheel and the sdist, named for the release's own version. Inside,
-a `lifecycle-protocol.json` document names the protocol version, the release
+**The artifact, stated precisely.** The official provider consumes the release's
+declared pair: the external manifest `ainative-release-v3.json` published beside
+the wheel, the sdist and the lifecycle bundle `ainative-lifecycle-v3-<version>.zip`,
+each named for the release's own version. The manifest is parsed only after its
+anchor — the SHA-256 and size the provider's own metadata reports for it — is
+verified; it then declares the bundle's name, version, SHA-256 and size, and the
+bundle is verified against that declaration. Inside the bundle, a
+`lifecycle-protocol.json` document names the protocol version, the release
 version and the payload root (`stack/`), and the payload's `VERSION` is compared
-with the release again.
+with the release again. A bridge release can still be built with `--protocol 2`
+(`ainative-lifecycle-v2-<version>.zip`, no manifest) so older runtimes have the
+documented upgrade stop.
 
 **Containment of pre-2.2.2 runtimes, stated precisely.** Runtimes up to v2.2.2
 looked for `ainative-dev-stack-*.zip` and found their payload by taking the
@@ -470,16 +476,18 @@ cd your-project && ainative update
 
 **A newer lifecycle protocol, stated precisely.** A release that publishes a
 lifecycle bundle or manifest for a protocol newer than the running runtime's
-(`ainative-lifecycle-v3-*`, `ainative-release-v3.json`) is not a broken
-release: `update check` reports it as available with a CLI upgrade required,
-and `ainative update` refuses it with `CLI_UPDATE_REQUIRED`, before any
-download or write, naming the upgrade command. A release that publishes no
+(the current line is protocol 3: `ainative-lifecycle-v3-*`,
+`ainative-release-v3.json`) is not a broken release *to a runtime that knows
+the bridge*: `update check` reports it as available with a CLI upgrade
+required, and `ainative update` refuses it with `CLI_UPDATE_REQUIRED`, before
+any download or write, naming the upgrade command. A runtime older than the
+bridge release has no such vocabulary and refuses it fail-closed (`CHECK_FAILED:
+release publishes no ainative-lifecycle-v2-*.zip lifecycle bundle` on
+`update check`); its documented escape path is the same upgrade command,
+applied manually, then `ainative update`. A release that publishes no
 lifecycle bundle at all keeps its refusal:
-`UPDATE_INTEGRITY_METADATA_MISSING`. A runtime older than the bridge release
-sees a V3 release as `UPDATE_INTEGRITY_METADATA_MISSING`; its documented
-escape path is the same upgrade command, applied manually, then
-`ainative update`. Before the first V3 publication the release workflow
-verifies the declared `V3_BRIDGE_RELEASE` with
+`UPDATE_INTEGRITY_METADATA_MISSING`. Before the first V3 publication the
+release workflow verifies the declared `V3_BRIDGE_RELEASE` with
 `scripts/check_bridge_release.py`, which resolves it through these same
 selection rules and blocks the publication (`BLOCK RELEASE`) when the bridge
 cannot be verified.
@@ -629,7 +637,7 @@ Files the stack never wrote are in the "kept" column of every row.
 | Number | Source of truth | Changes when |
 |---|---|---|
 | Stack release | `VERSION` | a release is cut |
-| Update protocol | `provider.UPDATE_PROTOCOL_VERSION` | the bundle format changes (currently 2) |
+| Update protocol | `release_v3.BUNDLE_PROTOCOL_VERSION` (the current line, 3; the legacy v2 path keeps `provider.UPDATE_PROTOCOL_VERSION = 2`) | the bundle format changes |
 | Lifecycle state schema | `state.SCHEMA_VERSION` | `state.json`'s shape changes |
 | Work Plane runtime | `ainative_workplane.__version__` | the verdict engine is released |
 | Artifact schema | `contracts.SUPPORTED_SCHEMA_VERSIONS` | a Work Plane artifact changes shape |
