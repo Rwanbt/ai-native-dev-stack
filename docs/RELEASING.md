@@ -38,7 +38,8 @@ The **Release assets** workflow then runs, in order:
    variable is never treated as proof of a V2 release;
 6. `SHA256SUMS` is written;
 7. **build provenance is attested** for every artifact
-   (`actions/attest-build-provenance`): GitHub signs a statement that these
+   (`actions/attest-build-provenance`) — wheel, sdist, lifecycle bundle **and
+   the V3 manifest** (`dist/*.json`): GitHub signs a statement that these
    bytes came from this workflow, this repository, this commit;
 8. the release is created as a **draft**, assets are uploaded (no `--clobber`),
    `check_published_assets.py` compares the uploaded names, sizes and digests
