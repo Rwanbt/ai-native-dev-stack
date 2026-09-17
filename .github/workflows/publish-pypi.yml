@@ -56,6 +56,6 @@ jobs:
         # gate checks the same label chain for the half being published.
         run: python scripts/check_release_versions.py --tag "${{ github.event.release.tag_name || inputs.tag }}" --dist dist --without-bundle
       - name: Publish to PyPI (Trusted Publishing)
-        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist
