@@ -62,12 +62,18 @@ The refusal names both versions and prints the exact upgrade command.
 `ainative status --check-updates` and `ainative doctor --check-updates` still
 report what is available and say when the runtime must be upgraded first.
 
-Releases from the protocol v2 line cannot be consumed by a runtime older than
-v2.2.2 at all: the bundle is named `ainative-lifecycle-v2-<version>.zip` and its
-payload sits under `stack/`, which the old selector and the old extractor both
-refuse. That containment is deliberate - an old runtime must never apply a
-policy it does not know - and the only path forward is upgrading the CLI, then
-running `ainative update` in each project.
+Releases now speak protocol v3: an external manifest
+(`ainative-release-v3.json`) anchors the lifecycle bundle
+(`ainative-lifecycle-v3-<version>.zip`), and the bridge release v2.4.4 is the
+stop where runtimes that only know protocol v2 are told, in their own
+vocabulary, that a CLI upgrade is required first (`CLI_UPDATE_REQUIRED`).
+Runtimes older than the bridge refuse a v3 release fail-closed and the only
+path forward is the documented manual CLI upgrade, then `ainative update` in
+each project. Protocol v2 bridge releases (for example
+`ainative-lifecycle-v2-2.4.4.zip`) remain consumable by runtimes from v2.2.2;
+a runtime older than v2.2.2 cannot consume one even when a mirror hands it the
+file — the format itself refuses it (the payload sits under `stack/`, which
+the old selector and the old extractor both refuse).
 
 ### What it guarantees
 
@@ -257,14 +263,17 @@ does what it always did, now through the lifecycle manager.
 2. Bump `VERSION` (semver) and the `stack-version` header in `AGENTS.md`.
 3. Move `CHANGELOG.md` `[Unreleased]` items under `## [x.y.z] - YYYY-MM-DD`.
 4. Tag: `git tag vX.Y.Z && git push --tags`.
-5. Publish the release assets: wheel, sdist and the lifecycle bundle
-   `ainative-lifecycle-v2-x.y.z.zip` (built by
+5. Publish the release assets: wheel, sdist, the lifecycle bundle
+   `ainative-lifecycle-v3-x.y.z.zip` and its external manifest
+   `ainative-release-v3.json` (both built by
    `scripts/build_lifecycle_bundle.py`; `.github/workflows/release-assets.yml`
-   builds, gates and attests all three, then publishes the release from a
-   verified draft). `ainative update check` resolves the latest release from
-   that source; the bundle's published SHA-256 is verified before any file is
-   written, and a release without a published digest for the bundle is refused
-   (`UPDATE_INTEGRITY_METADATA_MISSING`). See `docs/RELEASING.md` for the full
+   builds, gates and attests all of them, then publishes the release from a
+   verified draft — a bridge release can still be built with
+   `--protocol 2`). `ainative update check` resolves the latest release from
+   that source; the manifest's anchor (SHA-256 + size from the provider's
+   metadata) and the bundle's published digest are verified before any file is
+   written, and a release without them is refused (`CHECK_FAILED` /
+   `UPDATE_INTEGRITY_METADATA_MISSING`). See `docs/RELEASING.md` for the full
    sequence, the attestations and the PyPI half.
 
 Users then see `UPDATE_AVAILABLE` and update with one command — no personal

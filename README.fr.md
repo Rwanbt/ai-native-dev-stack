@@ -426,10 +426,13 @@ d'une release — tag git, `VERSION`, métadonnées du paquet, wheel/sdist, nom 
 `VERSION` interne du bundle — est fail-closed : un tag qui ne nomme pas l'arbre qu'il pointe
 ne peut pas publier.
 
-Les releases parlent un protocole de mise à jour versionné (v2) : le bundle est
-`ainative-lifecycle-v2-<version>.zip` et un runtime antérieur à v2.2.2 ne peut pas le consommer
-même depuis un miroir — le format lui-même le refuse. Chaque artefact publié porte aussi une
-attestation de provenance de build GitHub (`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`) ;
+Les releases parlent un protocole de mise à jour versionné (v3) : un manifeste externe
+(`ainative-release-v3.json`) est vérifié contre les métadonnées de la source de release avant
+tout le reste, puis il ancre le bundle de cycle de vie
+(`ainative-lifecycle-v3-<version>.zip`) par nom, version, taille et SHA-256. Une release
+pont peut encore parler v2 (`ainative-lifecycle-v2-<version>.zip`), et un runtime antérieur à
+v2.2.2 ne peut pas en consommer un, même depuis un miroir — le format lui-même le refuse.
+Chaque artefact publié porte aussi une attestation de provenance de build GitHub (`gh attestation verify <file> -R Rwanbt/ai-native-dev-stack`) ;
 SHA-256 seul signifie intégrité, pas signature humaine (voir docs/RELEASING.md).
 
 ---
