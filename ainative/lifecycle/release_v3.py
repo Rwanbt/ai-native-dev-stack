@@ -29,6 +29,9 @@ from .errors import LifecycleError
 
 MANIFEST_SCHEMA = "ainative.release"
 MANIFEST_PROTOCOL = "v3"
+# The manifest is published under this exact release-asset name; the runtime
+# finds it by it, and nothing else is ever treated as one.
+MANIFEST_ASSET_NAME = "ainative-release-v3.json"
 # The `lifecycle-protocol.json` a V3 bundle carries at its root; the V2 bundle
 # keeps protocol 2 (provider.UPDATE_PROTOCOL_VERSION).
 BUNDLE_PROTOCOL_VERSION = 3
@@ -408,6 +411,6 @@ __all__ = [
     "ReleaseManifest", "ReleaseProvider", "canonical_version", "select_candidate",
     "verify_external_anchor", "parse_manifest", "lifecycle_bundle_name",
     "require_exact_version_chain", "resolve_manifest", "fetch_manifest_for",
-    "MANIFEST_SCHEMA", "MANIFEST_PROTOCOL", "BUNDLE_PROTOCOL_VERSION",
-    "ARTIFACT_KIND_LIFECYCLE",
+    "MANIFEST_SCHEMA", "MANIFEST_PROTOCOL", "MANIFEST_ASSET_NAME",
+    "BUNDLE_PROTOCOL_VERSION", "ARTIFACT_KIND_LIFECYCLE",
 ]

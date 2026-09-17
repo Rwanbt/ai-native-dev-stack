@@ -29,7 +29,7 @@ from . import version as versionlib
 from .errors import LifecycleError
 from .paths import validate_relative
 
-MANIFEST_ASSET_NAME = "ainative-release-v3.json"
+MANIFEST_ASSET_NAME = release_v3lib.MANIFEST_ASSET_NAME
 MAX_MANIFEST_BYTES = 1 << 20      # 1 MiB of release manifest is already absurd
 MAX_ARCHIVE_BYTES = 256 << 20     # 256 MiB — mirrors the V2 bound
 MAX_ENUMERATION_ENTRIES = 30      # one API page; beyond it, incomplete

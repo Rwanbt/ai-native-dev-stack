@@ -304,5 +304,115 @@ class BridgeGatePolicy(unittest.TestCase):
         self.assertIn("configuration error", stderr.getvalue())
 
 
+def make_v3_bundle(dist: Path, version: str, *, protocol: int = 3,
+                   payload_version: str | None = None) -> Path:
+    path = dist / f"ainative-lifecycle-v3-{version}.zip"
+    document = {"schema_name": "lifecycle_protocol", "protocol_version": protocol,
+                "release_version": version, "payload_root": "stack"}
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("lifecycle-protocol.json", json.dumps(document))
+        archive.writestr("stack/VERSION", f"{payload_version or version}\n")
+    return path
+
+
+def make_v3_manifest(dist: Path, version: str, *, manifest_version: str | None = None,
+                     runtime: str | None = None, artifact_name: str | None = None,
+                     artifact_version: str | None = None, artifact_sha: str | None = None,
+                     artifact_size: int | None = None) -> Path:
+    import hashlib
+
+    bundle = dist / f"ainative-lifecycle-v3-{version}.zip"
+    payload = bundle.read_bytes()
+    document = {
+        "schema": "ainative.release", "protocol": "v3",
+        "version": manifest_version or version, "channel": "stable",
+        "compatibility": {"runtime_version": runtime or version},
+        "artifacts": [{
+            "name": artifact_name or f"ainative-lifecycle-v3-{version}.zip",
+            "kind": "lifecycle", "version": artifact_version or version,
+            "sha256": artifact_sha or hashlib.sha256(payload).hexdigest(),
+            "size": artifact_size if artifact_size is not None else len(payload)}],
+        "provenance": {"source": "test"},
+    }
+    path = dist / "ainative-release-v3.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
+class V3DistChain(unittest.TestCase):
+    """A V3 dist is validated through the manifest, the anchor and the chain."""
+
+    VERSION = "2.5.0"
+
+    def dist(self) -> Path:
+        directory = tempfile.TemporaryDirectory(prefix="v3-dist-")
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        make_wheel(root, self.VERSION)
+        make_sdist(root, self.VERSION)
+        make_v3_bundle(root, self.VERSION)
+        make_v3_manifest(root, self.VERSION)
+        return root
+
+    def test_a_v3_dist_passes(self):
+        checked = gate.check_dist(self.VERSION, self.dist())
+        self.assertIn(f"ainative-lifecycle-v3-{self.VERSION}.zip", checked)
+        self.assertIn("ainative-release-v3.json", checked)
+
+    def test_the_wrong_protocol_inside_the_bundle_is_refused(self):
+        root = self.dist()
+        (root / f"ainative-lifecycle-v3-{self.VERSION}.zip").unlink()
+        make_v3_bundle(root, self.VERSION, protocol=2)
+        make_v3_manifest(root, self.VERSION)
+        with self.assertRaises(gate.ReleaseVersionMismatch) as raised:
+            gate.check_dist(self.VERSION, root)
+        self.assertIn("declares protocol 2", str(raised.exception))
+
+    def test_a_manifest_naming_another_version_is_refused(self):
+        root = self.dist()
+        make_v3_manifest(root, self.VERSION, manifest_version="2.5.1")
+        with self.assertRaises(gate.ReleaseVersionMismatch):
+            gate.check_dist(self.VERSION, root)
+
+    def test_a_runtime_mismatch_is_refused(self):
+        root = self.dist()
+        make_v3_manifest(root, self.VERSION, runtime="2.4.9")
+        with self.assertRaises(gate.ReleaseVersionMismatch):
+            gate.check_dist(self.VERSION, root)
+
+    def test_a_tampered_bundle_is_refused_by_the_anchor(self):
+        root = self.dist()
+        make_v3_manifest(root, self.VERSION, artifact_sha="0" * 64)
+        with self.assertRaises(gate.ReleaseVersionMismatch) as raised:
+            gate.check_dist(self.VERSION, root)
+        self.assertIn("does not match the manifest", str(raised.exception))
+
+    def test_a_wrong_artifact_filename_is_refused(self):
+        root = self.dist()
+        make_v3_manifest(root, self.VERSION, artifact_name="other.zip")
+        with self.assertRaises(gate.ReleaseVersionMismatch):
+            gate.check_dist(self.VERSION, root)
+
+    def test_the_bundle_internal_version_must_agree(self):
+        root = self.dist()
+        (root / f"ainative-lifecycle-v3-{self.VERSION}.zip").unlink()
+        make_v3_bundle(root, self.VERSION, payload_version="2.4.9")
+        make_v3_manifest(root, self.VERSION)
+        with self.assertRaises(gate.ReleaseVersionMismatch):
+            gate.check_dist(self.VERSION, root)
+
+    def test_a_mixed_v2_v3_dist_is_refused(self):
+        root = self.dist()
+        (root / f"ainative-lifecycle-v2-{self.VERSION}.zip").write_bytes(b"x")
+        with self.assertRaises(gate.ReleaseVersionMismatch) as raised:
+            gate.check_dist(self.VERSION, root)
+        self.assertIn("mixes", str(raised.exception))
+
+    def test_forcing_protocol_2_on_a_v3_dist_is_refused(self):
+        with self.assertRaises(gate.ReleaseVersionMismatch) as raised:
+            gate.check_dist(self.VERSION, self.dist(), protocol=2)
+        self.assertIn("protocol 3", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
