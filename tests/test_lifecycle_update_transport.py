@@ -98,6 +98,10 @@ class CredentialConfinement(unittest.TestCase):
             previous = os.environ.pop(name, None)
             if previous is not None:
                 self.addCleanup(os.environ.__setitem__, name, previous)
+            else:
+                # Tests set these directly; leave the process as it was found
+                # so a following suite never inherits a surprise selector.
+                self.addCleanup(os.environ.pop, name, None)
 
     def get(self, provider, server: ScriptedTransport, url: str,
             limit: int = 1_000_000) -> bytes:
