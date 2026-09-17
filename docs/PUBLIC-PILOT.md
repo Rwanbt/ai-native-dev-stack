@@ -25,7 +25,7 @@ source pilot-venv/bin/activate
 # Windows (PowerShell):
 pilot-venv\Scripts\Activate.ps1
 
-pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.3"
+pip install "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.4.4"
 ainative --version
 ```
 
@@ -33,7 +33,7 @@ The last command prints the lifecycle version, the state schema and the stack
 version. **Pass:** it prints them without an error. Note the versions in the
 feedback form.
 
-PyPI (`pip install ainative-dev-stack==2.4.3`) is not published yet — the
+PyPI (`pip install ainative-dev-stack==2.4.4`) is not published yet — the
 one-time trusted-publisher setup on the PyPI account is still pending. The
 pinned release above is the supported install for this pilot.
 

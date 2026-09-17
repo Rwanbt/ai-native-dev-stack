@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.4] - 2026-09-17
+
+Multi-Forge v1: the first release carrying the generic-Git lifecycle, the
+feature model, the provider-neutral work policy and the Release Protocol V3
+runtime. This is the **V2 bridge release**: the runtime understands a future
+(V3) lifecycle publication and reports `CLI_UPDATE_REQUIRED` with the
+upgrade path, while its own lifecycle artifact deliberately remains protocol
+2 (`ainative-lifecycle-v2-2.4.4.zip`) so current runtimes can consume it
+(see `docs/RELEASING.md`).
+
+
 ### Added
 
 - **V2 forward bridge: a future lifecycle protocol now says so** (#157): a

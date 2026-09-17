@@ -19,8 +19,8 @@ reminder; the gates fail closed and none of them fixes anything silently.
 
 ```bash
 git checkout main && git pull --ff-only
-git tag v2.4.3 <MAIN_SHA>
-git push origin v2.4.3
+git tag v2.4.4 <MAIN_SHA>
+git push origin v2.4.4
 ```
 
 The **Release assets** workflow then runs, in order:
@@ -100,29 +100,29 @@ workflow token, and GitHub does not let one workflow's token trigger another
 exists, upload an already-published release with:
 
 ```bash
-gh workflow run publish-pypi.yml -f tag=v2.4.3
+gh workflow run publish-pypi.yml -f tag=v2.4.4
 ```
 
 ```bash
 # what a user then runs
-pip install ainative-dev-stack==2.4.3
+pip install ainative-dev-stack==2.4.4
 # or, isolated:
-pipx install ainative-dev-stack==2.4.3
+pipx install ainative-dev-stack==2.4.4
 ```
 
 ## Verifying what was published
 
 ```bash
 # integrity: the bytes match the published sums
-gh release download v2.4.3 --dir dist
+gh release download v2.4.4 --dir dist
 cd dist && sha256sum -c SHA256SUMS
 
 # provenance: which workflow, repository and commit produced them
-gh attestation verify dist/ainative_dev_stack-2.4.3-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
+gh attestation verify dist/ainative_dev_stack-2.4.4-py3-none-any.whl -R Rwanbt/ai-native-dev-stack
 
 # PyPI provenance (attestations are published with the files)
 python -m pip install --upgrade pypi-attestations
-python -m pypi_attestations verify dist/ainative_dev_stack-2.4.3-py3-none-any.whl
+python -m pypi_attestations verify dist/ainative_dev_stack-2.4.4-py3-none-any.whl
 ```
 
 `SHA256SUMS` alone proves integrity against the source that published it; it
