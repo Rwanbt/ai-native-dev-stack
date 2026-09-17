@@ -11,7 +11,7 @@
 | Harnesses | Claude Code, Codex, OpenCode, Cursor, Gemini CLI, MiniMax/Mavis — for the shared method, skills and hooks |
 | Work management | Generic Git; GitHub (mapping); GitLab (mapping). The Work Authority is resolved locally, purely and fail-closed (ADR-0018) |
 | Features | Project-scope features independent of the profile (`forge-github` default, `forge-gitlab`), State schema V2 (ADR-0017) |
-| Release sources | GitHub.com (built-in, qualified); a local mirror; an anonymous HTTPS release API (`AINATIVE_UPDATE_URL`, never credentialed); GitLab.com provider implemented and contract-tested, live-service qualification UNTESTED — **not declared supported**; GitLab Self-Managed and GitHub Enterprise Server UNTESTED — **not supported** |
+| Release sources | GitHub.com (built-in, qualified); a local mirror; an anonymous HTTPS release API (`AINATIVE_UPDATE_URL`, never credentialed); GitLab.com (qualified live: Generic Package Registry anchor, managed releases, exact version chain — 2026-09-16); GitLab Self-Managed and GitHub Enterprise Server UNTESTED — **not supported** |
 
 Only the latest release is supported; fixes ship as a new patch version.
 

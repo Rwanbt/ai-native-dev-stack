@@ -40,8 +40,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **GitLab provider (Release V3)** (#166): Releases for discovery, the
   Generic Package Registry as the canonical integrity surface (`file_sha256`
   + `size`), exact package lookup, bounded pagination, and `PRIVATE-TOKEN`
-  confined to the configured origin. GitLab.com live qualification is
-  UNTESTED and therefore not declared supported —
+  confined to the configured origin. **GitLab.com is qualified live**
+  (2026-09-16): a published package and release were enumerated, anchored,
+  downloaded and verified end to end against the real API —
   `docs/MULTIFORGE-QUALIFICATION.md` states exactly what was verified.
 - **Work Authority observation and claims** (#163/#164, ADR-0018):
   `ainative forge detect | status` (zero network, credentials, writes or
