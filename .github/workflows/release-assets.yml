@@ -57,6 +57,15 @@ jobs:
         # Filenames, wheel METADATA, sdist PKG-INFO and the protocol document
         # and payload VERSION inside the bundle.
         run: python scripts/check_release_versions.py --tag "${GITHUB_REF_NAME}" --dist dist
+      - name: Bridge gate (protocol-aware, #177)
+        # The publication protocol is derived from the built artifacts: a
+        # protocol 3 publication requires a bridge that a V2 runtime can
+        # actually resolve, and the absence of V3_BRIDGE_RELEASE is never
+        # treated as proof that this is a V2 release. A protocol 2 bridge
+        # release passes with the gate explicitly not applicable.
+        env:
+          V3_BRIDGE_RELEASE: ${{ vars.V3_BRIDGE_RELEASE }}
+        run: python scripts/check_release_gate.py --dist dist
       - name: Write SHA256SUMS
         run: cd dist && sha256sum *.whl *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
       - name: Attest the build provenance of every artifact

@@ -230,6 +230,43 @@ class CredentialConfinement(unittest.TestCase):
         self.assertIn("rate-limited", raised.exception.message)
         self.assertNotIn("github_pat_secret_value", raised.exception.message)
 
+    def test_a_rate_limit_hint_names_the_endpoint_credentials_only(self):
+        gitlab = transportlib.ReleaseProviderEndpointConfig(
+            provider="gitlab", api_base_url="https://gitlab.com/api/v4",
+            auth_origin="https://gitlab.com", api_version="v4",
+            credential_source="environment:GITLAB_TOKEN",
+            auth_header="PRIVATE-TOKEN", auth_prefix="")
+        cases = (
+            (transportlib.GITHUB_ENDPOINT,
+             "https://api.github.com/repos/x/y/releases/latest",
+             "GITHUB_TOKEN or GH_TOKEN", True),
+            (gitlab, "https://gitlab.com/api/v4/projects/x/releases",
+             "GITLAB_TOKEN", True),
+            (transportlib.anonymous_endpoint("https://mirror.example/api"),
+             "https://mirror.example/api/releases/latest", None, False),
+        )
+        for endpoint, url, hint, expects_advice in cases:
+            with self.subTest(provider=endpoint.provider):
+                def send(request):
+                    raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", {}, None)
+
+                with mock.patch.object(transportlib, "_send", send), \
+                        mock.patch.dict("os.environ",
+                                        {"GITLAB_TOKEN": "glpat-secret-value"}):
+                    with self.assertRaises(LifecycleError) as raised:
+                        transportlib.get(url, limit=100, endpoint=endpoint,
+                                         kind=transportlib.METADATA,
+                                         accept=transportlib.ACCEPT_JSON)
+                message = raised.exception.message
+                self.assertIn("rate-limited", message)
+                self.assertNotIn("glpat-secret-value", message)
+                self.assertNotIn("github_pat_secret_value", message)
+                if expects_advice:
+                    self.assertIn(hint, message)
+                else:
+                    self.assertNotIn("GITHUB_TOKEN", message)
+                    self.assertNotIn("GITLAB_TOKEN", message)
+
     # --- artifacts: the CDN hop is anonymous ------------------------------
 
     def test_the_asset_api_redirect_to_the_cdn_strips_the_bearer(self):
