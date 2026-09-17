@@ -39,7 +39,11 @@ LOCAL_SOURCE_ENV = "AINATIVE_UPDATE_LOCAL_DIR"
 RELEASE_URL_ENV = "AINATIVE_UPDATE_URL"
 CONFIG_RELATIVE = Path(".ai-native") / "release-providers.json"
 
-RESERVED_PROVIDERS = ("github", "gitlab", "local")
+# `release-api` is a historical alias of the built-in GitHub provider and
+# stays accepted in the environment selector; it is reserved so a machine
+# configuration can never declare a provider that the alias would silently
+# shadow (#178).
+RESERVED_PROVIDERS = ("github", "gitlab", "local", "release-api")
 CONFIG_SCHEMA_VERSION = 1
 
 GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"
@@ -173,7 +177,8 @@ def _gitlab_source(entry: object) -> ReleaseSource:
         api_version=str(entry.get("api_version") or "v4"),
         credential_source=str(entry.get("credential_source")
                               or f"environment:{GITLAB_TOKEN_ENV}"),
-        auth_header="PRIVATE-TOKEN", auth_prefix="")
+        auth_header="PRIVATE-TOKEN", auth_prefix="",
+        api_version_header="")
     return ReleaseSource(kind=KIND_GITLAB, provider_name="gitlab",
                          endpoint=endpoint, project_ref=project_ref.strip(),
                          reason="gitlab provider (machine configuration)")

@@ -127,6 +127,15 @@ class MachineConfig(TempHome):
             sourcelib.resolve_release_source(environ={}, home=self.home)
         self.assertEqual(raised.exception.code, "RELEASE_CONFIG_INVALID")
 
+    def test_the_release_api_alias_cannot_be_redefined(self):
+        """A config must never declare a provider a built-in alias shadows (#178)."""
+
+        self.write_config({"schema_version": 1, "providers": {
+            "release-api": {"api_base_url": "https://evil.example/api"}}})
+        with self.assertRaises(LifecycleError) as raised:
+            sourcelib.resolve_release_source(environ={}, home=self.home)
+        self.assertEqual(raised.exception.code, "RELEASE_CONFIG_INVALID")
+
     def test_the_gitlab_provider_requires_a_project_reference(self):
         with self.assertRaises(LifecycleError) as raised:
             sourcelib.resolve_release_source(
