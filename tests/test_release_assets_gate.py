@@ -32,6 +32,7 @@ for extra in (REPO / "scripts", REPO):
 import check_release_versions as gate  # noqa: E402
 import check_published_assets as published  # noqa: E402
 import check_bridge_release as bridge  # noqa: E402
+import check_release_gate as release_gate  # noqa: E402
 from ainative.lifecycle import provider as providerlib  # noqa: E402
 from ainative.lifecycle.errors import LifecycleError  # noqa: E402
 
@@ -225,6 +226,82 @@ class BridgeReleaseGate(unittest.TestCase):
         provider._get = lambda url, limit: document
         record = bridge.verify_bridge_release("2.5.0", provider=provider)
         self.assertEqual(record["sha256"], "b" * 64)
+
+
+class BridgeGatePolicy(unittest.TestCase):
+    """The publication protocol comes from the artifacts, never a variable (#177).
+
+    Non-vacuity: each of the five outcomes is pinned, and the workflow-level
+    simulation runs through `main()` — the same entry point the release
+    workflow invokes.
+    """
+
+    def dist(self, *names: str) -> Path:
+        directory = tempfile.TemporaryDirectory(prefix="release-gate-")
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        for name in names:
+            (root / name).write_bytes(b"x")
+        return root
+
+    def unresolved(self, version: str) -> dict:
+        raise bridge.BridgeReleaseUnverified(
+            f"a V2 runtime cannot resolve the bridge release {version}: "
+            "UPDATE_INTEGRITY_METADATA_MISSING: no bundle")
+
+    def resolvable(self, version: str) -> dict:
+        return {"bridge_version": version, "lifecycle_bundle": f"v2-{version}",
+                "sha256": "a" * 64, "source": "https://example.invalid"}
+
+    def test_v2_publication_without_the_variable_is_allowed(self):
+        outcome = release_gate.evaluate(
+            self.dist("ainative-lifecycle-v2-2.4.4.zip"), "")
+        self.assertEqual(outcome["decision"], "ALLOW")
+        self.assertEqual(outcome["protocol"], 2)
+        self.assertEqual(outcome["bridge"], "not-applicable")
+
+    def test_v3_publication_without_the_variable_blocks(self):
+        for artifacts in (("ainative-release-v3.json",),
+                          ("ainative-lifecycle-v3-2.5.0.zip",)):
+            with self.subTest(artifacts=artifacts):
+                outcome = release_gate.evaluate(self.dist(*artifacts), "")
+                self.assertEqual(outcome["decision"], "BLOCK")
+                self.assertEqual(outcome["protocol"], 3)
+                self.assertIn("V3_BRIDGE_RELEASE", outcome["detail"])
+
+    def test_the_workflow_entry_point_blocks_a_v3_publication_without_the_variable(self):
+        dist = self.dist("ainative-release-v3.json", "ainative-lifecycle-v3-2.5.0.zip")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = release_gate.main(["--dist", str(dist), "--bridge-version", ""])
+        self.assertEqual(code, 1)
+        self.assertIn("BLOCK RELEASE", stderr.getvalue())
+
+    def test_v3_publication_with_a_nonexistent_bridge_blocks(self):
+        outcome = release_gate.evaluate(self.dist("ainative-release-v3.json"), "9.9.9",
+                                        verify=self.unresolved)
+        self.assertEqual(outcome["decision"], "BLOCK")
+        self.assertEqual(outcome["bridge"], "unverified")
+        self.assertIn("cannot resolve", outcome["detail"])
+
+    def test_v3_publication_with_a_bundle_less_bridge_blocks(self):
+        outcome = release_gate.evaluate(self.dist("ainative-release-v3.json"), "2.4.4",
+                                        verify=self.unresolved)
+        self.assertEqual(outcome["decision"], "BLOCK")
+
+    def test_v3_publication_with_a_verifiable_bridge_passes(self):
+        outcome = release_gate.evaluate(self.dist("ainative-release-v3.json"), "2.4.4",
+                                        verify=self.resolvable)
+        self.assertEqual(outcome["decision"], "ALLOW")
+        self.assertEqual(outcome["bridge"], "verified")
+        self.assertEqual(outcome["record"]["bridge_version"], "2.4.4")
+
+    def test_a_missing_dist_directory_is_a_configuration_error(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = release_gate.main(["--dist", str(Path("nope") / "absent")])
+        self.assertEqual(code, 2)
+        self.assertIn("configuration error", stderr.getvalue())
 
 
 if __name__ == "__main__":

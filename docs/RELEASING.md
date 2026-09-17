@@ -27,13 +27,15 @@ The **Release assets** workflow then runs, in order:
 
 1. the tag points at `origin/main`;
 2. `check_release_versions.py --tag` (tag == VERSION == package == AGENTS.md);
-3. when `V3_BRIDGE_RELEASE` is declared, the bridge gate resolves it through
-   the V2 selection rules and blocks a V3 publication without a verifiable
-   bridge;
-4. wheel, sdist, lifecycle bundle build; the bundle is
-   `ainative-lifecycle-v2-<version>.zip`;
-5. `check_release_versions.py --dist` re-reads every artifact (filenames, wheel
+3. wheel, sdist, lifecycle bundle build; the V2 bridge publishes a
+   `ainative-lifecycle-v2-<version>.zip`, a V3 release publishes the external
+   manifest and a protocol 3 bundle (see "V2 bridge gate" below);
+4. `check_release_versions.py --dist` re-reads every artifact (filenames, wheel
    METADATA, sdist PKG-INFO, protocol document, payload VERSION);
+5. the **bridge gate** reads the built artifacts: a protocol 3 publication
+   requires a verified `V3_BRIDGE_RELEASE` (blocked otherwise), a protocol 2
+   release reports the gate as explicitly not applicable — the absence of the
+   variable is never treated as proof of a V2 release;
 6. `SHA256SUMS` is written;
 7. **build provenance is attested** for every artifact
    (`actions/attest-build-provenance`): GitHub signs a statement that these
@@ -49,19 +51,20 @@ release with a partial asset set.
 
 The first V3 release cannot be applied by any runtime older than V3, so every
 installed runtime must be able to reach the bridge release first. The bridge is
-a normal release that ships the PR-0B bridge: a V2 runtime meeting a future
-protocol reports `CLI_UPDATE_REQUIRED` with the upgrade path, instead of
+a normal protocol 2 release that ships the PR-0B bridge: a V2 runtime meeting a
+future protocol reports `CLI_UPDATE_REQUIRED` with the upgrade path, instead of
 `UPDATE_INTEGRITY_METADATA_MISSING`.
 
-Before publishing a V3 release, set the repository variable
-`V3_BRIDGE_RELEASE` to the bridge version. The release workflow then runs
-`scripts/check_bridge_release.py --bridge-version "<bridge>"`, which resolves
-the bridge release through the same selection rules a user's updater uses and
-blocks the publication (`BLOCK RELEASE`, exit 1) unless the release exists, is
-published, and publishes `ainative-lifecycle-v2-<bridge>.zip` with a digest.
-When the variable is unset (V2 releases), the step reports an explicit SKIP.
+The release workflow determines the protocol it is publishing **from the built
+artifacts** (`scripts/check_release_gate.py`): a `dist/` holding
+`ainative-release-v3.json` or an `ainative-lifecycle-v3-*.zip` is a protocol 3
+publication and requires the repository variable `V3_BRIDGE_RELEASE` to name a
+bridge that a V2 runtime can actually resolve — the same resolution a user's
+updater performs. A protocol 2 release passes with the gate explicitly not
+applicable. A missing variable on a V3 publication, a nonexistent bridge, or a
+bridge without a valid V2 lifecycle bundle all block the release.
 
-A runtime older than the bridge sees the V3 release as
+A runtime older than the bridge sees a V3 release as
 `UPDATE_INTEGRITY_METADATA_MISSING`; its documented escape path is the same
 upgrade command:
 
