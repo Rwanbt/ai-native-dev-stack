@@ -77,12 +77,23 @@ Declared support never exceeds qualified support (`SUPPORT.md`, ADR-0019 §13).
 
 ## Known limitations and remaining work
 
+**v2.5.0 publication — manifest attestation missing (fixed for the next
+release, #185):** the release workflow's `subject-path` did not include
+`dist/*.json`, so the published `ainative-release-v3.json` of v2.5.0 has no
+build-provenance attestation (`gh attestation verify` returns 404 for its
+digest). The bundle *is* attested. The manifest remains covered by
+`SHA256SUMS` and by GitHub's asset metadata — which is exactly the anchor the
+runtime verifies — and the published v2.5.0 assets are **never replaced
+retroactively**. The workflow now attests every published asset; the next
+release must show a verifiable manifest attestation.
+
 **P1 — the declared-support gate:**
 - Full CI matrix (Linux/Windows/macOS, py3.11/3.13) — runs on the `dev`
   proposals; every run so far has been green (52/52, then 76/76).
-- The V2 bridge release and the V3 release have not been published: the plan's
-  release choreography (§92) starts after the branch is promoted to `dev`, and
-  the first V3 publication stays gated by `V3_BRIDGE_RELEASE`.
+- The V2 bridge release (2.4.4) and the V3 release (2.5.0) are now published
+  and verified; `V3_BRIDGE_RELEASE=2.4.4` is set repository-side, so the
+  first V3 publication gate is validated for real. The full report refresh
+  lands separately from this fix (#185).
 
 **Resolved since the first draft of this report:** the GitLab.com **live**
 qualification (scenario B), scenario Q (mandatory secret patterns with

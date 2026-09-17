@@ -60,12 +60,16 @@ jobs:
         # Standard, verifiable, automatable: GitHub attests that these bytes
         # were produced by this workflow, in this repository, at this commit.
         # Clients verify with `gh attestation verify <file> -R <repo>`.
+        # The V3 manifest is a published asset like the others: it is attested
+        # too (v2.5.0 shipped without this line and its manifest has no
+        # attestation; it is never replaced retroactively - #185).
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             dist/*.whl
             dist/*.tar.gz
             dist/*.zip
+            dist/*.json
       - name: Create the release as a draft
         # Draft first: a release uploaded asset by asset is briefly visible
         # with a partial set. Nothing is published until every asset is up and
