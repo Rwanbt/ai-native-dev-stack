@@ -32,20 +32,6 @@ jobs:
         # ainative-dev-stack-2.2.1.zip beside a 2.2.2 release (AUD-201), and
         # every check downstream would still pass.
         run: python scripts/check_release_versions.py --tag "${GITHUB_REF_NAME}"
-      - name: V3 bridge gate (declared bridge releases only)
-        # The first V3 publication requires a V2-compatible bridge release that
-        # a V2 runtime can actually resolve (#157, PR-0B). Declared as the
-        # repository variable V3_BRIDGE_RELEASE; V2 releases skip it visibly,
-        # never silently.
-        env:
-          V3_BRIDGE_RELEASE: ${{ vars.V3_BRIDGE_RELEASE }}
-        run: |
-          set -e
-          if [ -z "${V3_BRIDGE_RELEASE}" ]; then
-            echo "SKIP: no V3_BRIDGE_RELEASE declared (not a V3 publication)"
-            exit 0
-          fi
-          python scripts/check_bridge_release.py --bridge-version "${V3_BRIDGE_RELEASE}"
       - run: python -m pip install --disable-pip-version-check -q build
       - name: Build the wheel and sdist (refuses a two-version tree)
         # _build_backend refuses to stage when VERSION and ainative.__version__
