@@ -201,6 +201,28 @@ jobs:
       - name: Ownership, user modifications and external config
         run: python -m unittest tests.test_lifecycle_ownership -v
 
+      - name: Features, State V2 and the shared projection
+        run: python -m unittest tests.test_lifecycle_features -v
+
+      - name: Work authority, claim grammar and the claim journal
+        run: python -m unittest tests.test_forge_claims -v
+
+      - name: Release source resolution and diagnostics
+        run: python -m unittest tests.test_release_source -v
+
+      - name: Release V3 contract, manifest and version chain
+        run: python -m unittest tests.test_release_v3 -v
+
+      - name: Release V3 providers (GitHub, anonymous, local mirror)
+        run: python -m unittest tests.test_release_providers -v
+
+      - name: Release V3 update path end to end
+        run: python -m unittest tests.test_lifecycle_update_v3 -v
+
+      - name: Purity - neutral layer, contracts, distributed policy, docs parity
+        run: |
+          python -m unittest tests.purity.test_dependency_purity tests.purity.test_contract_purity tests.purity.test_distributed_policy_purity tests.purity.test_docs_parity -v
+
       - name: Path traversal, link escape, tampered state, archive safety
         run: python -m unittest tests.test_lifecycle_security -v
 

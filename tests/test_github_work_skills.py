@@ -458,8 +458,12 @@ class SkillContract(unittest.TestCase):
         self.assertIn('Scoped cleanup', self.AGENTS)
 
     def test_github_workflow_lists_implementation_economy(self) -> None:
+        # The generic rule moved to the provider-neutral policy (ADR-0018);
+        # the GitHub mapping must still name the skill and point at it.
         self.assertIn('implementation-economy', self.WORKFLOW)
-        self.assertIn('it cannot alter Issue scope or Acceptance Criteria', self.WORKFLOW)
+        neutral = (REPO / 'docs' / 'FORGE-WORKFLOW.md').read_text(encoding='utf-8')
+        self.assertIn('implementation-economy', neutral)
+        self.assertIn('it cannot alter scope or acceptance criteria', neutral)
 
 
     def test_preexisting_deletion_imperatives_are_scoped(self) -> None:

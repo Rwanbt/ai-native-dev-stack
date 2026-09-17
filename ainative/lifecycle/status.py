@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import manifest as manifestlib
 from . import recovery as recoverylib
+from . import release_source as release_sourcelib
 from . import state as statelib
 from . import updater as updaterlib
 from .manifest import Distribution
@@ -28,6 +29,9 @@ class Status:
     active_profile: str | None
     previous_profile: str | None
     components: list[dict] = field(default_factory=list)
+    features: list[str] = field(default_factory=list)
+    features_projected: bool = False
+    release_source: dict = field(default_factory=dict)
     healthy: bool = True
     lifecycle_notes: list[str] = field(default_factory=list)
     verified: dict = field(default_factory=dict)
@@ -42,6 +46,9 @@ class Status:
             "profile": self.active_profile,
             "previous_profile": self.previous_profile,
             "components": self.components,
+            "features": self.features,
+            "features_projected_from_legacy": self.features_projected,
+            "release_source": self.release_source,
             "lifecycle": {"healthy": self.healthy, "notes": list(self.lifecycle_notes),
                           "findings": self.counts},
             "verified": self.verified,
@@ -55,6 +62,12 @@ class Status:
             return "\n".join(lines)
         lines.append("Profile")
         lines.append(f"  {self.active_profile}")
+        if self.installed:
+            lines.append("")
+            lines.append("Features")
+            lines.append(f"  {', '.join(self.features) or 'none'}"
+                         + ("   (projected from the V1 state)"
+                            if self.features_projected else ""))
         lines.append("")
         lines.append("Components")
         for item in self.components:
@@ -75,6 +88,9 @@ class Status:
             lines.append("")
             lines.append("Updates")
             lines.append(f"  {updaterlib.notice_line(self.update)}")
+        if self.release_source:
+            lines.append("")
+            lines.extend(release_sourcelib.describe_lines(self.release_source))
         return "\n".join(lines)
 
 
@@ -158,10 +174,20 @@ def build(project: Path, *, distribution: Distribution | None = None,
     if diagnosis.lock and diagnosis.lock.get("stale_suspect"):
         notes.append("a lifecycle lock is present and may be stale")
 
+    from . import features as featureslib
+    from . import release_source as release_sourcelib
+
+    # One projection for every reader (ADR-0017 section 4): `status` reports
+    # the effective feature set, exactly as `feature status` does.
+    effective = featureslib.project_install_state(state, distribution)
+
     return Status(
         project=project, installed=True, stack_version=state.stack_version,
         active_profile=state.active_profile, previous_profile=state.previous_profile,
         components=_component_rows(distribution, state, diagnosis),
+        features=list(effective.active_features) if effective else [],
+        features_projected=bool(effective and effective.projected_from_legacy),
+        release_source=release_sourcelib.describe(),
         healthy=diagnosis.healthy, lifecycle_notes=notes,
         verified=_verified_section(project, distribution, state),
         update=updaterlib.cached_notice(project, allow_network=check_updates,

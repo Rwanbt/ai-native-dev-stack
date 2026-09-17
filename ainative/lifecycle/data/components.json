@@ -43,12 +43,12 @@
     "engineering-method": {
       "version": 1,
       "kind": "file",
-      "source": "AGENTS.md",
+      "source": "templates/AGENTS.md",
       "destination": "AGENTS.md",
       "ownership": "MANAGED_MUTABLE",
       "required": true,
       "title": "Engineering method",
-      "description": "The shared cross-tool engineering rules every agent reads."
+      "description": "The shared cross-tool engineering rules every agent reads. The distributed copy (templates/AGENTS.md) speaks provider-neutral Work Authority; this repository's own AGENTS.md stays GitHub-specific (ADR-0018)."
     },
     "conventions": {
       "version": 1,
@@ -146,6 +146,21 @@
       "required": false,
       "title": "GitHub contribution templates",
       "description": "Generic bug/feature issue templates and PR template, installed as individually-owned managed files."
+    },
+    "gitlab-templates": {
+      "version": 1,
+      "kind": "tree",
+      "source": "templates/gitlab",
+      "destination": ".gitlab",
+      "include": [
+        "issue_templates/bug.md",
+        "issue_templates/feature.md",
+        "merge_request_templates/default.md"
+      ],
+      "ownership": "MANAGED_MUTABLE",
+      "required": false,
+      "title": "GitLab contribution templates",
+      "description": "GitLab issue and merge-request templates, installed as individually-owned managed files. Owned by the forge-gitlab feature (ADR-0017)."
     },
     "verified-workplane": {
       "version": 1,

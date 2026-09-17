@@ -189,16 +189,23 @@ class AuthorityCommandsDoNoNetwork(LifecycleTestCase):
         import urllib.request
 
         from ainative import cli as clilib
+        from ainative.lifecycle import transport as transportlib
 
         calls: list[str] = []
 
         def refuse(*args, **kwargs):
-            calls.append("urlopen")
+            calls.append("network")
             raise AssertionError("an authority command reached the network")
 
-        original = urllib.request.urlopen
+        # Both seams: the release transport opens its own opener (so patching
+        # `urlopen` alone no longer intercepts it), and a stray call elsewhere
+        # would still go through the module function.
+        original_urlopen = urllib.request.urlopen
+        original_send = transportlib._send
         urllib.request.urlopen = refuse
-        self.addCleanup(setattr, urllib.request, "urlopen", original)
+        transportlib._send = refuse
+        self.addCleanup(setattr, urllib.request, "urlopen", original_urlopen)
+        self.addCleanup(setattr, transportlib, "_send", original_send)
 
         for command in (["trust", "show", "--repo", str(self.project)],
                         ["work", "--help"], ["converge", "--help"]):

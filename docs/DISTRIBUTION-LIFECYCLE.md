@@ -371,6 +371,36 @@ anonymous rate limit); the token is never logged, never written to the cache,
 and never included in an error message. A 403/429 answer is reported as a
 rate-limit diagnosis with the same remedy.
 
+### Sources and credential confinement
+
+The source is selected by one environment variable, with no discovery:
+
+```text
+AINATIVE_UPDATE_PROVIDER=local  + AINATIVE_UPDATE_LOCAL_DIR   → local mirror
+AINATIVE_UPDATE_PROVIDER=github (default)                     → official releases
+AINATIVE_UPDATE_URL                                           → custom release document
+```
+
+`AINATIVE_UPDATE_URL` names a custom HTTPS source whose release document is
+GitHub-Release-API-compatible. It is **anonymous by construction**: it never
+receives `GITHUB_TOKEN`, `GH_TOKEN` or any other provider credential, because
+its metadata may name any artifact URL and that must not be enough to obtain a
+token. The credential is sent to exactly one origin — `api.github.com`, the
+built-in endpoint's declared `auth_origin` — and nowhere else, on any hop:
+
+- release metadata may only redirect within its own origin; a cross-origin
+  metadata redirect is refused;
+- a release artifact may redirect across origins (GitHub answers `302` to its
+  CDN): the redirect is followed anonymously, with every credential stripped;
+- private GitHub release assets are fetched through the release asset API with
+  `Accept: application/octet-stream`; the browser download URL is never
+  authenticated;
+- `https → http` downgrades, URLs carrying `user:password@`, and redirect
+  chains beyond the bound are refused before a socket is opened.
+
+There is no unverified fallback: a source that cannot publish the bundle's
+SHA-256 is refused rather than trusted.
+
 `ainative update check` exits 0 whatever the answer: `exit 0` means "the answer
 is what it is", never "the source was reachable". A CI gate that needs the
 second statement runs `ainative update check --strict`, which exits 1 on
@@ -437,6 +467,22 @@ with any runtime and say when a CLI upgrade is required first:
 pip install --upgrade "git+https://github.com/Rwanbt/ai-native-dev-stack.git@v2.2.2"
 cd your-project && ainative update
 ```
+
+**A newer lifecycle protocol, stated precisely.** A release that publishes a
+lifecycle bundle or manifest for a protocol newer than the running runtime's
+(`ainative-lifecycle-v3-*`, `ainative-release-v3.json`) is not a broken
+release: `update check` reports it as available with a CLI upgrade required,
+and `ainative update` refuses it with `CLI_UPDATE_REQUIRED`, before any
+download or write, naming the upgrade command. A release that publishes no
+lifecycle bundle at all keeps its refusal:
+`UPDATE_INTEGRITY_METADATA_MISSING`. A runtime older than the bridge release
+sees a V3 release as `UPDATE_INTEGRITY_METADATA_MISSING`; its documented
+escape path is the same upgrade command, applied manually, then
+`ainative update`. Before the first V3 publication the release workflow
+verifies the declared `V3_BRIDGE_RELEASE` with
+`scripts/check_bridge_release.py`, which resolves it through these same
+selection rules and blocks the publication (`BLOCK RELEASE`) when the bridge
+cannot be verified.
 
 **The release chain, stated precisely.** For a published release:
 
@@ -685,3 +731,36 @@ report whether machine integration is present.
 
 The machine surface has no project ownership state and no transaction journal;
 re-running the installer *is* the update path.
+
+
+## 18. Features (project-scope capabilities)
+
+A profile is a governance level; a feature is an optional project-scope
+capability. They are independent (ADR-0017): a `verified` project can be
+Generic Git, and a `standard` project can work with GitLab.
+
+```bash
+ainative feature status
+ainative feature enable forge-gitlab
+ainative feature disable forge-gitlab
+ainative feature switch forge-gitlab    # one transaction: disable + enable
+ainative feature switch none            # Generic Git: no work forge
+```
+
+At most one **work forge** may be active. `forge-github` (the default) conflicts
+with `forge-gitlab`; enabling a conflicting feature refuses with the remedy
+(`feature switch`), and a state that names two work forges refuses as
+`STATE_CONFLICTING_WORK_FORGE_FEATURES` rather than picking one.
+
+State schema V2 records `active_features`. A V1 state has no such field and
+projects to `forge-github` — the compatibility default, read-only. The
+migration happens inside the next mutation, state-last like every other state
+write, and plans no file change of its own: a previously managed file that is
+already absent stays absent. Only an explicit feature transition seeds files.
+
+Feature files follow the same ownership rules as everything else: enabling
+seeds absent files, disabling removes only unchanged files and preserves files
+the user modified, and re-enabling never overwrites a user file. One difference
+from profile components is deliberate: ordinary `init`/`update` maintenance
+never re-seeds an absent feature file — a file you removed stays removed until
+a feature transition puts it back.

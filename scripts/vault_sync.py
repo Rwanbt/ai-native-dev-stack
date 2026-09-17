@@ -105,6 +105,8 @@ def _load_secret_patterns() -> list:
     return [
         (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key ID"),
         (re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "GitHub token"),
+        (re.compile(r"glpat-[A-Za-z0-9_\-]{20,}"), "GitLab personal access token"),
+        (re.compile(r"gldt-[A-Za-z0-9_\-]{20,}"), "GitLab deploy token"),
         (re.compile(r"sk_live_[A-Za-z0-9]{20,}"), "Stripe live secret key"),
         (re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----"), "Private key"),
     ]

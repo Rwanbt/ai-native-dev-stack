@@ -40,6 +40,7 @@ from . import installer as installerlib
 from . import manifest as manifestlib
 from . import planner as plannerlib
 from . import provider as providerlib
+from . import release_v3 as release_v3lib
 from . import source as sourcelib
 from . import state as statelib
 from . import version as versionlib
@@ -55,9 +56,6 @@ DISABLED = "DISABLED"
 
 DISABLE_ENV = "AINATIVE_NO_UPDATE_CHECK"
 STAGED_RELATIVE = statelib.LIFECYCLE_DIRNAME / "staged"
-UPGRADE_COMMAND_TEMPLATE = (
-    'pip install --upgrade '
-    '"git+https://github.com/Rwanbt/ai-native-dev-stack.git@v{version}"')
 
 # A zip that expands to more than this, or holds more entries, is refused before
 # a single byte is written. Both are classic archive bombs.
@@ -116,10 +114,10 @@ def runtime_version() -> str:
     return __version__
 
 
-def upgrade_command(version: str) -> str:
-    """The exact command that installs the runtime a target release needs."""
-
-    return UPGRADE_COMMAND_TEMPLATE.format(version=version)
+# Moved to `provider`: a release-source refusal (a future lifecycle protocol,
+# #157) must name the upgrade path, and provider must not import this module.
+# Re-exported here for the callers that have always named it through `updater`.
+upgrade_command = providerlib.upgrade_command
 
 
 def _runtime_fields(result: CheckResult) -> CheckResult:
@@ -199,6 +197,55 @@ def checks_disabled(state: statelib.InstallState | None) -> bool:
     return not preferences.get("enabled", True) or not preferences.get("auto_check", True)
 
 
+def _check_refusal(project: Path, current: str, error: LifecycleError,
+                   record: bool) -> CheckResult:
+    """The check outcome for a refused source. Never fatal, never a traceback."""
+
+    if error.code == "CLI_UPDATE_REQUIRED":
+        # A future-protocol release IS available; this runtime cannot apply it.
+        target = error.detail.get("target_version")
+        result = _runtime_fields(CheckResult(
+            UPDATE_AVAILABLE if isinstance(target, str) else CHECK_FAILED,
+            current, latest=target if isinstance(target, str) else None,
+            detail=error.message, checked_at=statelib.now()))
+    else:
+        status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
+        result = _runtime_fields(CheckResult(status, current, detail=error.message,
+                                             checked_at=statelib.now()))
+    if record:
+        _write_cache(project, result)
+    return result
+
+
+def resolve_v3_candidate(channel: str):
+    """(candidate, provider) for a V3 source, or None when the channel is V2-era.
+
+    `None` means the source was exhausted and publishes no V3 candidate for the
+    channel — a V2-era mirror — and the caller speaks the V2 path to it. A
+    source that hit its enumeration bounds refuses instead: partial results are
+    never a reason to change generation (ADR-0019 section 7).
+    """
+
+    provider = providerlib.build_v3(channel)
+    if provider is None:
+        return None
+    result = provider.enumerate(release_v3lib.ReleaseQuery(channel))
+    if not result.complete:
+        raise LifecycleError(
+            "RELEASE_ENUMERATION_INCOMPLETE",
+            "the release source answered a full page; its enumeration bounds "
+            "were reached before exhaustion")
+    if not any(candidate.channel == channel for candidate in result.candidates):
+        if not provider.supports_v2_fallback:
+            raise LifecycleError(
+                "RELEASE_NO_CANDIDATE",
+                f"the {channel!r} channel of this source is complete and holds "
+                "no V3 release")
+        return None
+    candidate = release_v3lib.select_candidate(result, release_v3lib.ReleaseQuery(channel))
+    return candidate, provider
+
+
 def check(project: Path, *, force: bool = False, allow_network: bool = True,
           record: bool = True, state: statelib.InstallState | None = None,
           source: DistributionSource | None = None,
@@ -233,14 +280,19 @@ def check(project: Path, *, force: bool = False, allow_network: bool = True,
 
     if release is None:
         try:
-            release = providerlib.build(channel).latest(channel)
+            resolved = resolve_v3_candidate(channel)
         except LifecycleError as error:
-            status = OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED
-            result = _runtime_fields(CheckResult(status, current, detail=error.message,
-                                                 checked_at=statelib.now()))
-            if record:
-                _write_cache(project, result)
-            return result
+            return _check_refusal(project, current, error, record)
+        if resolved is not None:
+            # The version is all a check needs; the manifest is fetched only
+            # when an update is actually applied.
+            release = providerlib.Release(version=resolved[0].version, url=None,
+                                          digest=None)
+        else:
+            try:
+                release = providerlib.build(channel).latest(channel)
+            except LifecycleError as error:
+                return _check_refusal(project, current, error, record)
 
     newer = versionlib.is_newer(release.version, current)
     result = _runtime_fields(CheckResult(UPDATE_AVAILABLE if newer else UP_TO_DATE, current,
@@ -370,7 +422,8 @@ def _safe_extract(payload: bytes, destination: Path) -> Path:
     return root
 
 
-def _distribution_root(extracted: Path, release: providerlib.Release | None = None) -> Path:
+def _distribution_root(extracted: Path, release: providerlib.Release | None = None,
+                       *, expected_protocol: int | None = None) -> Path:
     """The payload root of an extracted bundle.
 
     A v2 bundle carries `lifecycle-protocol.json` at its root and the payload
@@ -395,11 +448,13 @@ def _distribution_root(extracted: Path, release: providerlib.Release | None = No
             raise LifecycleError("UPDATE_INTEGRITY_FAILED",
                                  f"{providerlib.PROTOCOL_MANIFEST} is not an object")
         protocol_version = document.get("protocol_version")
-        if protocol_version != providerlib.UPDATE_PROTOCOL_VERSION:
+        expected = (expected_protocol if expected_protocol is not None
+                    else providerlib.UPDATE_PROTOCOL_VERSION)
+        if protocol_version != expected:
             raise LifecycleError(
                 "UPDATE_VERSION_MISMATCH",
                 f"bundle declares lifecycle protocol {protocol_version!r}; this runtime "
-                f"speaks protocol {providerlib.UPDATE_PROTOCOL_VERSION}")
+                f"speaks protocol {expected}")
         declared = str(document.get("release_version", ""))
         if release is not None and declared != release.version:
             raise LifecycleError(
@@ -482,6 +537,18 @@ def _require_matching_runtime(release: providerlib.Release) -> None:
         upgrade_command=upgrade_command(release.version))
 
 
+def _degraded_apply(project: Path, state: statelib.InstallState,
+                    error: LifecycleError, dry_run: bool) -> UpdateResult:
+    """The update outcome when the source could not be consulted."""
+
+    outcome = _runtime_fields(CheckResult(
+        OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED,
+        state.stack_version, detail=error.message, checked_at=statelib.now()))
+    if not dry_run:
+        _write_cache(project, outcome)
+    return UpdateResult(False, dry_run, state.stack_version, None, outcome)
+
+
 def apply(project: Path, *, dry_run: bool = False, force: bool = False,
           distribution: manifestlib.Distribution | None = None) -> UpdateResult:
     """resolve -> runtime gate -> check -> fetch -> verify -> apply -> commit.
@@ -500,22 +567,26 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
                              f"no AI Native installation recorded in {project}")
 
     channel = state.update_preferences.get("channel", "stable") or "stable"
-    provider = providerlib.build(channel)
+    v3 = None
     try:
-        release = provider.latest(channel)
+        v3 = resolve_v3_candidate(channel)
     except LifecycleError as error:
-        # An unreachable or empty source degrades gracefully, exactly as
-        # `check` reports it. A source that answered with something this stack
-        # refuses (mismatched bundle version, missing digest) is not degraded
-        # connectivity - it is a refusal, and it propagates.
+        # An unreachable source degrades gracefully, exactly as `check`
+        # reports it; anything a source answered with something this stack
+        # refuses is a refusal, and it propagates.
         if force or error.code not in ("UPDATE_CHECK_FAILED", "UPDATE_UNAVAILABLE"):
             raise
-        outcome = _runtime_fields(CheckResult(
-            OFFLINE if error.code == "UPDATE_CHECK_FAILED" else CHECK_FAILED,
-            state.stack_version, detail=error.message, checked_at=statelib.now()))
-        if not dry_run:
-            _write_cache(project, outcome)
-        return UpdateResult(False, dry_run, state.stack_version, None, outcome)
+        return _degraded_apply(project, state, error, dry_run)
+    if v3 is not None:
+        release = providerlib.Release(version=v3[0].version, url=None, digest=None)
+    else:
+        provider = providerlib.build(channel)
+        try:
+            release = provider.latest(channel)
+        except LifecycleError as error:
+            if force or error.code not in ("UPDATE_CHECK_FAILED", "UPDATE_UNAVAILABLE"):
+                raise
+            return _degraded_apply(project, state, error, dry_run)
 
     # Availability first, runtime contract second: a project already at the
     # newest release has nothing to apply, so a runtime that differs is not
@@ -534,13 +605,24 @@ def apply(project: Path, *, dry_run: bool = False, force: bool = False,
         return UpdateResult(applied=False, dry_run=dry_run, from_version=state.stack_version,
                             to_version=outcome.latest, check=outcome)
 
-    payload = provider.fetch(release)
-    providerlib.verify_archive(payload, release.digest)
+    protocol_version = providerlib.UPDATE_PROTOCOL_VERSION
+    if v3 is not None:
+        candidate, v3provider = v3
+        manifest = release_v3lib.fetch_manifest_for(v3provider, candidate)
+        artifact = manifest.lifecycle_artifact()
+        payload = v3provider.fetch_artifact(candidate, artifact)
+        release_v3lib.verify_external_anchor(payload, sha256=artifact.sha256,
+                                             size=artifact.size)
+        protocol_version = release_v3lib.BUNDLE_PROTOCOL_VERSION
+    else:
+        payload = provider.fetch(release)
+        providerlib.verify_archive(payload, release.digest)
 
     staging = Path(tempfile.mkdtemp(prefix="ainative-update-",
                                     dir=str(_staging_root(project))))
     try:
-        root = _distribution_root(_safe_extract(payload, staging), release)
+        root = _distribution_root(_safe_extract(payload, staging), release,
+                                  expected_protocol=protocol_version)
         staged_source = DistributionSource(root=root.resolve(), origin="update",
                                            version=sourcelib.read_version(root))
         # The release named a version; the bytes name another one. SHA-256

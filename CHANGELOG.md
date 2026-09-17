@@ -6,6 +6,80 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **V2 forward bridge: a future lifecycle protocol now says so** (#157): a
+  release that publishes a newer lifecycle protocol (`ainative-release-v3.json`
+  manifest or `ainative-lifecycle-v3-*` bundle) is reported as available with a
+  CLI upgrade required, and `ainative update` refuses it with
+  `CLI_UPDATE_REQUIRED` before any download or write. A release that publishes
+  no lifecycle bundle at all keeps `UPDATE_INTEGRITY_METADATA_MISSING`, so a
+  broken publication is still not mistaken for future protocol.
+- **Bridge publication gate** (`scripts/check_bridge_release.py`): the release
+  workflow verifies a declared `V3_BRIDGE_RELEASE` through the V2 selection
+  rules before publishing a V3 release; a missing, unpublished or bundle-less
+  bridge blocks the release.
+- **Features: profiles and capabilities are independent** (#162, ADR-0017):
+  `ainative feature enable | disable | switch | status` manages optional
+  project-scope capabilities in one lifecycle transaction. `forge-github` is
+  the default; it conflicts with `forge-gitlab`; a project has at most one
+  work forge, and `feature switch none` is the Generic Git shape. State schema
+  V2 records `active_features`; a V1 state projects to the compatibility
+  default and migrates inside the next mutation without resurrecting an
+  absent managed file.
+- **Multi-Forge release sources and Release V3** (#165, ADR-0019): one
+  `resolve_release_source()` with fail-closed selector conflicts and a
+  machine-scope `~/.ai-native/release-providers.json`; a V3 release manifest
+  whose SHA-256 and size are verified (from provider metadata) *before* the
+  document is parsed; an exact version chain across candidate, manifest,
+  runtime, artifact, filename and the lifecycle protocol document; bounded
+  enumeration; SemVer without build metadata; duplicates refused. GitHub.com,
+  anonymous and local providers are wired into `update`/`update check`
+  (V2-era sources keep working), and `status`/`doctor` show the effective
+  source, its reason and whether it is authenticated.
+- **GitLab provider (Release V3)** (#166): Releases for discovery, the
+  Generic Package Registry as the canonical integrity surface (`file_sha256`
+  + `size`), exact package lookup, bounded pagination, and `PRIVATE-TOKEN`
+  confined to the configured origin. **GitLab.com is qualified live**
+  (2026-09-16): a published package and release were enumerated, anchored,
+  downloaded and verified end to end against the real API —
+  `docs/MULTIFORGE-QUALIFICATION.md` states exactly what was verified.
+- **Work Authority observation and claims** (#163/#164, ADR-0018):
+  `ainative forge detect | status` (zero network, credentials, writes or
+  persistent trust), the doctor extension, the pure local resolver, the
+  canonical claim grammar and the durable
+  `ainative claim-attempt list | inspect | abandon` journal — written before
+  the remote signal, never retried blindly.
+- **Mandatory secret patterns can only be extended** (#166, ADR-0019 §12):
+  the candidate scanner takes `extra_secret_patterns` (a union with
+  `MANDATORY_SECRET_PATTERNS`) and no longer offers any replacement
+  parameter; the mandatory floor now includes the documented GitLab token
+  prefixes (`glpat-`, `gldt-`, `glrt-`, `glsoat-`) in the scanner, the
+  anti-debt owner and the vault-sync fallback. EN/FR documentation parity is
+  enforced structurally (heading hierarchy, operational surface, security
+  statements).
+
+### Security
+
+- **Release transport confines provider credentials to their origin** (#158):
+  the update check attached `GITHUB_TOKEN`/`GH_TOKEN` to every request it made —
+  including an artifact URL named by the metadata of a custom
+  `AINATIVE_UPDATE_URL` — and urllib's redirect handling copied the header to
+  any redirect target. A private opener now follows redirects one
+  policy-checked hop at a time: release metadata must stay on its own origin,
+  an artifact redirect is followed anonymously, `https → http` downgrades and
+  URLs carrying userinfo are refused, and redirect chains are bounded. Private
+  GitHub release assets are fetched through the release asset API
+  (`Accept: application/octet-stream`); the `302` to the CDN is followed with
+  every credential stripped.
+
+### Breaking behavior
+
+- **`AINATIVE_UPDATE_URL` is anonymous only** (#158): a custom release source no
+  longer inherits `GITHUB_TOKEN`/`GH_TOKEN`. The environment token is sent only
+  to `api.github.com`; a custom source must serve its metadata anonymously.
+  Conflicting or unusable update sources are refused rather than falling back.
+
 ## [2.4.3] - 2026-09-14
 
 Patch release: the OpenCode plugin is runtime-compatible and ships in the

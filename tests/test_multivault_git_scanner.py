@@ -1,3 +1,4 @@
+import inspect
 import shutil
 import subprocess
 import tempfile
@@ -70,6 +71,29 @@ class CandidateObjectScannerTests(unittest.TestCase):
         result = self.scan(source)
         self.assertEqual(ScanVerdict.LEAK, result.verdict)
         self.assertIn("lfs_pointer", [finding.category for finding in result.findings])
+
+    def test_a_gitlab_token_is_a_leak(self):
+        source = commit_file(self.repo, "gitlab.txt",
+                             b"token glpat-abcdefghijklmnopqrst\n")
+        result = self.scan(source)
+        self.assertEqual(ScanVerdict.LEAK, result.verdict)
+        self.assertIn("secret", [finding.category for finding in result.findings])
+
+    def test_extra_patterns_cannot_replace_the_mandatory_floor(self):
+        # The GitHub floor is still detected when an operator adds their own
+        # pattern: extras are a union, never a replacement (ADR-0019 §12).
+        source = commit_file(self.repo, "both.txt",
+                             b"ghp_abcdefghijklmnop\nACME-INTERNAL-KEY-1234567890\n")
+        result = self.scan(source, extra_secret_patterns=(b"ACME-INTERNAL-KEY-",))
+        self.assertEqual(ScanVerdict.LEAK, result.verdict)
+        details = " ".join(finding.detail for finding in result.findings)
+        self.assertIn("ghp_", details)
+        self.assertIn("ACME-INTERNAL-KEY-", details)
+
+    def test_the_constructor_accepts_no_replacement_parameter(self):
+        parameters = inspect.signature(CandidateObjectScanner.__init__).parameters
+        self.assertIn("extra_secret_patterns", parameters)
+        self.assertNotIn("secret_patterns", parameters)
 
     def test_missing_source_object_is_incomplete(self):
         unknown = "f" * 40

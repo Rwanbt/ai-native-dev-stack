@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Declarative features. A feature is an optional project-scope capability",
+    "that can be enabled or disabled independently of the governance profile",
+    "(ADR-0017). `components` are component IDs from components.json; a component",
+    "belongs to at most one feature. `conflicts` are feature IDs that may not be",
+    "active at the same time, and the relation must be declared symmetrically.",
+    "`legacy_default` is the feature every V1 project projects to: the",
+    "compatibility default, never a write (ADR-0017 section 4)."
+  ],
+  "schema_version": 1,
+  "legacy_default": "forge-github",
+  "features": {
+    "forge-github": {
+      "version": 1,
+      "scope": "project",
+      "work_forge": true,
+      "title": "GitHub work forge",
+      "summary": "GitHub issue and pull-request templates for the project.",
+      "components": [
+        "github-templates"
+      ],
+      "conflicts": [
+        "forge-gitlab"
+      ]
+    },
+    "forge-gitlab": {
+      "version": 1,
+      "scope": "project",
+      "work_forge": true,
+      "title": "GitLab work forge",
+      "summary": "GitLab issue and merge-request templates for the project.",
+      "components": [
+        "gitlab-templates"
+      ],
+      "conflicts": [
+        "forge-github"
+      ]
+    }
+  }
+}

@@ -14,6 +14,7 @@ from typing import Iterable, Sequence
 
 from . import digest as digestlib
 from . import external_json
+from . import features as featureslib
 from . import hooks as hookslib
 from . import manifest as manifestlib
 from .errors import LifecycleError
@@ -180,8 +181,14 @@ def component_files(component: Component,
 
 def _install_change(project: Path, destination: str, source_relative: str | None,
                     component: Component, source: DistributionSource,
-                    state: InstallState, payload: bytes | None) -> Change:
-    """One file's decision, taken from ownership and the recorded digest."""
+                    state: InstallState, payload: bytes | None, *,
+                    seed_missing: bool) -> Change:
+    """One file's decision, taken from ownership and the recorded digest.
+
+    `seed_missing=False` is the feature-component policy: a feature seeds its
+    files when it is enabled, so a file the user removed stays removed through
+    ordinary maintenance (ADR-0017 section 5). Profile components always seed.
+    """
 
     target = resolve_within(project, destination)
     known = state.file_for(destination)
@@ -203,6 +210,10 @@ def _install_change(project: Path, destination: str, source_relative: str | None
                       "seeded from the shipped template", source_relative, new_digest)
 
     if not target.exists():
+        if not seed_missing:
+            return Change(SKIP, destination, component.identifier, component.ownership,
+                          "absent — a feature seeds its files when it is enabled",
+                          source_relative, None)
         return Change(CREATE, destination, component.identifier, component.ownership,
                       "absent", source_relative, new_digest)
 
@@ -259,7 +270,8 @@ def _prune_changes(project: Path, component: Component, wanted: Iterable[str],
 
 
 def plan_component_install(project: Path, component: Component, source: DistributionSource,
-                           state: InstallState, profile: str) -> list[Change]:
+                           state: InstallState, profile: str, *,
+                           seed_missing: bool = True) -> list[Change]:
     if component.kind == manifestlib.KIND_DATA_ROOT:
         return [Change(SKIP, path, component.identifier, component.ownership,
                        "user data root — declared, never written", kind="data_root")
@@ -301,7 +313,7 @@ def plan_component_install(project: Path, component: Component, source: Distribu
         if component.kind == manifestlib.KIND_MARKER:
             payload = marker_payload(component, source, profile).encode("utf-8")
         changes.append(_install_change(project, destination, source_relative, component,
-                                       source, state, payload))
+                                       source, state, payload, seed_missing=seed_missing))
         wanted.append(destination)
     changes.extend(_prune_changes(project, component, wanted, state))
     return changes
@@ -389,12 +401,47 @@ def plan_component_removal(project: Path, component: Component, state: InstallSt
             for entry in state.files_for_component(component.identifier)]
 
 
+def wanted_component_ids(distribution: Distribution, profile: str,
+                         features: tuple[str, ...]) -> list[str]:
+    """Profile components first, then the active features' components.
+
+    One owner for the wanted set: the planner builds the plan from it and the
+    installer records the outcome from it, so the two cannot drift into
+    planning one set and recording another.
+    """
+
+    wanted = list(distribution.effective_component_ids(profile))
+    for name in features:
+        for identifier in distribution.feature(name).components:
+            if identifier not in wanted:
+                wanted.append(identifier)
+    return wanted
+
+
 def build_install_plan(project: Path, distribution: Distribution, source: DistributionSource,
                        state: InstallState, target_profile: str, *,
-                       operation: str) -> Plan:
-    """Install or switch to `target_profile`, changing only what differs."""
+                       operation: str,
+                       target_features: tuple[str, ...] | None = None,
+                       seed_feature_files: bool = False) -> Plan:
+    """Install or switch to `target_profile`, changing only what differs.
 
-    wanted = distribution.effective_component_ids(target_profile)
+    `target_features` names the features the project must end up with; None
+    keeps the effective set the state projects to (which is how a V1 state's
+    legacy default keeps its files maintained instead of being removed as
+    "no longer wanted"). Feature components are planned like any other managed
+    file, with one difference: their absent files are seeded only when a
+    feature is being enabled (`seed_feature_files`), so a file the user removed
+    stays removed through ordinary maintenance.
+    """
+
+    if target_features is None:
+        effective = featureslib.project_install_state(state, distribution)
+        target_features = effective.active_features if effective else ()
+    feature_components: set[str] = set()
+    for name in target_features:
+        feature_components.update(distribution.feature(name).components)
+
+    wanted = wanted_component_ids(distribution, target_profile, target_features)
     present = list(state.installed_components)
     plan = Plan(operation=operation, project=project,
                 from_profile=state.active_profile if present else None,
@@ -402,8 +449,9 @@ def build_install_plan(project: Path, distribution: Distribution, source: Distri
 
     for identifier in wanted:
         component = distribution.component(identifier)
+        seed = identifier not in feature_components or seed_feature_files
         plan.changes.extend(plan_component_install(project, component, source, state,
-                                                   target_profile))
+                                                   target_profile, seed_missing=seed))
         if identifier not in present:
             plan.components_added.append(identifier)
 
