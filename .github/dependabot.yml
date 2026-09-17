@@ -1,4 +1,4 @@
-version: 2
+﻿version: 2
 updates:
   # The only third-party ecosystem this repository consumes. Python is absent
   # on purpose: the lifecycle layer is stdlib-only (ADR-0009) and declares no
@@ -11,3 +11,16 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+  # The anti-debt corpus is a scan target, not a consumer: its pip manifest
+  # PINS requests==2.18.0 on purpose (CVE-2018-18074 included) because
+  # fixture4-py-secure's EXPECTED_FINDINGS.json expects the dependency scanner
+  # to flag exactly that. Security updates are ignored here so the fixture
+  # survives every advisory-database refresh; #155 was the pull request this
+  # rule prevents. Re-open manually if the fixture itself is ever redesigned.
+  - package-ecosystem: "pip"
+    directory: "/stack/agents/anti-debt/tests/corpus/fixtures/fixture4-py-secure"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "requests"
